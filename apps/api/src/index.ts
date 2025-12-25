@@ -11,6 +11,7 @@ import type { Env } from '../../../packages/shared/src/types/env';
 // Routes
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
+import testRateLimitRoutes from './routes/testRateLimit';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -50,6 +51,9 @@ app.route('/admin/system', adminSystemRoutes);
 
 // Admin AI Cost Center (super_admin for write, admin for read)
 app.route('/admin/ai', adminAiRoutes);
+
+// Test Rate Limit (DELETE AFTER TESTING - Ticket 04)
+app.route('/test/rate-limit', testRateLimitRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);

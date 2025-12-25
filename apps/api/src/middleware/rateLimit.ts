@@ -1,0 +1,155 @@
+/**
+ * Rate Limit Middleware (Ticket 04)
+ * 
+ * Applies rate limiting to API routes.
+ * Returns 429 Too Many Requests if limit exceeded.
+ */
+
+import { Context, Next } from 'hono';
+import { RateLimiterService, getClientIP } from '../services/rateLimiter';
+
+type Bindings = {
+  RATE_LIMIT: KVNamespace;
+  DB: D1Database;
+  ANALYTICS?: AnalyticsEngineDataset;
+};
+
+export interface RateLimitOptions {
+  action: string;
+  scope: 'ip' | 'user' | 'email';
+  max: number;
+  windowSeconds: number;
+  identifierExtractor?: (c: Context) => string | Promise<string>;
+}
+
+/**
+ * Create rate limit middleware
+ * 
+ * @example
+ * ```ts
+ * // Limit by IP
+ * app.post('/api/otp/send', 
+ *   rateLimit({ action: 'otp_send', scope: 'ip', max: 3, windowSeconds: 3600 }),
+ *   async (c) => { ... }
+ * );
+ * 
+ * // Limit by user
+ * app.post('/api/voice/execute', 
+ *   rateLimit({ 
+ *     action: 'voice_execute', 
+ *     scope: 'user', 
+ *     max: 100, 
+ *     windowSeconds: 3600,
+ *     identifierExtractor: (c) => c.get('user_id')
+ *   }),
+ *   async (c) => { ... }
+ * );
+ * ```
+ */
+export function rateLimit(options: RateLimitOptions) {
+  return async (c: Context<{ Bindings: Bindings }>, next: Next) => {
+    const { env } = c;
+    const rateLimiter = new RateLimiterService(
+      env.RATE_LIMIT,
+      env.DB,
+      env.ANALYTICS
+    );
+
+    // Extract identifier
+    let identifier: string;
+    if (options.identifierExtractor) {
+      identifier = await options.identifierExtractor(c);
+    } else if (options.scope === 'ip') {
+      identifier = getClientIP(c.req.raw.headers);
+    } else {
+      // Default: try to get from context
+      identifier = c.get(options.scope) || 'unknown';
+    }
+
+    // Check rate limit
+    const result = await rateLimiter.checkLimit({
+      action: options.action,
+      scope: options.scope,
+      identifier,
+      max: options.max,
+      windowSeconds: options.windowSeconds,
+    });
+
+    // Set rate limit headers
+    c.header('X-RateLimit-Limit', options.max.toString());
+    c.header('X-RateLimit-Remaining', result.remaining.toString());
+    c.header('X-RateLimit-Reset', result.resetAt.toString());
+
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'Too Many Requests',
+          message: `Rate limit exceeded for ${options.action}. Try again later.`,
+          reset_at: result.resetAt,
+        },
+        429
+      );
+    }
+
+    await next();
+  };
+}
+
+/**
+ * Preset rate limit middleware for common actions
+ */
+export const rateLimitPresets = {
+  /**
+   * OTP send rate limit (3 per hour by email)
+   */
+  otpSend: () =>
+    rateLimit({
+      action: 'otp_send',
+      scope: 'email',
+      max: RateLimiterService.configs.otp_send.max,
+      windowSeconds: RateLimiterService.configs.otp_send.windowSeconds,
+      identifierExtractor: async (c) => {
+        const body = await c.req.json();
+        return body.email || 'unknown';
+      },
+    }),
+
+  /**
+   * OTP verification rate limit (5 per 10 minutes by email)
+   */
+  otpVerify: () =>
+    rateLimit({
+      action: 'otp_try',
+      scope: 'email',
+      max: RateLimiterService.configs.otp_try.max,
+      windowSeconds: RateLimiterService.configs.otp_try.windowSeconds,
+      identifierExtractor: async (c) => {
+        const body = await c.req.json();
+        return body.email || 'unknown';
+      },
+    }),
+
+  /**
+   * Invite creation rate limit (20 per hour by user)
+   */
+  inviteCreate: () =>
+    rateLimit({
+      action: 'invite_create',
+      scope: 'user',
+      max: RateLimiterService.configs.invite_create.max,
+      windowSeconds: RateLimiterService.configs.invite_create.windowSeconds,
+      identifierExtractor: (c) => c.get('user_id') || 'unknown',
+    }),
+
+  /**
+   * Voice command rate limit (100 per hour by user)
+   */
+  voiceExecute: () =>
+    rateLimit({
+      action: 'voice_execute',
+      scope: 'user',
+      max: RateLimiterService.configs.voice_execute.max,
+      windowSeconds: RateLimiterService.configs.voice_execute.windowSeconds,
+      identifierExtractor: (c) => c.get('user_id') || 'unknown',
+    }),
+};
