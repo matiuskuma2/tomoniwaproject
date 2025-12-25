@@ -1,381 +1,360 @@
-# webapp - AI Secretary Scheduler PWA
+# AI Secretary Scheduler PWA
 
-> **Talk to manage your important relationships and schedules**  
-> 大事な人との予定と行動を、話すだけで無理なく整える
+AI秘書スケジューラー - チャット中心のスケジューリングシステム
 
-## 📋 Project Overview
+## 🎯 プロジェクト概要
 
-**51点ゴール（Minimum Viable Product）：**
-- チャット中心のWorkItem作成/修正（予定・タスク統合）
-- 未登録ユーザーとのURLリンク完結型1対1調整（OTP使用）
-- 自動的なcontacts蓄積
-- 共有リスト・イベント配信
+### 目標
+- **51点ゴール**: チャット中心のWorkItem統合、Stranger 1対1調整（URL完結）、自動contacts、共有リスト
+- **MVP範囲**: チャットUI、WorkItemモデル、Google Calendar同期、外部リンク調整
+- **除外**: N対N調整、deep機能（Quest/Squad/Partner/Familyの複雑機能）
 
-**プロジェクトの哲学：**
-- 時間管理ツールではなく、**関係性整理ツール**
-- 距離感に応じた確定フロー分離（親友とStrangerでは違う）
-- AIがユーザーの意図を理解し、適切なアクションを提案
-- PWA→将来的にiOS/Android展開を考慮したURL/ディープリンク設計
-
-## 🏗️ Architecture
-
-### Tech Stack
-- **Frontend**: PWA (Progressive Web App) - レスポンシブUI（スマホ/PC両対応）
-- **Backend**: Cloudflare Workers + Hono Framework
+### 技術スタック
+- **Frontend**: Cloudflare Pages (PWA)
+- **API**: Cloudflare Workers (Hono)
 - **Database**: Cloudflare D1 (SQLite)
-- **Storage**: Cloudflare KV (OTP/Rate Limiting), R2 (Voice/Attachments), Queue (Email)
-- **AI**: Gemini 2.0 Flash (優先) → OpenAI GPT-4o-mini (フォールバック)
-- **Email**: Resend API
-- **Calendar**: Google Calendar API
-
-### Project Structure
-```
-webapp/
-├── apps/
-│   ├── api/              # Cloudflare Workers API (Hono)
-│   │   ├── src/
-│   │   │   ├── routes/   # API route handlers
-│   │   │   ├── middleware/ # Auth, CORS, RateLimit
-│   │   │   ├── lib/      # Utilities
-│   │   │   └── index.ts  # Entry point
-│   └── web/              # PWA Frontend
-│       ├── public/
-│       └── src/
-│           ├── components/
-│           ├── pages/
-│           └── lib/
-├── packages/
-│   ├── ai/               # AI Provider共通ロジック
-│   │   └── src/
-│   │       ├── router.ts       # AIProviderRouter (Gemini→OpenAI)
-│   │       ├── gemini.ts       # GeminiClient
-│   │       ├── openai.ts       # OpenAIClient
-│   │       ├── usage-logger.ts # UsageLogger
-│   │       └── cost-guard.ts   # CostGuard
-│   └── shared/           # 型定義・ユーティリティ
-│       └── src/
-│           └── types/
-├── db/
-│   └── migrations/       # D1マイグレーション
-│       ├── 0001_init_core.sql
-│       ├── 0002_team_lists_events.sql
-│       ├── 0003_admin.sql
-│       ├── 0004_indexes.sql
-│       ├── 0005_ai_costs.sql
-│       └── 0006_indexes_ai_costs.sql
-├── docs/                 # 仕様ドキュメント
-├── wrangler.jsonc        # Cloudflare設定
-├── package.json
-├── tsconfig.json
-└── ecosystem.config.cjs  # PM2設定（開発用）
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js >= 20.0.0
-- npm >= 10.0.0
-- Cloudflare Account (Workers, D1, KV, R2, Queue)
-- Google Cloud Console (OAuth, Calendar API)
-- Gemini API Key (Google AI Studio)
-- OpenAI API Key (optional, for fallback)
-- Resend API Key (Email delivery)
-
-### Installation
-
-1. **Clone and install dependencies:**
-```bash
-cd /home/user/webapp
-npm install
-```
-
-2. **Create Cloudflare resources:**
-```bash
-# D1 Database
-npx wrangler d1 create webapp-production
-# → Copy database_id to wrangler.jsonc
-
-# KV Namespaces
-npm run kv:create
-# → Copy KV IDs to wrangler.jsonc
-
-# Queue
-npm run queue:create
-
-# R2 Bucket
-npm run r2:create
-```
-
-3. **Apply D1 migrations (local):**
-```bash
-npm run db:migrate:local
-```
-
-4. **Set up environment variables (.dev.vars):**
-```bash
-# Create .dev.vars file (never commit!)
-cat > .dev.vars << 'EOF'
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GEMINI_API_KEY=your_gemini_api_key
-OPENAI_API_KEY=your_openai_api_key
-RESEND_API_KEY=your_resend_api_key
-ENCRYPTION_KEY=your_32_character_encryption_key
-JWT_SECRET=your_jwt_secret
-EOF
-```
-
-5. **Start development server:**
-```bash
-# Build first
-npm run build
-
-# Start with PM2 (daemon mode)
-npm run start:pm2
-
-# Check logs
-npm run logs:pm2
-
-# Check status
-pm2 list
-```
-
-### Database Management
-
-```bash
-# Local development
-npm run db:migrate:local          # Apply migrations
-npm run db:console:local          # SQLite console
-npm run db:reset                  # Reset local DB
-
-# Production
-npm run db:migrate:prod           # Apply migrations to production
-npm run db:console:prod           # Production DB console
-```
-
-## 📊 Database Schema
-
-### Core Tables (0001_init_core.sql)
-- `users` - PWAユーザー
-- `google_accounts` - Google OAuth連携
-- `work_items` - 統合型Work Item（予定・タスク）
-- `relationships` - ユーザー間の関係性
-- `scheduling_threads` - 調整スレッド
-- `scheduling_candidates` - 候補時刻
-- `external_invites` - 外部招待リンク（OTP対応）
-- `inbox_items` - 受信箱アイテム
-- `contacts` - 連絡先
-- `policies` - AIの判断根拠
-- `voice_commands` - 音声コマンドログ
-- `audit_logs` - 監査ログ
-
-### Team/Lists/Events (0002_team_lists_events.sql)
-- `workspaces` - ワークスペース（テナント境界）
-- `rooms` - Room（グループ共有スペース）
-- `room_members` - Roomメンバー
-- `quests` - Quest（目標・プロジェクト）
-- `lists` - リスト（共有可能）
-- `hosted_events` - イベント配信（1対N）
-- `event_rsvps` - イベント出欠回答
-- `broadcasts` - イベント配信通知
-
-### Admin & Subscription (0003_admin.sql)
-- `admin_users` - 管理者ユーザー
-- `admin_workspace_access` - Admin→Workspace権限境界
-- `user_subscriptions` - ユーザーのサブスクリプション
-- `rate_limit_logs` - レート制限ログ
-
-### AI Cost Management (0005_ai_costs.sql)
-- `ai_provider_settings` - AIプロバイダ設定
-- `ai_provider_keys` - 暗号化されたAPIキー
-- `ai_usage_logs` - 全てのAI呼び出しログ
-- `ai_budgets` - 予算設定
-- `ai_budget_alert_events` - アラート発火履歴
-- `ai_pricing_table` - コスト推定参照用
-
-## 🤖 AI Provider Strategy
-
-**Gemini優先 → OpenAIフォールバック（二刀流）**
-
-1. **Gemini 2.0 Flash (優先)**
-   - **無料枠**: 1,500 RPD（requests per day）
-   - **コスト**: 低コスト/無料
-   - **用途**: Intent Parse, Candidate Generation, Invite Compose
-   - **音声**: 音声理解/要約/文字起こし対応
-
-2. **OpenAI GPT-4o-mini (フォールバック)**
-   - **用途**: Gemini失敗時、高精度要求時
-   - **コスト**: $0.15/1M input tokens, $0.60/1M output tokens
-
-3. **super_admin による管理**
-   - LLM/音声プロバイダ設定
-   - 予算/上限/アラート設定
-   - API使用量/コスト可視化（プロバイダ別、機能別、ユーザー別、Room別）
-   - 緊急スロットル、レート制限、悪用検知
-
-## 🔒 Security & Authentication
-
-### User Authentication (PWA)
-- Google OAuth 2.0
-- JWT Session Management
-- Suspended user check middleware
-
-### Admin Authentication
-- `super_admin` - 全権限（AIコスト管理、全Workspace管理）
-- `admin` - テナント管理者（自身のWorkspace管理、リスト一括登録、使用量閲覧）
-
-### Rate Limiting (KV-based)
-- OTP送信: 5回/15分（IP単位）、10回/時間（メールアドレス単位）
-- Voice API: 30回/分（ユーザー単位）
-- Invite送信: 10回/時間（ユーザー単位）
-
-## 📮 API Endpoints (Minimum)
-
-### Auth
-- `POST /api/auth/google/login` - Google OAuth login
-- `POST /api/auth/google/callback` - OAuth callback
-- `POST /api/auth/logout` - Logout
-
-### Voice (Core)
-- `POST /api/voice/execute` - 音声/テキストコマンド実行（Intent Parse + CRUD）
-
-### WorkItems
-- `GET /api/work-items` - Work Items一覧
-- `POST /api/work-items` - Work Item作成
-- `PATCH /api/work-items/:id` - Work Item更新
-- `DELETE /api/work-items/:id` - Work Item削除
-
-### Scheduling (Stranger 1対1)
-- `POST /api/scheduling/threads` - 調整スレッド作成
-- `GET /api/scheduling/threads/:id` - スレッド詳細
-- `POST /api/scheduling/threads/:id/send` - 招待送信
-
-### External Link (OTP)
-- `GET /i/:token` - 外部招待ページ（未登録ユーザー向け）
-- `POST /i/:token/verify` - OTP検証
-- `POST /i/:token/respond` - 候補選択/確定
-
-### Admin (super_admin/admin)
-- `GET /api/admin/ai/usage` - AI使用量統計
-- `GET /api/admin/ai/costs` - コスト分析
-- `GET /api/admin/ai/providers` - プロバイダ設定
-- `POST /api/admin/ai/providers` - プロバイダ設定更新
-- `GET /api/admin/ai/budgets` - 予算設定
-- `POST /api/admin/ai/budgets` - 予算設定作成
-
-## 🎯 Current Status
-
-### ✅ Completed
-- プロジェクト構造作成（monorepo）
-- D1マイグレーションファイル（0001-0006）
-- Cloudflare Workers設定（wrangler.jsonc）
-- TypeScript設定
-- PM2設定ファイル
-- Git初期化
-
-### 🚧 In Progress
-- 次フェーズ: AI基盤実装（GeminiClient, AIProviderRouter, UsageLogger, CostGuard）
-
-### ⏳ Pending
-- UserAuth/AdminAuth middleware
-- RateLimiter (KV)
-- OTP Service (KV)
-- Email Queue (producer/consumer)
-- WorkItems API (GET/POST/PATCH)
-- `/voice/execute` (intent_parse + WorkItem CRUD)
-- Stranger 1対1調整フロー
-- 共有提案カード（share_intent）
-- PWA Frontend実装
-
-## 📝 Development Phases
-
-### Phase 0: 基盤整備（完了）
-- ✅ 仕様凍結
-- ✅ DB設計（D1マイグレーション）
-- ✅ プロジェクト初期化
-
-### Phase 1: AI基盤 + 認証（次）
-- T-AI-01: GeminiClient実装
-- T-AI-02: OpenAIClient実装
-- T-AI-03: AIProviderRouter実装
-- T-AI-04: UsageLogger実装
-- T-AI-05: CostGuard実装
-- T02: UserAuth middleware + suspendガード
-- T03: AdminAuth middleware + workspace境界ガード
-- T04: RateLimiter (KV) 実装
-- T05: OTP Service (KV) 実装
-- T06: Email Queue実装
-
-### Phase 2: コア機能（MVP）
-- T07: WorkItems API実装
-- T08: `/voice/execute` (intent_parse) 実装
-- T09: 共有提案カード実装
-- T10: Stranger 1対1調整実装
-
-### Phase 3: Admin Console + 管理機能
-- T-AI-06〜T-AI-12: Admin API実装（プロバイダ設定、使用量、コスト、予算）
-
-### Phase 4: リスト/イベント/チーム拡張
-- リスト管理
-- イベント配信
-- チーム/クエスト機能
-
-## 🔧 Scripts Reference
-
-```bash
-# Development
-npm run dev                    # Local development (wrangler dev)
-npm run build                  # TypeScript build
-npm run type-check             # Type checking
-npm run lint                   # ESLint
-npm run format                 # Prettier
-
-# Database
-npm run db:migrate:local       # Apply migrations (local)
-npm run db:migrate:prod        # Apply migrations (production)
-npm run db:console:local       # SQLite console (local)
-npm run db:reset               # Reset local DB
-
-# Resources
-npm run setup:resources        # Create all Cloudflare resources
-
-# Deployment
-npm run deploy                 # Deploy to Cloudflare
-npm run deploy:prod            # Build + Deploy
-
-# PM2 (Development)
-npm run start:pm2              # Start with PM2
-npm run logs:pm2               # Check logs
-pm2 list                       # List processes
-pm2 restart webapp             # Restart service
-pm2 delete webapp              # Stop and remove
-
-# Git
-npm run git:status             # Git status
-npm run git:log                # Git log
-npm run git:commit "message"   # Commit with message
-```
-
-## 📚 Documentation
-
-詳細な仕様は `docs/` ディレクトリを参照してください：
-- `docs/11_AI_PROVIDER_GEMINI.md` - Gemini実装仕様
-- `docs/12_CHAT_CAPABILITIES.md` - チャット機能定義
-- `docs/03_OPENAPI.yaml` - API仕様（OpenAPI）
-
-## 🌐 URLs
-
-- **Production**: (未デプロイ)
-- **GitHub**: (未設定)
-
-## 📄 License
-
-Private Project
-
-## 👤 Author
-
-モギモギ（関屋紘之）- ドバイ在住の連続起業家・開発会社経営者
+- **KV Storage**: Cloudflare KV (OTP, Rate Limiting)
+- **Queue**: Cloudflare Queues (Email sending)
+- **Storage**: Cloudflare R2 (Voice recordings, exports)
+
+## 📊 実装進捗
+
+### ✅ 完了したチケット
+
+#### チケット1: DB差分マイグレーション適用（0016/0017/0018）
+**目的**: ai_provider_settingsのUNIQUE(provider)制約とai_provider_keysのmasked_preview列追加
+
+**実装内容**:
+- ✅ `0005_ai_costs.sql`: AIコスト管理テーブル（ai_provider_settings, ai_provider_keys, ai_usage_logs, ai_budgets）
+- ✅ `0006_indexes_ai_costs.sql`: AIコスト関連インデックス
+- ✅ `0015_system_settings.sql`: システム設定テーブル
+- ✅ `0016_ai_provider_settings_unique_provider.sql`: UNIQUE(provider)制約追加（v2テーブル移行方式）
+- ✅ `0017_ai_provider_keys_masked_preview.sql`: masked_preview列追加
+- ✅ `0018_ai_provider_keys_index.sql`: 追加インデックス
+
+**Repository実装**:
+- ✅ `AIProviderSettingsRepository`: ON CONFLICT(provider)によるUPSERT対応
+- ✅ `AIProviderKeysRepository`: masked_preview対応、暗号化鍵の安全な管理
+- ✅ `SystemSettingsRepository`: key-value store操作
+
+**受け入れ条件**:
+- ✅ ai_provider_settingsにprovider=gemini/openaiで1行ずつ存在可能
+- ✅ ai_provider_keysにmasked_previewを保存・取得可能（生鍵は返さない）
+- ✅ AiProviderSettingsRepo.upsertMany()が例外なく動作
+- ✅ SQLite/D1のALTER制限をv2移行方式で回避
 
 ---
 
-**Last Updated**: 2024-12-25
+#### チケット2: /admin/system/settings（GET/PUT）実装
+**目的**: super_adminがシステム全体設定を管理（メール送信元、OGP、規約URL）
+
+**実装内容**:
+- ✅ `GET /admin/system/settings`: 全設定取得
+- ✅ `GET /admin/system/settings/:key`: 特定設定取得
+- ✅ `PUT /admin/system/settings`: 一括更新（UPSERT）
+- ✅ `DELETE /admin/system/settings/:key`: 設定削除
+- ✅ `GET /admin/system/settings/prefix/:prefix`: プレフィックス検索
+
+**Middleware実装**:
+- ✅ `adminAuth`: Admin認証（Bearer token検証）
+- ✅ `requireRole`: ロールガード（super_admin/admin）
+- ✅ `workspaceGuard`: テナント境界管理
+
+**受け入れ条件**:
+- ✅ GETで全system_settings返却
+- ✅ PUTで複数キーをUPSERT可能（ON CONFLICT(key)）
+- ✅ super_admin以外は403
+- ✅ 更新操作はaudit_logsに記録
+
+---
+
+#### チケット3: /admin/ai/providers（GET/PUT）実装
+**目的**: super_adminがGemini/OpenAIのデフォルト・フォールバック・feature別ルーティングを制御
+
+**実装内容**:
+- ✅ `GET /admin/ai/providers`: 全プロバイダ設定取得（admin可）
+- ✅ `GET /admin/ai/providers/:provider`: 特定プロバイダ設定取得
+- ✅ `PUT /admin/ai/providers`: プロバイダ設定の一括更新（super_adminのみ）
+- ✅ `POST /admin/ai/providers/:provider/enable`: 有効/無効切り替え
+
+**受け入れ条件**:
+- ✅ GETでgemini/openai設定を返す
+- ✅ PUTでproviderごとに上書き更新
+- ✅ feature_routing_jsonをobjectとして保存・返却
+- ✅ adminはGETのみ、super_adminがPUT可能（403制御）
+- ✅ audit_logsに更新記録
+
+---
+
+### 🔄 次のチケット（実装順）
+
+#### フェーズ0: 土台（続き）
+- **T04**: RateLimiter（KV）ユーティリティ実装
+- **T05**: OTPサービス（KV）+ `/i/:token/verify` 接続
+- **T06**: Email Queue（producer/consumer）最小実装
+
+#### フェーズ1: 51点コア
+- **T07**: WorkItems API（GET/POST/PATCH）漏洩防止ガード実装
+- **T08**: `/voice/execute`（骨格＋intent_parse）テキスト版
+- **T09**: 共有提案カード（share_intent）+ `copy_work_item_to_room`
+- **T10**: Stranger 1対1調整（`/i/:token`）+ 進捗API
+
+#### フェーズ2: 運用
+- Admin import（preview→commit）
+- Abuse監視 + suspend
+- Cron（budget alert / daily summary / retention / reminders）
+- R2 archive
+
+## 🗂️ プロジェクト構成
+
+```
+webapp/
+├── apps/
+│   ├── api/                       # Hono API (Cloudflare Workers)
+│   │   └── src/
+│   │       ├── index.ts           # メインエントリーポイント
+│   │       ├── routes/
+│   │       │   ├── adminSystem.ts # システム設定API
+│   │       │   └── adminAi.ts     # AIプロバイダAPI
+│   │       ├── middleware/
+│   │       │   └── adminAuth.ts   # Admin認証・ロールガード
+│   │       └── repositories/
+│   │           ├── aiProviderSettingsRepo.ts
+│   │           ├── aiProviderKeysRepo.ts
+│   │           ├── systemSettingsRepo.ts
+│   │           └── auditLogRepo.ts
+│   └── web/                       # PWA Frontend（未実装）
+├── packages/
+│   ├── shared/                    # 共有型定義
+│   │   └── src/types/
+│   │       ├── env.ts             # Cloudflare Workers環境型
+│   │       ├── admin.ts           # Admin関連型
+│   │       ├── ai.ts              # AI関連型
+│   │       └── system.ts          # システム設定型
+│   └── ai/                        # AI client packages（未実装）
+├── db/
+│   ├── migrations/                # D1マイグレーション
+│   │   ├── 0001_init_core.sql
+│   │   ├── 0002_team_lists_events.sql
+│   │   ├── 0003_admin.sql
+│   │   ├── 0004_indexes.sql
+│   │   ├── 0005_ai_costs.sql
+│   │   ├── 0006_indexes_ai_costs.sql
+│   │   ├── 0015_system_settings.sql
+│   │   ├── 0016_ai_provider_settings_unique_provider.sql
+│   │   ├── 0017_ai_provider_keys_masked_preview.sql
+│   │   └── 0018_ai_provider_keys_index.sql
+│   └── seeds/
+│       └── seed-admin-and-settings.sql
+├── docs/                          # 仕様書
+├── scripts/                       # ユーティリティスクリプト
+│   ├── test-migrations.ts
+│   └── test-ticket-acceptance.ts
+├── wrangler.jsonc                 # Cloudflare設定
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+## 🚀 開発セットアップ
+
+### 必要なもの
+- Node.js 18+
+- npm or pnpm
+- Cloudflare account（Wrangler CLI）
+
+### 初回セットアップ
+
+```bash
+# 依存関係インストール
+npm install
+
+# D1データベース作成（本番用）
+npm run db:create
+
+# マイグレーション適用（ローカル開発）
+npm run db:migrate:local
+
+# シードデータ投入
+npm run db:seed:local
+
+# TypeScriptビルドチェック
+npm run build
+
+# 開発サーバー起動
+npm run dev:local
+```
+
+### よく使うコマンド
+
+```bash
+# 開発
+npm run dev:local              # ローカル開発サーバー起動（--local flag）
+npm run dev                    # リモート接続開発サーバー
+
+# データベース
+npm run db:migrate:local       # マイグレーション適用（ローカル）
+npm run db:migrate:prod        # マイグレーション適用（本番）
+npm run db:seed:local          # シードデータ投入（ローカル）
+npm run db:console:local       # D1コンソール（ローカル）
+npm run db:reset:local         # ローカルDB完全リセット＋マイグレーション＋シード
+
+# テスト
+npm run test:migrations        # マイグレーションテスト
+npm run build                  # TypeScriptビルドチェック
+
+# デプロイ
+npm run deploy                 # 本番デプロイ
+npm run deploy:prod            # 本番デプロイ（明示的）
+
+# Git
+npm run git:status             # git status
+npm run git:log                # git log --oneline
+npm run git:commit "message"   # git add . && git commit -m "message"
+```
+
+## 🔐 環境変数・シークレット
+
+### ローカル開発（.dev.vars）
+```bash
+# .dev.vars（Gitに含めない）
+JWT_SECRET=your-jwt-secret-here
+ENCRYPTION_KEY=your-32-byte-encryption-key-here
+GOOGLE_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
+GEMINI_API_KEY=your-gemini-api-key
+OPENAI_API_KEY=your-openai-api-key
+RESEND_API_KEY=your-resend-api-key
+```
+
+### 本番環境（wrangler secret）
+```bash
+# シークレット設定
+npx wrangler secret put JWT_SECRET
+npx wrangler secret put ENCRYPTION_KEY
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put RESEND_API_KEY
+
+# シークレット一覧
+npx wrangler secret list
+```
+
+## 📝 API仕様
+
+### 実装済みエンドポイント
+
+#### Health Check
+- `GET /health` - ヘルスチェック
+
+#### Admin System Settings（super_admin only）
+- `GET /admin/system/settings` - 全設定取得
+- `GET /admin/system/settings/:key` - 特定設定取得
+- `PUT /admin/system/settings` - 一括更新（UPSERT）
+- `DELETE /admin/system/settings/:key` - 設定削除
+- `GET /admin/system/settings/prefix/:prefix` - プレフィックス検索
+
+#### Admin AI Providers（GET: admin, PUT: super_admin）
+- `GET /admin/ai/providers` - 全プロバイダ設定取得
+- `GET /admin/ai/providers/:provider` - 特定プロバイダ設定取得
+- `PUT /admin/ai/providers` - プロバイダ設定の一括更新
+- `POST /admin/ai/providers/:provider/enable` - 有効/無効切り替え
+
+### 認証
+
+```bash
+# Bearer token認証（現在はadmin_idを直接使用、将来JWT化予定）
+Authorization: Bearer <admin_id>
+
+# 例
+curl http://localhost:3000/admin/system/settings \
+  -H "Authorization: Bearer admin-super-001"
+```
+
+## 🧪 テスト
+
+### 受け入れテストの実行
+```bash
+# 受け入れ条件チェック
+npm run test:migrations
+
+# 手動テスト: system settings
+curl http://localhost:3000/admin/system/settings \
+  -H "Authorization: Bearer admin-super-001"
+
+# 手動テスト: AI providers
+curl http://localhost:3000/admin/ai/providers \
+  -H "Authorization: Bearer admin-super-001"
+```
+
+### シードデータ
+
+テスト用のadmin users:
+- **super_admin**: `admin-super-001` (email: super@example.com)
+- **admin**: `admin-normal-001` (email: admin@example.com)
+
+## 📚 主要ドキュメント
+
+- `docs/31_ACCESS_CONTROL.md` - アクセス制御仕様
+- `docs/14_TENANCY_AND_ROLES.md` - テナント・ロール仕様
+- `docs/15_EMAIL_OTP_RATE_LIMIT.md` - OTP・レート制限仕様
+- `docs/20_EMAIL_QUEUE.md` - メールキュー仕様
+- `docs/22_SYSTEM_SETTINGS.md` - システム設定仕様（凍結）
+- `docs/23_ABUSE_MONITORING.md` - Abuse監視仕様（凍結）
+- `docs/24_SUSPEND_CONTROL.md` - 停止制御仕様（凍結）
+
+## 🎨 AI戦略
+
+### モデル優先度
+1. **Gemini 2.0 Flash**: コスト優先（標準）
+2. **OpenAI GPT-4o-mini**: 品質・安定性優先（フォールバック）
+
+### 必須ルール
+- すべてのAI呼び出しは`ai_usage_logs`に記録
+- `AIProviderRouter`経由でルーティング
+- super_adminがコスト可視化可能
+
+## 🔒 セキュリティ
+
+### 実装済み
+- ✅ Admin認証（Bearer token）
+- ✅ ロールベースアクセス制御（super_admin/admin）
+- ✅ テナント境界管理（admin_workspace_access）
+- ✅ 監査ログ（すべての管理操作を記録）
+- ✅ APIキーのマスキング（masked_preview、生鍵は返さない）
+
+### 今後実装予定
+- User認証（Google OAuth）
+- suspendedユーザーのAPI拒否
+- Rate limiting（KV）
+- OTP検証（KV）
+
+## 📈 スケーラビリティ
+
+### 設計方針
+- D1（SQLite）: トランザクションデータ
+- KV: セッション、OTP、レート制限
+- R2: 音声録音、大容量ログ
+- Queue: 非同期処理（メール送信、重い処理）
+- Cron: 定期バッチ処理
+
+### 将来対応
+- ログのR2アーカイブ（数十万レコード対応）
+- 集計テーブル（日次/月次サマリ）
+- KV TTL活用（期限付きデータ）
+
+## 🤝 コントリビューション
+
+このプロジェクトは現在開発中です。実装順序はチケット番号に従ってください。
+
+## 📄 ライセンス
+
+（ライセンス未定）
+
+---
+
+**最終更新**: 2025-12-25  
+**バージョン**: 0.1.0  
+**ステータス**: チケット1-3完了、T04-T10実装中
