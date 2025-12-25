@@ -15,6 +15,7 @@ import testRateLimitRoutes from './routes/testRateLimit';
 import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
+import threadsRoutes from './routes/threads';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -76,6 +77,9 @@ app.route('/api/work-items', workItemsRoutes);
 
 // Voice Commands API (Ticket 08)
 app.route('/api/voice', voiceRoutes);
+
+// Threads API (Ticket 10)
+app.route('/api/threads', threadsRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
