@@ -63,7 +63,7 @@ export function rateLimit(options: RateLimitOptions) {
       identifier = getClientIP(c.req.raw.headers);
     } else {
       // Default: try to get from context
-      identifier = c.get(options.scope) || 'unknown';
+      identifier = (c.get(options.scope as any) as string) || 'unknown';
     }
 
     // Check rate limit

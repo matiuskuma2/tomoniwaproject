@@ -12,7 +12,6 @@ import type { Env } from '../../../packages/shared/src/types/env';
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
-import testEmailConsumerRoutes from './routes/testEmailConsumer';
 import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
@@ -68,7 +67,6 @@ app.use('/test/*', async (c, next) => {
 });
 
 app.route('/test/rate-limit', testRateLimitRoutes);
-app.route('/test/email-consumer', testEmailConsumerRoutes);
 
 // OTP Service (Ticket 05)
 app.route('/api/otp', otpRoutes);

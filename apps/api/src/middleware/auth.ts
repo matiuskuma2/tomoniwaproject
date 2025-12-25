@@ -13,6 +13,10 @@ export interface AuthContext {
   isDevMode?: boolean;
 }
 
+type Variables = {
+  userId?: string;
+};
+
 /**
  * Extract user ID from request
  * 
@@ -20,7 +24,7 @@ export interface AuthContext {
  * 1. Bearer token (production)
  * 2. x-user-id header (development only)
  */
-export async function getUserId(c: Context<{ Bindings: Env }>): Promise<string | null> {
+export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<string | null> {
   const env = c.env as Env;
   // Check for development mode (ENVIRONMENT not set or explicitly 'development')
   const isDevelopment = !env.ENVIRONMENT || env.ENVIRONMENT === 'development';
@@ -56,7 +60,7 @@ export async function getUserId(c: Context<{ Bindings: Env }>): Promise<string |
  * Usage:
  * app.use('/api/protected/*', requireAuth)
  */
-export async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
+export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
   const userId = await getUserId(c);
 
   if (!userId) {
@@ -78,7 +82,7 @@ export async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
 /**
  * Optional auth middleware (doesn't fail if no auth)
  */
-export async function optionalAuth(c: Context<{ Bindings: Env }>, next: Next) {
+export async function optionalAuth(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
   const userId = await getUserId(c);
   
   if (userId) {
@@ -107,7 +111,7 @@ export function getUserIdFromContext(c: Context): string {
  * DEPRECATED: Use getUserId() instead
  * This is a temporary helper for migration period
  */
-export async function getUserIdLegacy(c: Context<{ Bindings: Env }>): Promise<string> {
+export async function getUserIdLegacy(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<string> {
   const userId = await getUserId(c);
   
   if (userId) {

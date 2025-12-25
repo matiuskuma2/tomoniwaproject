@@ -28,7 +28,7 @@ app.post(
     const { env } = c;
 
     // Get user_id (dev: x-user-id, prod: Bearer token)
-    const userId = await getUserIdLegacy(c);
+    const userId = await getUserIdLegacy(c as any);
 
     try {
       const body = await c.req.json();
