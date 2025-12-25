@@ -37,12 +37,14 @@ app.post(
         return c.json({ error: 'Missing or invalid field: text' }, 400);
       }
 
-      // Parse intent
+      // Parse intent with LLM (Gemini優先 → OpenAI → Pattern)
+      const roomId = c.req.header('x-room-id'); // Optional for room context
       const parser = new IntentParserService(
-        env.OPENAI_API_KEY,
-        env.GEMINI_API_KEY
+        env.OPENAI_API_KEY || '',
+        env.GEMINI_API_KEY || '',
+        env.DB
       );
-      const intent = await parser.parse(text, userId);
+      const intent = await parser.parse(text, userId, roomId);
 
       console.log('[Voice] Parsed intent:', JSON.stringify(intent, null, 2));
 
@@ -78,6 +80,7 @@ app.post(
 
       return c.json({
         intent: intent.intent,
+        share_intent: intent.share_intent, // Add share_intent to response
         result,
         confidence: intent.confidence,
         raw_text: intent.raw_text,

@@ -1,13 +1,18 @@
 /**
- * Intent Parser Service (Ticket 08)
+ * Intent Parser Service (Ticket 08 - Fixed)
  * 
- * Parses voice commands into structured intents.
- * Uses LLM (OpenAI/Gemini) for natural language understanding.
+ * LLM優先 (Gemini → OpenAI fallback → Pattern fallback)
+ * Share Intent 判定追加
+ * ai_usage_logs への記録
  */
+
+import { AIRouterService, type IntentParseResult } from './aiRouter';
+import type { D1Database } from '@cloudflare/workers-types';
 
 export interface ParsedIntent {
   intent: 'create' | 'modify' | 'undo' | 'query' | 'unknown';
   confidence: number;
+  share_intent?: 'explicit' | 'uncertain' | 'none';
   entities: {
     type?: 'task' | 'scheduled';
     title?: string;
@@ -22,18 +27,39 @@ export interface ParsedIntent {
 }
 
 export class IntentParserService {
+  private aiRouter: AIRouterService;
+
   constructor(
     private readonly openaiApiKey: string,
-    private readonly geminiApiKey?: string
-  ) {}
+    private readonly geminiApiKey: string,
+    private readonly db: D1Database
+  ) {
+    this.aiRouter = new AIRouterService(geminiApiKey, openaiApiKey, db);
+  }
 
   /**
-   * Parse voice command into structured intent
+   * Parse voice command with LLM (Gemini優先 → OpenAI → Pattern)
    */
-  async parse(text: string, userId: string): Promise<ParsedIntent> {
-    // For MVP: Use simple pattern matching
-    // TODO: Replace with LLM-based parsing in production
-    return this.parseWithPatterns(text);
+  async parse(text: string, userId: string, roomId?: string): Promise<ParsedIntent> {
+    try {
+      const result = await this.aiRouter.parseIntent(text, userId, roomId);
+      
+      return {
+        ...result,
+        raw_text: text,
+      };
+    } catch (error) {
+      console.error('[IntentParser] All parsing methods failed:', error);
+      
+      // Ultimate fallback
+      return {
+        intent: 'unknown',
+        confidence: 0.1,
+        share_intent: 'none',
+        entities: {},
+        raw_text: text,
+      };
+    }
   }
 
   /**
@@ -119,7 +145,7 @@ export class IntentParserService {
   /**
    * Match modify patterns
    */
-  private matchModify(text: string): { status?: string; target_id?: string } | null {
+  private matchModify(text: string): { status?: 'pending' | 'completed' | 'cancelled'; target_id?: string } | null {
     // Complete patterns
     if (/完了|終わっ|済み|done|complete/i.test(text)) {
       return { status: 'completed' };
