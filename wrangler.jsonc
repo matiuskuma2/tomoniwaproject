@@ -83,7 +83,7 @@
   // Secrets should be set using: npx wrangler secret put SECRET_NAME
   // For local development, use .dev.vars file
   "vars": {
-    "ENVIRONMENT": "development",  // Temporary: Allow x-user-id for Phase 2 testing
+    "ENVIRONMENT": "production",  // Production mode: Requires Bearer token authentication
     "LOG_LEVEL": "info",
     "CORS_ORIGINS": "*"
   },

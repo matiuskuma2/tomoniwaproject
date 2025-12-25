@@ -12,11 +12,15 @@ import type { Env } from '../../../packages/shared/src/types/env';
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
+import authRoutes from './routes/auth';
 import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
 import threadsRoutes from './routes/threads';
 import inviteRoutes from './routes/invite';
+
+// Middleware
+import { requireAuth } from './middleware/auth';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -70,20 +74,30 @@ app.use('/test/*', async (c, next) => {
 
 app.route('/test/rate-limit', testRateLimitRoutes);
 
-// OTP Service (Ticket 05)
+// Authentication Routes (Public - no auth required)
+app.route('/auth', authRoutes);
+
+// OTP Service (Ticket 05 - Public for registration)
 app.route('/api/otp', otpRoutes);
 
+// External Invite Routes (Ticket 10 - Public, no auth required)
+app.route('/i', inviteRoutes);
+
+// ============================================================
+// Protected API Routes (requireAuth middleware)
+// ============================================================
+
 // WorkItems API (Ticket 07)
+app.use('/api/work-items/*', requireAuth);
 app.route('/api/work-items', workItemsRoutes);
 
 // Voice Commands API (Ticket 08)
+app.use('/api/voice/*', requireAuth);
 app.route('/api/voice', voiceRoutes);
 
 // Threads API (Ticket 10)
+app.use('/api/threads/*', requireAuth);
 app.route('/api/threads', threadsRoutes);
-
-// External Invite Routes (Ticket 10) - Top-level /i/:token
-app.route('/i', inviteRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);

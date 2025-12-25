@@ -37,17 +37,35 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
     }
   }
 
-  // Try Bearer token
+  // Try Bearer token (session-based authentication)
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
+    const sessionToken = authHeader.substring(7);
     
-    // TODO: Verify JWT token and extract user_id
-    // For MVP: Simple token validation
-    if (token && token.length > 0) {
-      // Decode token to get user_id
-      // For now, return a placeholder
-      return `user-from-token-${token.substring(0, 8)}`;
+    if (sessionToken && sessionToken.length > 0) {
+      try {
+        // Import dynamically to avoid circular dependency
+        const { SessionRepository } = await import('../repositories/sessionRepository');
+        
+        // Hash token for lookup
+        const encoder = new TextEncoder();
+        const data = encoder.encode(sessionToken);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // Verify session
+        const sessionRepo = new SessionRepository(env.DB);
+        const session = await sessionRepo.findByTokenHash(tokenHash);
+        
+        if (session) {
+          // Update last_seen_at
+          await sessionRepo.updateLastSeen(session.id);
+          return session.user_id;
+        }
+      } catch (error) {
+        console.error('Session verification error:', error);
+      }
     }
   }
 
