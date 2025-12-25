@@ -2,9 +2,9 @@
 -- Migration: 0016_ai_provider_settings_unique_provider.sql
 -- Purpose: Add UNIQUE(provider) constraint to ai_provider_settings
 -- SQLite ALTER TABLE limitation workaround: v2 table migration
+-- Note: Cloudflare D1 does not support explicit BEGIN/COMMIT
 -- ============================================================
 PRAGMA foreign_keys = OFF;
-BEGIN TRANSACTION;
 
 -- 1) Create new table with UNIQUE(provider) constraint
 CREATE TABLE IF NOT EXISTS ai_provider_settings_v2 (
@@ -49,5 +49,4 @@ ALTER TABLE ai_provider_settings_v2 RENAME TO ai_provider_settings;
 CREATE INDEX IF NOT EXISTS idx_ai_provider_settings_provider
   ON ai_provider_settings(provider, is_enabled);
 
-COMMIT;
 PRAGMA foreign_keys = ON;
