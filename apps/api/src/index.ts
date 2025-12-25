@@ -12,6 +12,7 @@ import type { Env } from '../../../packages/shared/src/types/env';
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
+import testEmailConsumerRoutes from './routes/testEmailConsumer';
 import otpRoutes from './routes/otp';
 
 // Queue Consumer
@@ -58,6 +59,9 @@ app.route('/admin/ai', adminAiRoutes);
 
 // Test Rate Limit (DELETE AFTER TESTING - Ticket 04)
 app.route('/test/rate-limit', testRateLimitRoutes);
+
+// Test Email Consumer (DELETE AFTER TESTING - Ticket 06)
+app.route('/test/email-consumer', testEmailConsumerRoutes);
 
 // OTP Service (Ticket 05)
 app.route('/api/otp', otpRoutes);

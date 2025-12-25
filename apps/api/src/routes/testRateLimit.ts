@@ -37,7 +37,7 @@ app.get(
  * @route POST /test/rate-limit/otp-send
  * @body { email: string }
  */
-app.post('/otp-send', rateLimitPresets.otpSend(), (c) => {
+app.post('/otp-send', rateLimitPresets.otpSendByEmail(), (c) => {
   return c.json({
     message: 'OTP send allowed',
     timestamp: Date.now(),

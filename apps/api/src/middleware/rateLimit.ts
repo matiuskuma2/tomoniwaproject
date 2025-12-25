@@ -97,21 +97,33 @@ export function rateLimit(options: RateLimitOptions) {
 
 /**
  * Preset rate limit middleware for common actions
+ * (Aligned with frozen specification docs/15)
  */
 export const rateLimitPresets = {
   /**
-   * OTP send rate limit (3 per hour by email)
+   * OTP send rate limit (3 per 10 minutes by email)
    */
-  otpSend: () =>
+  otpSendByEmail: () =>
     rateLimit({
       action: 'otp_send',
       scope: 'email',
-      max: RateLimiterService.configs.otp_send.max,
-      windowSeconds: RateLimiterService.configs.otp_send.windowSeconds,
+      max: RateLimiterService.configs.otp_send_email.max,
+      windowSeconds: RateLimiterService.configs.otp_send_email.windowSeconds,
       identifierExtractor: async (c) => {
         const body = await c.req.json();
         return body.email || 'unknown';
       },
+    }),
+
+  /**
+   * OTP send rate limit (10 per 10 minutes by IP)
+   */
+  otpSendByIP: () =>
+    rateLimit({
+      action: 'otp_send_ip',
+      scope: 'ip',
+      max: RateLimiterService.configs.otp_send_ip.max,
+      windowSeconds: RateLimiterService.configs.otp_send_ip.windowSeconds,
     }),
 
   /**
@@ -130,26 +142,49 @@ export const rateLimitPresets = {
     }),
 
   /**
-   * Invite creation rate limit (20 per hour by user)
+   * Invite creation rate limit (5 per minute by user)
    */
-  inviteCreate: () =>
+  inviteCreateByUser: () =>
     rateLimit({
       action: 'invite_create',
       scope: 'user',
-      max: RateLimiterService.configs.invite_create.max,
-      windowSeconds: RateLimiterService.configs.invite_create.windowSeconds,
+      max: RateLimiterService.configs.invite_create_user.max,
+      windowSeconds: RateLimiterService.configs.invite_create_user.windowSeconds,
       identifierExtractor: (c) => c.get('user_id') || 'unknown',
     }),
 
   /**
-   * Voice command rate limit (100 per hour by user)
+   * Invite creation rate limit (20 per minute by IP)
    */
-  voiceExecute: () =>
+  inviteCreateByIP: () =>
+    rateLimit({
+      action: 'invite_create_ip',
+      scope: 'ip',
+      max: RateLimiterService.configs.invite_create_ip.max,
+      windowSeconds: RateLimiterService.configs.invite_create_ip.windowSeconds,
+    }),
+
+  /**
+   * Voice command rate limit (20 per minute by user, standard plan)
+   */
+  voiceExecuteByUser: () =>
     rateLimit({
       action: 'voice_execute',
       scope: 'user',
-      max: RateLimiterService.configs.voice_execute.max,
-      windowSeconds: RateLimiterService.configs.voice_execute.windowSeconds,
+      max: RateLimiterService.configs.voice_execute_user.max,
+      windowSeconds: RateLimiterService.configs.voice_execute_user.windowSeconds,
+      identifierExtractor: (c) => c.get('user_id') || 'unknown',
+    }),
+
+  /**
+   * Voice command rate limit (10 per minute by user, free plan)
+   */
+  voiceExecuteByUserFree: () =>
+    rateLimit({
+      action: 'voice_execute',
+      scope: 'user',
+      max: RateLimiterService.configs.voice_execute_user_free.max,
+      windowSeconds: RateLimiterService.configs.voice_execute_user_free.windowSeconds,
       identifierExtractor: (c) => c.get('user_id') || 'unknown',
     }),
 };

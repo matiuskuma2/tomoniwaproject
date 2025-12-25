@@ -18,9 +18,9 @@ const app = new Hono<{ Bindings: Env }>();
  * 
  * @route POST /api/otp/send
  * @body { email: string, purpose: string }
- * @ratelimit 3 per hour by email
+ * @ratelimit 3 per 10 minutes by email, 10 per 10 minutes by IP
  */
-app.post('/send', rateLimitPresets.otpSend(), async (c) => {
+app.post('/send', rateLimitPresets.otpSendByEmail(), rateLimitPresets.otpSendByIP(), async (c) => {
   const { env } = c;
   
   try {

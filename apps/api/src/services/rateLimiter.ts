@@ -154,23 +154,36 @@ export class RateLimiterService {
 
   /**
    * Preset configurations for common actions
+   * (Aligned with frozen specification docs/15)
    */
   static configs = {
-    otp_send: {
+    otp_send_email: {
       max: 3,
-      windowSeconds: 3600, // 3 requests per hour
+      windowSeconds: 600, // 3 requests per 10 minutes (by email)
+    },
+    otp_send_ip: {
+      max: 10,
+      windowSeconds: 600, // 10 requests per 10 minutes (by IP)
     },
     otp_try: {
       max: 5,
-      windowSeconds: 600, // 5 attempts per 10 minutes
+      windowSeconds: 600, // 5 attempts per 10 minutes (by token/email)
     },
-    invite_create: {
+    invite_create_user: {
+      max: 5,
+      windowSeconds: 60, // 5 invites per minute (by user)
+    },
+    invite_create_ip: {
       max: 20,
-      windowSeconds: 3600, // 20 invites per hour
+      windowSeconds: 60, // 20 invites per minute (by IP)
     },
-    voice_execute: {
-      max: 100,
-      windowSeconds: 3600, // 100 voice commands per hour
+    voice_execute_user: {
+      max: 20,
+      windowSeconds: 60, // 20 commands per minute (by user, Free plan: 10/min)
+    },
+    voice_execute_user_free: {
+      max: 10,
+      windowSeconds: 60, // 10 commands per minute (by user, Free plan)
     },
   } as const;
 }
