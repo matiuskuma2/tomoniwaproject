@@ -10,6 +10,7 @@ import type { Env } from '../../../packages/shared/src/types/env';
 
 // Routes
 import adminSystemRoutes from './routes/adminSystem';
+import adminAiRoutes from './routes/adminAi';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,8 +48,10 @@ app.get('/health', (c) => {
 // Admin System Settings (super_admin only)
 app.route('/admin/system', adminSystemRoutes);
 
+// Admin AI Cost Center (super_admin for write, admin for read)
+app.route('/admin/ai', adminAiRoutes);
+
 // TODO: Add more routes
-// app.route('/admin/ai', adminAiRoutes);
 // app.route('/admin/abuse', adminAbuseRoutes);
 // app.route('/admin/users', adminUsersRoutes);
 // app.route('/admin/workspaces', adminWorkspacesRoutes);
