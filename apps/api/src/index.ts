@@ -14,6 +14,7 @@ import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
 import testEmailConsumerRoutes from './routes/testEmailConsumer';
 import otpRoutes from './routes/otp';
+import workItemsRoutes from './routes/workItems';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -65,6 +66,9 @@ app.route('/test/email-consumer', testEmailConsumerRoutes);
 
 // OTP Service (Ticket 05)
 app.route('/api/otp', otpRoutes);
+
+// WorkItems API (Ticket 07)
+app.route('/api/work-items', workItemsRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
