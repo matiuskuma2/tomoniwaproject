@@ -36,10 +36,16 @@ export default {
   ): Promise<void> {
     console.log(`[EmailConsumer] Processing ${batch.messages.length} messages`);
 
+    // Process messages serially with throttling (Resend limit: 2 req/sec)
     for (const message of batch.messages) {
       try {
-        await processEmailJob(message.body, env);
+        await processEmailJobWithRetry(message.body, env, 3);
         message.ack(); // Acknowledge successful processing
+        
+        // Throttle: Wait 650ms between emails to respect Resend's 2 req/sec limit
+        if (batch.messages.indexOf(message) < batch.messages.length - 1) {
+          await sleep(650);
+        }
       } catch (error) {
         console.error('[EmailConsumer] Error processing message:', error);
         message.retry(); // Retry on failure (will go to DLQ after max_retries)
@@ -47,6 +53,49 @@ export default {
     }
   },
 };
+
+/**
+ * Sleep helper for throttling
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Process email job with retry logic for 429 errors
+ */
+async function processEmailJobWithRetry(
+  job: EmailJob,
+  env: Env,
+  maxRetries: number
+): Promise<void> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await processEmailJob(job, env);
+      return; // Success
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if it's a 429 rate limit error
+      if (lastError.message.includes('429') || lastError.message.includes('rate_limit')) {
+        console.warn(`[EmailConsumer] Rate limit hit (attempt ${attempt}/${maxRetries}), waiting 1s...`);
+        
+        if (attempt < maxRetries) {
+          await sleep(1000); // Wait 1 second before retry
+          continue;
+        }
+      }
+      
+      // For non-429 errors, throw immediately
+      throw lastError;
+    }
+  }
+  
+  // All retries exhausted
+  throw lastError || new Error('Failed after retries');
+}
 
 /**
  * Process individual email job
@@ -377,10 +426,21 @@ async function sendViaResend(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Resend API error: ${response.status} ${error}`);
+    const errorText = await response.text();
+    const errorMsg = `Resend API error (${response.status}): ${errorText}`;
+    
+    // Log detailed error for debugging
+    console.error('[EmailConsumer] Resend API failed:', {
+      status: response.status,
+      error: errorText,
+      to: email.to,
+      subject: email.subject,
+    });
+    
+    throw new Error(errorMsg);
   }
 
   const result: ResendResponse = await response.json();
+  console.log(`[EmailConsumer] Email sent successfully via Resend: ${result.id}`);
   return result.id;
 }
