@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "webapp-production",
-      "database_id": "YOUR_DATABASE_ID_HERE",  // Replace with actual ID from wrangler d1 create
+      "database_id": "35dad869-c19f-40dd-90a6-11f87a3382d2",
       "migrations_dir": "db/migrations"
     }
   ],
@@ -32,52 +32,50 @@
   "kv_namespaces": [
     {
       "binding": "RATE_LIMIT",
-      "id": "YOUR_RATE_LIMIT_KV_ID",  // Replace with actual KV namespace ID
-      "preview_id": "YOUR_RATE_LIMIT_KV_PREVIEW_ID"
+      "id": "5f0feea9940643ed93ef9ca1a682f264",
+      "preview_id": "97f4d56518464fce844d726e88f914e4"
     },
     {
       "binding": "OTP_STORE",
-      "id": "YOUR_OTP_STORE_KV_ID",  // Replace with actual KV namespace ID
-      "preview_id": "YOUR_OTP_STORE_KV_PREVIEW_ID"
+      "id": "9ad0e9b7e8bf4efa96b9fdb8ab89b176",
+      "preview_id": "31ee64a07fd8477f9219072e61600d1c"
     }
   ],
 
   // ============================================================
-  // R2 Buckets (Object Storage)
+  // R2 Buckets (Object Storage) - REQUIRES PAID PLAN
   // ============================================================
   // Used for: Voice recordings, attachments, exports
-  // IMPORTANT: Create bucket first:
-  //   npx wrangler r2 bucket create webapp-storage
-  "r2_buckets": [
-    {
-      "binding": "STORAGE",
-      "bucket_name": "webapp-storage"
-    }
-  ],
+  // Temporarily disabled - enable after upgrading to Workers Paid plan
+  // "r2_buckets": [
+  //   {
+  //     "binding": "STORAGE",
+  //     "bucket_name": "webapp-storage"
+  //   }
+  // ],
 
   // ============================================================
-  // Queues (Message Queues)
+  // Queues (Message Queues) - REQUIRES PAID PLAN
   // ============================================================
   // Used for: Email sending, background jobs
-  // IMPORTANT: Create queue first:
-  //   npx wrangler queues create email-queue
-  "queues": {
-    "producers": [
-      {
-        "binding": "EMAIL_QUEUE",
-        "queue": "email-queue"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "email-queue",
-        "max_batch_size": 10,
-        "max_batch_timeout": 30,
-        "max_retries": 3,
-        "dead_letter_queue": "email-dlq"
-      }
-    ]
-  },
+  // Temporarily disabled - enable after upgrading to Workers Paid plan
+  // "queues": {
+  //   "producers": [
+  //     {
+  //       "binding": "EMAIL_QUEUE",
+  //       "queue": "email-queue"
+  //     }
+  //   ],
+  //   "consumers": [
+  //     {
+  //       "queue": "email-queue",
+  //       "max_batch_size": 10,
+  //       "max_batch_timeout": 30,
+  //       "max_retries": 3,
+  //       "dead_letter_queue": "email-dlq"
+  //     }
+  //   ]
+  // },
 
   // ============================================================
   // Environment Variables

@@ -82,3 +82,8 @@ secrets/
 *.tar.gz
 *.zip
 *.rar
+
+# Cloudflare credentials
+.cloudflare-credentials
+.env.cloudflare
+.wrangler/
