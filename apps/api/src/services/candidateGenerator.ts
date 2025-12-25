@@ -25,6 +25,16 @@ export class CandidateGeneratorService {
    * @param threadTitle Thread title/topic
    * @param threadDescription Optional thread description
    * @returns Array of 3 candidates
+   * 
+   * NOTE: Currently using fallback candidates for E2E testing.
+   * The quality of candidates doesn't matter for Phase 2 E2E flow verification.
+   * What matters is:
+   * 1. Email sending works (Queue → Resend → Domain verification)
+   * 2. /i/:token page displays correctly
+   * 3. Accept flow creates inbox notification
+   * 
+   * AI-powered dynamic candidate generation can be integrated later
+   * by uncommenting the AI Router integration below.
    */
   async generateCandidates(
     threadTitle: string,
@@ -32,8 +42,15 @@ export class CandidateGeneratorService {
   ): Promise<Candidate[]> {
     const prompt = this.buildPrompt(threadTitle, threadDescription);
 
-    // For now, use fallback candidates
-    // TODO: Integrate with AI Router for production
+    // For now, use fallback candidates for E2E testing
+    // TODO: Integrate with AI Router for production quality candidates
+    // const response = await this.aiRouter.generateContent({
+    //   feature: 'candidate_generation',
+    //   prompt,
+    //   temperature: 0.9,
+    // });
+    // return this.parseCandidates(response);
+    
     return this.generateFallbackCandidates(prompt);
   }
 

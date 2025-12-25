@@ -324,7 +324,7 @@ app.post('/i/:token/accept', async (c) => {
     const inboxRepo = new InboxRepository(env.DB);
     await inboxRepo.create({
       user_id: thread.user_id,
-      type: 'system_message', // Valid type from CHECK constraint
+      type: 'scheduling_invite', // Thread acceptance notification as scheduling_invite
       title: `${invite.candidate_name} accepted your invitation`,
       description: `${invite.candidate_name} has accepted your invitation to join "${thread.title}"`,
       related_entity_type: 'thread',
