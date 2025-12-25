@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import { OTPService } from '../services/otpService';
+import { EmailQueueService } from '../services/emailQueue';
 import { rateLimitPresets } from '../middleware/rateLimit';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
@@ -53,8 +54,16 @@ app.post('/send', rateLimitPresets.otpSend(), async (c) => {
       purpose,
     });
 
-    // TODO: Queue email sending job (Ticket 06)
-    // For now, return code in response (DEV ONLY)
+    // Queue email sending job (Ticket 06)
+    const emailQueue = new EmailQueueService(env.EMAIL_QUEUE, env.ANALYTICS);
+    await emailQueue.sendOTPEmail({
+      to: email,
+      code,
+      purpose,
+      expiresIn: 600, // 10 minutes
+    });
+
+    // For dev: return code in response (remove in production)
     const isDev = env.ENVIRONMENT === 'development';
 
     return c.json({

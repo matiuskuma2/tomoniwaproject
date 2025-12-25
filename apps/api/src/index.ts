@@ -14,6 +14,9 @@ import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
 import otpRoutes from './routes/otp';
 
+// Queue Consumer
+import emailConsumer from './queue/emailConsumer';
+
 const app = new Hono<{ Bindings: Env }>();
 
 // ============================================================
@@ -98,6 +101,9 @@ app.onError((err, c) => {
 });
 
 // ============================================================
-// Export
+// Export (includes HTTP handler + Queue consumer)
 // ============================================================
-export default app;
+export default {
+  fetch: app.fetch,
+  queue: emailConsumer.queue, // Email queue consumer (Ticket 06)
+};
