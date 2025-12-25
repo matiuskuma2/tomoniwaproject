@@ -368,7 +368,7 @@ async function sendViaResend(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'AI Secretary <noreply@example.com>', // TODO: Configure from address
+      from: 'Tomoniva <onboarding@resend.dev>', // Resend default verified address
       to: [email.to],
       subject: email.subject,
       html: email.html,
