@@ -58,10 +58,15 @@ app.route('/admin/system', adminSystemRoutes);
 // Admin AI Cost Center (super_admin for write, admin for read)
 app.route('/admin/ai', adminAiRoutes);
 
-// Test Rate Limit (DELETE AFTER TESTING - Ticket 04)
-app.route('/test/rate-limit', testRateLimitRoutes);
+// Test Routes (only in development environment)
+app.use('/test/*', async (c, next) => {
+  if (c.env.ENVIRONMENT !== 'development') {
+    return c.json({ error: 'Test routes only available in development' }, 403);
+  }
+  await next();
+});
 
-// Test Email Consumer (DELETE AFTER TESTING - Ticket 06)
+app.route('/test/rate-limit', testRateLimitRoutes);
 app.route('/test/email-consumer', testEmailConsumerRoutes);
 
 // OTP Service (Ticket 05)

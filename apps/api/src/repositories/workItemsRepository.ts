@@ -58,7 +58,32 @@ export class WorkItemsRepository {
   constructor(private readonly db: D1Database) {}
 
   /**
+   * Check if user is member of room
+   */
+  async isRoomMember(userId: string, roomId: string): Promise<boolean> {
+    const result = await this.db
+      .prepare('SELECT 1 FROM room_members WHERE room_id = ? AND user_id = ?')
+      .bind(roomId, userId)
+      .first<{ '1': number }>();
+    
+    return result !== null;
+  }
+
+  /**
+   * Get user's role in room
+   */
+  async getRoomRole(userId: string, roomId: string): Promise<string | null> {
+    const result = await this.db
+      .prepare('SELECT role FROM room_members WHERE room_id = ? AND user_id = ?')
+      .bind(roomId, userId)
+      .first<{ role: string }>();
+    
+    return result?.role || null;
+  }
+
+  /**
    * List work items by user (my items)
+   * SECURITY: Only returns private items owned by user
    */
   async listByUser(userId: string, options?: {
     status?: 'pending' | 'completed' | 'cancelled';
@@ -68,7 +93,7 @@ export class WorkItemsRepository {
   }): Promise<WorkItem[]> {
     let query = `
       SELECT * FROM work_items
-      WHERE user_id = ?
+      WHERE user_id = ? AND visibility_scope = 'private'
     `;
     const params: any[] = [userId];
 
@@ -314,6 +339,9 @@ export class WorkItemsRepository {
 
   /**
    * Check if user can modify work item
+   * SECURITY:
+   * - private: only owner
+   * - room: owner OR room admin/owner
    */
   async canModify(workItemId: string, userId: string): Promise<boolean> {
     const workItem = await this.findById(workItemId);
@@ -321,7 +349,17 @@ export class WorkItemsRepository {
       return false;
     }
 
-    // Only owner can modify
-    return workItem.user_id === userId;
+    // Owner can always modify
+    if (workItem.user_id === userId) {
+      return true;
+    }
+
+    // For room items: check if user is admin/owner of room
+    if (workItem.visibility_scope === 'room' && workItem.room_id) {
+      const role = await this.getRoomRole(userId, workItem.room_id);
+      return role === 'admin' || role === 'owner';
+    }
+
+    return false;
   }
 }

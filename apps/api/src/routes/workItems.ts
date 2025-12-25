@@ -46,6 +46,12 @@ app.get('/', async (c) => {
         return c.json({ error: 'room_id is required for scope=room' }, 400);
       }
       
+      // SECURITY: Check room membership before listing
+      const isMember = await repo.isRoomMember(userId, roomId);
+      if (!isMember) {
+        return c.json({ error: 'Access denied: not a member of this room' }, 403);
+      }
+      
       items = await repo.listByRoom(roomId, { status, type, limit, offset });
     } else {
       items = await repo.listByUser(userId, { status, type, limit, offset });
@@ -206,14 +212,19 @@ app.patch('/:id', async (c) => {
 
     const body = await c.req.json();
 
-    // Validate visibility_scope
-    if (body.visibility_scope && !['private', 'room', 'quest', 'squad'].includes(body.visibility_scope)) {
-      return c.json({ error: 'Invalid visibility_scope' }, 400);
+    // SECURITY: Prevent visibility_scope changes (MVP restriction)
+    if (body.visibility_scope !== undefined && body.visibility_scope !== existing.visibility_scope) {
+      return c.json({ error: 'Changing visibility_scope is not allowed' }, 400);
     }
 
-    // If changing to room visibility, room_id is required
-    if (body.visibility_scope === 'room' && !body.room_id && !existing.room_id) {
-      return c.json({ error: 'room_id is required for visibility_scope=room' }, 400);
+    // SECURITY: Prevent room_id changes (MVP restriction)
+    if (body.room_id !== undefined && body.room_id !== existing.room_id) {
+      return c.json({ error: 'Changing room_id is not allowed' }, 400);
+    }
+
+    // Validate visibility_scope (if somehow passed)
+    if (body.visibility_scope && !['private', 'room', 'quest', 'squad'].includes(body.visibility_scope)) {
+      return c.json({ error: 'Invalid visibility_scope' }, 400);
     }
 
     const updated = await repo.update(id, {
