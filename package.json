@@ -1,0 +1,62 @@
+{
+  "name": "webapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Secretary Scheduler PWA - Talk to manage your important relationships and schedules",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev apps/api/src/index.ts --local --d1=DB",
+    "dev:remote": "wrangler dev apps/api/src/index.ts",
+    "build": "tsc",
+    "deploy": "wrangler deploy",
+    "deploy:prod": "npm run build && wrangler deploy",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "db:migrate:local": "wrangler d1 migrations apply webapp-production --local",
+    "db:migrate:prod": "wrangler d1 migrations apply webapp-production",
+    "db:migrations:create": "wrangler d1 migrations create webapp-production",
+    "db:console:local": "wrangler d1 execute webapp-production --local",
+    "db:console:prod": "wrangler d1 execute webapp-production",
+    "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local",
+    "kv:create": "wrangler kv:namespace create RATE_LIMIT && wrangler kv:namespace create RATE_LIMIT --preview && wrangler kv:namespace create OTP_STORE && wrangler kv:namespace create OTP_STORE --preview",
+    "queue:create": "wrangler queues create email-queue && wrangler queues create email-dlq",
+    "r2:create": "wrangler r2 bucket create webapp-storage",
+    "setup:resources": "npm run kv:create && npm run queue:create && npm run r2:create",
+    "clean:port": "fuser -k 3000/tcp 2>/dev/null || true",
+    "start:pm2": "pm2 start ecosystem.config.cjs",
+    "logs:pm2": "pm2 logs --nostream",
+    "git:init": "git init && git add . && git commit -m 'Initial commit'",
+    "git:commit": "git add . && git commit -m",
+    "git:status": "git status",
+    "git:log": "git log --oneline"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.67.0",
+    "zod": "^3.24.1",
+    "uuid": "^11.0.3",
+    "nanoid": "^5.0.9",
+    "date-fns": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250106.0",
+    "wrangler": "^3.94.0",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2",
+    "@types/uuid": "^10.0.0",
+    "vitest": "^2.1.8",
+    "eslint": "^9.16.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "prettier": "^3.4.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

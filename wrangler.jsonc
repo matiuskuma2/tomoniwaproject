@@ -1,0 +1,122 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "webapp",
+  "main": "apps/api/src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  
+  // ============================================================
+  // D1 Database (SQLite)
+  // ============================================================
+  // IMPORTANT: Create production database first:
+  //   npx wrangler d1 create webapp-production
+  // Local development automatically uses local SQLite with --local flag
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "webapp-production",
+      "database_id": "YOUR_DATABASE_ID_HERE",  // Replace with actual ID from wrangler d1 create
+      "migrations_dir": "db/migrations"
+    }
+  ],
+
+  // ============================================================
+  // KV Namespaces (Key-Value Storage)
+  // ============================================================
+  // Used for: OTP codes, Rate limiting, Session management
+  // IMPORTANT: Create namespaces first:
+  //   npx wrangler kv:namespace create RATE_LIMIT
+  //   npx wrangler kv:namespace create RATE_LIMIT --preview
+  //   npx wrangler kv:namespace create OTP_STORE
+  //   npx wrangler kv:namespace create OTP_STORE --preview
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT",
+      "id": "YOUR_RATE_LIMIT_KV_ID",  // Replace with actual KV namespace ID
+      "preview_id": "YOUR_RATE_LIMIT_KV_PREVIEW_ID"
+    },
+    {
+      "binding": "OTP_STORE",
+      "id": "YOUR_OTP_STORE_KV_ID",  // Replace with actual KV namespace ID
+      "preview_id": "YOUR_OTP_STORE_KV_PREVIEW_ID"
+    }
+  ],
+
+  // ============================================================
+  // R2 Buckets (Object Storage)
+  // ============================================================
+  // Used for: Voice recordings, attachments, exports
+  // IMPORTANT: Create bucket first:
+  //   npx wrangler r2 bucket create webapp-storage
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "webapp-storage"
+    }
+  ],
+
+  // ============================================================
+  // Queues (Message Queues)
+  // ============================================================
+  // Used for: Email sending, background jobs
+  // IMPORTANT: Create queue first:
+  //   npx wrangler queues create email-queue
+  "queues": {
+    "producers": [
+      {
+        "binding": "EMAIL_QUEUE",
+        "queue": "email-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "email-queue",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "email-dlq"
+      }
+    ]
+  },
+
+  // ============================================================
+  // Environment Variables
+  // ============================================================
+  // Secrets should be set using: npx wrangler secret put SECRET_NAME
+  // For local development, use .dev.vars file
+  "vars": {
+    "ENVIRONMENT": "production",
+    "LOG_LEVEL": "info",
+    "CORS_ORIGINS": "*"
+  },
+
+  // ============================================================
+  // Triggers (Cron Jobs)
+  // ============================================================
+  "triggers": {
+    "crons": [
+      // Daily cleanup of expired data
+      "0 2 * * *",
+      // Hourly budget check
+      "0 * * * *"
+    ]
+  },
+
+  // ============================================================
+  // Analytics Engine
+  // ============================================================
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS"
+    }
+  ],
+
+  // ============================================================
+  // Development Settings
+  // ============================================================
+  "dev": {
+    "ip": "0.0.0.0",
+    "port": 3000,
+    "local_protocol": "http"
+  }
+}
