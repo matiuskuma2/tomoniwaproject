@@ -12,6 +12,7 @@ import type { Env } from '../../../packages/shared/src/types/env';
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import testRateLimitRoutes from './routes/testRateLimit';
+import otpRoutes from './routes/otp';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -54,6 +55,9 @@ app.route('/admin/ai', adminAiRoutes);
 
 // Test Rate Limit (DELETE AFTER TESTING - Ticket 04)
 app.route('/test/rate-limit', testRateLimitRoutes);
+
+// OTP Service (Ticket 05)
+app.route('/api/otp', otpRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
