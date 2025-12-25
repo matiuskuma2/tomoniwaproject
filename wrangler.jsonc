@@ -43,39 +43,39 @@
   ],
 
   // ============================================================
-  // R2 Buckets (Object Storage) - REQUIRES PAID PLAN
+  // R2 Buckets (Object Storage)
   // ============================================================
   // Used for: Voice recordings, attachments, exports
-  // Temporarily disabled - enable after upgrading to Workers Paid plan
-  // "r2_buckets": [
-  //   {
-  //     "binding": "STORAGE",
-  //     "bucket_name": "webapp-storage"
-  //   }
-  // ],
+  // Created: webapp-storage
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "webapp-storage"
+    }
+  ],
 
   // ============================================================
-  // Queues (Message Queues) - REQUIRES PAID PLAN
+  // Queues (Message Queues)
   // ============================================================
   // Used for: Email sending, background jobs
-  // Temporarily disabled - enable after upgrading to Workers Paid plan
-  // "queues": {
-  //   "producers": [
-  //     {
-  //       "binding": "EMAIL_QUEUE",
-  //       "queue": "email-queue"
-  //     }
-  //   ],
-  //   "consumers": [
-  //     {
-  //       "queue": "email-queue",
-  //       "max_batch_size": 10,
-  //       "max_batch_timeout": 30,
-  //       "max_retries": 3,
-  //       "dead_letter_queue": "email-dlq"
-  //     }
-  //   ]
-  // },
+  // Created: email-queue, email-dlq
+  "queues": {
+    "producers": [
+      {
+        "binding": "EMAIL_QUEUE",
+        "queue": "email-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "email-queue",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "email-dlq"
+      }
+    ]
+  },
 
   // ============================================================
   // Environment Variables
