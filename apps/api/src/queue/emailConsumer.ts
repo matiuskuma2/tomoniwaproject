@@ -417,7 +417,7 @@ async function sendViaResend(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'Tomoniva <onboarding@resend.dev>', // Resend default verified address
+      from: 'Tomoniwao <noreply@tomoniwao.jp>', // Verified domain
       to: [email.to],
       subject: email.subject,
       html: email.html,
