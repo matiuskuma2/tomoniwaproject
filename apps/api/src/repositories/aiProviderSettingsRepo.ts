@@ -5,7 +5,6 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import type { AIProviderSettings, AIProvider } from '../../../../packages/shared/src/types/ai';
-import { randomUUID } from 'crypto';
 
 export class AIProviderSettingsRepository {
   constructor(private db: D1Database) {}
@@ -75,7 +74,7 @@ export class AIProviderSettingsRepository {
     
     // Execute upserts in a batch
     const statements = items.map(item => {
-      const id = randomUUID();
+      const id = crypto.randomUUID();
       const featureRouting = JSON.stringify(item.feature_routing_json || {});
       
       return this.db

@@ -6,7 +6,6 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import type { AIProviderKey, AIProvider } from '../../../../packages/shared/src/types/ai';
-import { randomUUID } from 'crypto';
 
 export interface AIProviderKeyResponse {
   id: string;
@@ -90,7 +89,7 @@ export class AIProviderKeysRepository {
     apiKeyEnc: string,
     maskedPreview: string
   ): Promise<AIProviderKeyResponse> {
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const timestamp = Math.floor(Date.now() / 1000);
 
     await this.db
