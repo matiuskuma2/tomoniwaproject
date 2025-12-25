@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { IntentParserService } from '../services/intentParser';
 import { WorkItemsRepository } from '../repositories/workItemsRepository';
 import { rateLimitPresets } from '../middleware/rateLimit';
+import { getUserIdLegacy } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -26,8 +27,8 @@ app.post(
   async (c) => {
     const { env } = c;
 
-    // TODO: Get user_id from auth context
-    const userId = c.req.header('x-user-id') || 'test-user-id';
+    // Get user_id (dev: x-user-id, prod: Bearer token)
+    const userId = await getUserIdLegacy(c);
 
     try {
       const body = await c.req.json();

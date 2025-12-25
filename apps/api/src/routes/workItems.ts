@@ -6,6 +6,7 @@
 
 import { Hono } from 'hono';
 import { WorkItemsRepository } from '../repositories/workItemsRepository';
+import { getUserIdLegacy } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -28,8 +29,8 @@ app.get('/', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
   
   const scope = c.req.query('scope') || 'my';
   const roomId = c.req.query('room_id');
@@ -78,8 +79,8 @@ app.get('/:id', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
   const id = c.req.param('id');
 
   try {
@@ -124,8 +125,8 @@ app.post('/', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
 
   try {
     const body = await c.req.json();
@@ -193,8 +194,8 @@ app.patch('/:id', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
   const id = c.req.param('id');
 
   try {
@@ -258,8 +259,8 @@ app.post('/share-bulk', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
 
   try {
     const body = await c.req.json();
@@ -347,8 +348,8 @@ app.post('/:id/share', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
   const id = c.req.param('id');
 
   try {
@@ -416,8 +417,8 @@ app.delete('/:id', async (c) => {
   const { env } = c;
   const repo = new WorkItemsRepository(env.DB);
 
-  // TODO: Get user_id from auth context
-  const userId = c.req.header('x-user-id') || 'test-user-id';
+  // Get user_id (dev: x-user-id, prod: Bearer token)
+  const userId = await getUserIdLegacy(c);
   const id = c.req.param('id');
 
   try {
