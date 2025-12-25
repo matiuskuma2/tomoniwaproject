@@ -16,6 +16,7 @@ import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
 import threadsRoutes from './routes/threads';
+import inviteRoutes from './routes/invite';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -80,6 +81,9 @@ app.route('/api/voice', voiceRoutes);
 
 // Threads API (Ticket 10)
 app.route('/api/threads', threadsRoutes);
+
+// External Invite Routes (Ticket 10) - Top-level /i/:token
+app.route('/i', inviteRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
