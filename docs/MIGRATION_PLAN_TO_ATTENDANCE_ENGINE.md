@@ -1,261 +1,258 @@
-# Migration Plan to Attendance Engine
+# Migration Plan to Attendance Engine (確定版)
 
-## 0. ゴール
+（Attendance Rule Engine / 外部誘導UX / 参加条件式 対応のための差分計画）
 
-AttendanceRuleEngine（ALL/ANY/K-of-N/REQUIRED_PLUS_K/GROUP_ANY/EXPRESSION）を DB・API・判定ロジックで単一系統に統合し、以下が同じデータ構造で動く状態にする。
-
-- 外部日程調整（/i/:token）
-- 内部ユーザー同士（ルーム内/チャット）
-- お客さんリスト（ListMember）への一括募集（N対1）
-- 進捗確認・リマインド・確定
+本ドキュメントは、現在の「ともにわ」バックエンドを、確定仕様（参加条件式＝Attendance Rule Engine）へ揃えるための **DBマイグレーション計画（差分表）** を定義する。  
+目的は「今の実装を壊さずに、段階導入できる」こと。
 
 ---
 
-## 1. まず結論：採用する"正"の系統
+## 0. ゴール（確定）
 
-### 1.1 テーブル系統の正
+### 0.1 実現したいユーザー体験（確定）
 
-- **Thread本体**: `scheduling_threads` を正（既存の運用系）
-- **招待**: `thread_invites` を正（InviteeKey導入で拡張）
-- **参加**: `thread_participants` を正（確定参加者）
-- **通知**: `inbox` を正（`inbox_items` は過去資産）
+- チャット/音声で「条件」を話すだけで、日程調整が進む  
+  - 例：  
+    - ALL（全員）  
+    - ANY（誰か1人）  
+    - K_OF_N（K人以上）  
+    - REQUIRED_PLUS_QUORUM（必須+C&E+追加4人以上）  
+    - GROUP_ANY（A&B or C&D or E&F）
+- 外部の人（未登録者）には Spear/TimeRex 型の URL を送り「選ぶだけ」で完結（登録は後で誘導）
+- 進捗確認（status）・催促（remind）・確定（finalize）が API として成立
 
-### 1.2 新規に追加する最小セット（確定）
+### 0.2 DBの確定状態（確定）
 
-Attendance Engine に必要で、現状不足している中核は以下：
-
-- **`scheduling_slots`**（候補枠）
-- **`thread_selections`**（選択/辞退/未返信）
-- **`thread_finalize`**（確定結果）
-- **`thread_attendance_rules`**（AttendanceRule JSON保存）
-
-既存の `scheduling_candidates` が存在する場合は **互換テーブルとして残し**、新機能は `scheduling_slots` を正に寄せる（後で統合）。
-
----
-
-## 2. 差分表（現状 → 目標）
-
-| 領域 | 現状 | 目標（確定） | 対応 |
-|------|------|-------------|------|
-| Thread本体 | `scheduling_threads`（ある） | `scheduling_threads`（正）+ attendance_rule 参照 | `thread_attendance_rules`追加 |
-| 候補枠 | 実装/テーブルが不統一（候補が固定 or なし） | `scheduling_slots`（slot_id/start/end/tz/label） | 新規テーブル追加 |
-| 回答 | `thread_invites` の status で代用/acceptのみ | `thread_selections`（pending/selected/declined/expired） | 新規テーブル追加＋既存inviteと整合 |
-| 確定 | acceptで成立扱い（単純） | `thread_finalize`（final_slot_id, finalized_at, policy, final_participants） | 新規テーブル追加 |
-| 参加条件 | コードに散在/未定義 | AttendanceRule JSON（v1）で統一 | `thread_attendance_rules`保存＋判定エンジン |
-| Invitee識別 | user/email混在 | InviteeKey（u:/e:/lm:） | `thread_invites.invitee_key`追加 |
-| リスト（お客さん） | `lists`/`list_members` あり（想定） | `list_members`→InviteeKeyで招待 | `invitee_key=lm:...` |
-| inbox | `inbox` + `inbox_items`混在の履歴 | `inbox`が正 | `inbox_items`は参照停止（維持） |
-| auth | Cookie+Bearer | 同じ | 変更不要 |
-| API | `/api/threads` 作成・`/i/:token` | `/api/scheduling/*` or `/api/threads/*`でもOK | 互換維持しつつ拡張 |
+- 参加条件は JSON（`thread_attendance_rules.rule_json`）として保存
+- 候補枠は正規化された `scheduling_slots` に保存
+- 各招待者の回答は `thread_selections` に保存
+- 確定結果は `thread_finalize` に保存
+- 招待者の正規キーは `thread_invites.invitee_key` に保存（内部/外部/リストを統一）
 
 ---
 
-## 3. マイグレーション計画（段階・安全重視）
+## 1. 現状（As-Is）と課題
 
-### Phase A（破壊なし：拡張だけ）— 今すぐ入れる
+### 1.1 既存の主なテーブル（要点）
 
-#### A-1. `0032_add_invitee_key_to_thread_invites.sql`
+- `scheduling_threads`（スレッド本体。主催者＝`organizer_user_id`）
+- `scheduling_candidates`（候補。既存）
+- `thread_invites`（招待トークン。既存）
+- `thread_message_deliveries`（通知配信。既存）
+- `inbox`（通知。正式版）
+- `inbox_items`（旧。非推奨）
 
-- `thread_invites` に `invitee_key`（TEXT）追加
-- 既存データ：
-  - 内部ユーザー招待 → `u:<user_id>` へ補完
-  - 外部メール招待 → `e:<sha256_16(email)>` を後で埋める（backfill job）
+### 1.2 課題（Attendance Engineの観点）
 
-#### A-2. `0033_create_thread_attendance_rules.sql`
-
-- `thread_attendance_rules`
-  - `thread_id` (PK or UNIQUE)
-  - `version` INT
-  - `rule_json` TEXT
-  - `finalize_policy` TEXT
-  - `created_at`/`updated_at`
-
-#### A-3. `0034_create_scheduling_slots.sql`
-
-- `scheduling_slots`
-  - `slot_id` TEXT PK
-  - `thread_id` TEXT
-  - `start_at`/`end_at` TEXT(ISO)
-  - `timezone` TEXT
-  - `label` TEXT
-  - `created_at`
-  - Index: `(thread_id, start_at)`
-
-#### A-4. `0035_create_thread_selections.sql`
-
-- `thread_selections`
-  - `selection_id` TEXT PK
-  - `thread_id` TEXT
-  - `invite_id` TEXT（`thread_invites.id` 参照）
-  - `invitee_key` TEXT（冗長だが高速化）
-  - `status` TEXT CHECK(pending/selected/declined/expired)
-  - `selected_slot_id` TEXT（nullable）
-  - `responded_at` TEXT
-  - UNIQUE: `(thread_id, invitee_key)`（一人一回答）
-  - Index: `(thread_id, selected_slot_id)`, `(thread_id, status)`
-
-#### A-5. `0036_create_thread_finalize.sql`
-
-- `thread_finalize`
-  - `thread_id` TEXT PK
-  - `final_slot_id` TEXT
-  - `finalize_policy` TEXT
-  - `finalized_by` TEXT（user_id）
-  - `finalized_at` TEXT
-  - `final_participants_json` TEXT（InviteeKeyの配列 or participants表を正に）
-  - Index: `(finalized_at)`
-
-**このPhase Aが入ると、既存フローを壊さずに「ルール・候補・回答・確定」を保存できる。**
+- 候補枠が `scheduling_candidates` であるため「参加者回答」「成立判定」「確定結果」を正規化しにくい
+- 招待者の識別が email/内部ID/リスト等で統一されていない
+- 参加条件式（ALL/ANY/K_OF_N/…）をDBで保持できない
+- 確定結果のスナップショットがないため、再現性・監査が弱い
 
 ---
 
-### Phase B（整合：既存フローを"新表にも書く"）— 実装差分は小さい
+## 2. 方針（最重要：壊さず段階導入）
 
-#### B-1. `/api/threads` POST（作成）
+### Phase A（追加だけ）: 既存を壊さず **新テーブル/新列を追加**
 
-- `scheduling_threads` 作成後に
-  - `thread_attendance_rules` をデフォルトで作成
-    - stranger 1対N募集なら：ANY or K_OF_N
-    - チームなら：ALL or REQUIRED_PLUS_K
-  - `scheduling_slots` を作る（MVP：3候補、将来はAI生成）
-  - `thread_invites` 作成時に `invitee_key` を必ず埋める
+- 既存フローは動かしたまま
+- 新フロー（Attendance Engine）は新テーブルを参照・生成する
 
-#### B-2. `/i/:token` GET（表示）
+### Phase B（切替）: APIと内部処理を新テーブルへ寄せる
 
-- 表示対象は `thread_invites` で invite取得
-- 候補枠は `scheduling_slots` を表示
+- `/i/:token/respond` を `thread_selections` に書く
+- `status/remind/finalize` を新テーブルベースで確定
 
-#### B-3. `/i/:token/accept`（回答）
+### Phase C（整理）: 旧テーブルの非推奨化・リダイレクト
 
-- **これまで**: accept=参加確定に近い
-- **これから**: **acceptは"selected_slot_idを伴う selection"**にする
-  - POST body: `{ selected_slot_id }`（+declineも可）
-  - `thread_selections` upsert
-  - その後 `evaluate_and_finalize(thread_id)` を実行
-
-#### B-4. `evaluate_and_finalize(thread_id)`
-
-- `thread_attendance_rules.rule_json` を読み込み
-- 各slotの acceptedInvitees を計算
-- policyに従い確定できるなら `thread_finalize` 作成/更新
-- 確定時：
-  - `thread_participants` を確定参加者で upsert
-  - `inbox` へ通知（主催者/参加者）
-  - 未返信にはリマインド対象として残す
+- `scheduling_candidates` を非推奨（読み取り残しは許容）
+- `inbox_items` は非推奨マーカー（構造変更なし）
 
 ---
 
-### Phase C（互換削減：旧構造の参照を減らす）— 落ち着いてから
+## 3. 差分表（マイグレーション計画）
 
-#### C-1. `thread_invites.status` の意味を整理
+> ここでの「差分表」は **"確定仕様へ揃えるための変更点"** を一覧化したもの。
 
-- `status` は招待の状態（sent/expiredなど）
-- 参加可否は `thread_selections.status` を正にする
+### 3.1 Phase A（追加だけ）— 0032〜0038（確定）
 
-#### C-2. `scheduling_candidates` がある場合
+| No | Migration | 目的 | 影響範囲 | 互換性 |
+|---:|---|---|---|---|
+| 0032 | `0032_add_invitee_key_to_thread_invites.sql` | 招待者IDを統一する `invitee_key` を追加 | `thread_invites` | 既存OK（NULL許容） |
+| 0033 | `0033_create_thread_attendance_rules.sql` | 参加条件ルール(JSON)を保存 | 新テーブル追加 | 既存OK |
+| 0034 | `0034_create_scheduling_slots.sql` | 候補枠を正規化 | 新テーブル追加 | 既存OK |
+| 0035 | `0035_create_thread_selections.sql` | 招待者の回答（選択/辞退/保留）を保存 | 新テーブル追加 | 既存OK |
+| 0036 | `0036_create_thread_finalize.sql` | 確定結果と参加者スナップショットを保存 | 新テーブル追加 | 既存OK |
+| 0037 | `0037_backfill_invitee_keys.sql` | 既存 `thread_invites` に `invitee_key` を埋める | 既存データ更新 | 安全（NULLのみ更新） |
+| 0038 | `0038_backfill_default_attendance_rules.sql` | 既存 thread にデフォルトルール作成 | 既存データ追加 | 安全（未作成のみ） |
 
-- `scheduling_slots` へ移行 or viewで統合
-- 新規は slots のみ
+### 3.2 Phase B（切替）— 追加マイグレーション（必要なら）
 
-#### C-3. `inbox_items`
+Phase Bは基本「API実装・ロジック切替」が中心で、DB変更は最小が望ましい。  
+ただし運用上必要になる可能性が高いものは以下。
 
-- 参照ゼロを確認後、将来的にdrop（今はdrop不要）
+| No | Migration案 | 目的 | 必須度 |
+|---:|---|---|---|
+| 0039 | `0039_add_indexes_for_eval.sql` | 評価エンジン高速化（slot/selection集計） | 中 |
+| 0040 | `0040_add_thread_finalize_lock.sql` | 二重確定防止（ユニーク/状態制約） | 中 |
+| 0041 | `0041_add_remind_log.sql` | 催促履歴（スパム対策/監査） | 低〜中 |
 
----
+※ まずは 0032〜0038 で十分にPhase Bへ移行可能、というのが確定方針。
 
-## 4. API差分（確定）
+### 3.3 Phase C（整理）— 非推奨マーカー（確定）
 
-### 4.1 新規/拡張：外部回答
-
-- **GET `/i/:token`**
-  - slots表示
-- **POST `/i/:token/respond`**
-  - `{ status: "selected", selected_slot_id }` または `{ status: "declined" }`
-  - ※現行 `/accept` は互換で残してOK（内部で `/respond` に委譲）
-
-### 4.2 進捗確認（チャット向け）
-
-- **GET `/api/threads/:id/status`**
-  - 返信数、未返信、slot別の成立状況、成立見込み
-- **POST `/api/threads/:id/remind`**
-  - 未返信にリマインド（queueでメール）
-
-### 4.3 参加条件変更（MVPは管理者のみ）
-
-- **PATCH `/api/threads/:id/rule`**
-  - `rule_json` 更新
-  - 再評価（`evaluate_and_finalize`）
+| No | Migration | 目的 | 備考 |
+|---:|---|---|---|
+| 0030 | `0030_deprecate_inbox_items.sql` | `inbox_items` 非推奨マーカー | 構造変更なし（ドキュメント用） |
+| 00xx | `deprecate_scheduling_candidates.sql`（将来） | `scheduling_candidates` 非推奨 | 破壊的変更はしない |
 
 ---
 
-## 5. "お客さん（リスト）"との接続（確定）
+## 4. DBスキーマ（確定：最小要件）
 
-### 5.1 ListMember → InviteeKey
+### 4.1 thread_attendance_rules（確定）
 
-- `list_members` を招待する場合：
-  - `invitee_key = "lm:<list_member_id>"`
-  - `candidate_email`/`name` は `list_member` からコピー
-  - 外部リンク `/i/:token` を送る
+- `thread_id`（PK）
+- `rule_json`（AttendanceRule JSON）
+- `finalize_policy`（EARLIEST_VALID/BEST_SCORE/MANUAL）
+- `created_at/updated_at`
 
-### 5.2 N対1募集の作り方（確定）
+### 4.2 scheduling_slots（確定）
 
-- AttendanceRule:
-  - `K_OF_N` / `REQUIRED_PLUS_K` / `GROUP_ANY` を使う
-  - 例：
-    - **「10人中5人OKなら開催」** → `K_OF_N(k=5,set=teamA)`
-    - **「CとE必須＋追加4人」** → `REQUIRED_PLUS_K`
+- `id`（PK）
+- `thread_id`
+- `start_at/end_at`
+- `label`（任意）
+- `score_hint`（任意：最終評価の補助）
+- index: `(thread_id, start_at)`
 
----
+### 4.3 thread_selections（確定）
 
-## 6. リスクと注意点（直した方がいい点）
+- `id`（PK）
+- `thread_id`
+- `invite_id`
+- `invitee_key`
+- `status`（pending/selected/declined/expired）
+- `selected_slot_id`（selectedのみ）
+- `created_at`
+- index: `(thread_id, invitee_key, created_at)`, `(thread_id, selected_slot_id)`
 
-### 6.1 "threads vs scheduling_threads"混在
+### 4.4 thread_finalize（確定）
 
-- **正は `scheduling_threads`**
-- `threadsRepository` を残すなら `scheduling_threads` wrapperに変更
-  （中途半端に両方触るのが一番事故る）
+- `thread_id`（PK）
+- `final_slot_id`
+- `finalize_policy`
+- `final_participants_json`（確定時の参加者スナップショット）
+- `finalized_at`
 
-### 6.2 認証テスト用 user-alice/user-bob の残骸
+### 4.5 thread_invites.invitee_key（確定）
 
-- 本番データにテストユーザーを混ぜない運用に寄せる
-- `ENVIRONMENT=production` で `x-user-id` が使えないなら、E2Eは
-  - OAuthで2アカウントログイン
-  - Rooms招待でbobをメンバー化
-  - で通す（DB直insertは最終手段）
-
-### 6.3 コスト面（Gemini優先）
-
-- `candidate_generation` は Geminiのみが基本（fallback禁止）
-- fallbackは adminが明示ONにしたときだけ
-- `ai_usage_logs` を admin dashboard で集計→日次上限で抑止
-
----
-
-## 7. 次に実装する"判定エンジン"の置き場所（確定）
-
-**`apps/api/src/services/attendanceEngine.ts`**
-
-- `evaluateRule(rule_json, selections, sets)`
-- `suggestBestSlot(policy, slots, selections)`
-- `finalizeThread(thread_id)`（D1 write）
+- `invitee_key`（NULL許容→バックフィル後は基本埋まる）
+- （将来）`UNIQUE(thread_id, invitee_key)`を強める
 
 ---
 
-## 8. 実装順（最短・安全）
+## 5. バックフィル方針（確定）
 
-1. **Phase A のマイグレーション**（0032〜0036）
-2. `/i/:token` を slots表示に変更
-3. `/respond` を追加し selections に書く
-4. finalize（policy: EARLIEST_VALID）を入れる
-5. チャット用 status/remind を追加
-6. リスト招待（lm:）導入（N対1募集）
+### 5.1 invitee_key バックフィル（0037）
+
+- 現時点は DBのみで完結できる形として  
+  `invitee_key = e:<lower(email)>` を採用（暫定）
+- 将来、アプリ側バッチで `e:<sha256_16(email)>` に変換（推奨最終形）
+
+### 5.2 デフォルト attendance_rule（0038）
+
+- 既存 thread に対し `ANY` のデフォルトルールを付与（安全側）
+- ただし将来は「thread作成時に intent から作る」が本命
 
 ---
 
-## 9. "いまやるべきか？"結論
+## 6. API/ロジック切替の順序（確定）
 
-**今やるべきです。**
+### Step B-1: 生成
 
-**理由**: フロントやチャットUXを作り込むほど、後でDB統合が痛くなるため。
+- `POST /api/threads` 実行時に
+  - `thread_attendance_rules` 作成
+  - `scheduling_slots` 作成
+  - `thread_invites.invitee_key` 付与
+  - `thread_selections` は未作成（pending扱い）
 
-**Phase A（追加だけ）まで入れておけば、後は実装を上に積むだけで済みます。**
+### Step B-2: 外部回答
+
+- `POST /i/:token/respond`
+  - `thread_selections` に insert（選択 or 辞退）
+  - `AttendanceEngine.evaluate(thread_id)` を呼ぶ
+  - `auto_finalize` なら `thread_finalize` 作成
+
+### Step B-3: 主催者の確認
+
+- `GET /api/threads/:id/status`
+  - `AttendanceEngine` の結果を返す
+  - pending/required_missing を返す
+
+### Step B-4: 催促
+
+- `POST /api/threads/:id/remind`
+  - `status` から抽出した pending/required_missing に送信
+  - 送信ログ（将来: 0041）
+
+### Step B-5: 確定
+
+- `POST /api/threads/:id/finalize`
+  - manual finalize を許可（final_slot_id 指定）
+  - `thread_finalize` を作成（idempotent）
+
+---
+
+## 7. 参加条件式（確定：どこまで保証？）
+
+このPhase Aの段階で「DBは受け皿として整い、判定エンジン骨格は追加済み」。  
+Phase Bで `respond/status/remind/finalize` に繋げることで、以下の柔軟性が保証される。
+
+- ALL / ANY / K_OF_N / REQUIRED_PLUS_QUORUM / GROUP_ANY  
+- 必須参加者 + 任意クオラム
+- 「どのslotで成立するか」もslot単位で評価
+- 「確定時に確定参加者を自動決定/主催者選択」  
+  - `finalize_policy` により自動/手動の両対応
+
+---
+
+## 8. 顧客リスト（顧客=invitee）の扱い（確定）
+
+- 顧客リストは将来 `list_members`（既存）を invitee として扱う想定  
+- `invitee_key = lm:<list_member_id>` を追加すれば Attendance Engine 側は同一ロジックで扱える
+- これにより「500人リストから ANY/K_OF_N で成立」などが可能になる
+
+---
+
+## 9. スケーラビリティ/コスト（確定観点）
+
+### 9.1 評価エンジンのクエリ負荷
+
+- `thread_selections` の集計が中心
+- index を入れれば O(invitees + selections) で評価可能
+- 大規模（数十万人）想定では「スレッド単位で局所化される」ため現実的
+
+### 9.2 AIコスト
+
+- Attendance Engine自体はAI不要
+- AIは「候補生成」「文面生成」「意図解析」に限定
+- Free tier は Gemini-only（fallback禁止）が安全（既に実装方針あり）
+
+---
+
+## 10. PWA → ネイティブアプリへの準備（確定）
+
+- 認証は `POST /auth/token` により Bearer を渡せる形が最重要（ネイティブに向く）
+- Scheduling/Invite は URL（/i/:token）があり、ネイティブDeepLinkにも転用可能
+- フロントは Pages 分離が正解（Workers APIは維持）
+
+---
+
+## 11. まとめ（この計画で何が担保されるか）
+
+- DBを壊さず追加で「参加条件式」を表現できる受け皿ができる（Phase A）
+- 次のPhase Bで「外部誘導UX + 参加条件判定 + 催促 + 確定」まで繋がる
+- 以降はフロント/ネイティブ/運用UIを積み上げるだけになる
+
+**以上が、確定仕様へ揃えるためのマイグレーション計画（差分表）確定版。**
