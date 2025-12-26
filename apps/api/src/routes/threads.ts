@@ -181,15 +181,16 @@ app.post(
         return c.json({ error: 'Missing or invalid field: title' }, 400);
       }
 
-      // Step 1: Create thread
-      const threadsRepo = new ThreadsRepository(env.DB);
-      const thread = await threadsRepo.create({
-        user_id: userId,
-        title,
-        description,
-      });
+      // Step 1: Create thread in scheduling_threads (Phase B: correct table)
+      const threadId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      
+      await env.DB.prepare(`
+        INSERT INTO scheduling_threads (id, organizer_user_id, title, description, status, mode, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'active', 'one_on_one', ?, ?)
+      `).bind(threadId, userId, title, description || null, now, now).run();
 
-      console.log('[Threads] Created thread:', thread.id);
+      console.log('[Threads] Created thread in scheduling_threads:', threadId);
 
       // Step 1.5: Create default attendance rule (ALL type)
       const defaultRule = {
@@ -207,21 +208,21 @@ app.post(
       await env.DB.prepare(`
         INSERT INTO thread_attendance_rules (thread_id, rule_json)
         VALUES (?, ?)
-      `).bind(thread.id, JSON.stringify(defaultRule)).run();
+      `).bind(threadId, JSON.stringify(defaultRule)).run();
 
       console.log('[Threads] Created default attendance rule');
 
       // Step 1.6: Create default scheduling slots (3 slots: tomorrow, day after, 3 days from now)
-      const now = new Date();
-      const tomorrow = new Date(now);
+      const slotBaseTime = new Date();
+      const tomorrow = new Date(slotBaseTime);
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(14, 0, 0, 0); // 2 PM
 
-      const dayAfter = new Date(now);
+      const dayAfter = new Date(slotBaseTime);
       dayAfter.setDate(dayAfter.getDate() + 2);
       dayAfter.setHours(14, 0, 0, 0);
 
-      const threeDays = new Date(now);
+      const threeDays = new Date(slotBaseTime);
       threeDays.setDate(threeDays.getDate() + 3);
       threeDays.setHours(14, 0, 0, 0);
 
@@ -232,14 +233,16 @@ app.post(
       ];
 
       for (const slot of slots) {
+        const slotId = crypto.randomUUID();
         await env.DB.prepare(`
-          INSERT INTO scheduling_slots (thread_id, start_time, end_time, timezone)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone)
+          VALUES (?, ?, ?, ?, ?)
         `).bind(
-          thread.id,
+          slotId,
+          threadId,
           slot.start.toISOString(),
           slot.end.toISOString(),
-          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+          Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'
         ).run();
       }
 
@@ -261,11 +264,12 @@ app.post(
 
       console.log('[Threads] Generated candidates:', candidates.length);
 
-      // Step 3: Create invites for each candidate
+      // Step 3: Create invites for each candidate (with invitee_key)
+      const threadsRepo = new ThreadsRepository(env.DB);
       const invites = await Promise.all(
         candidates.map((candidate) =>
           threadsRepo.createInvite({
-            thread_id: thread.id,
+            thread_id: threadId,
             email: candidate.email,
             candidate_name: candidate.name,
             candidate_reason: candidate.reason,
@@ -299,7 +303,14 @@ app.post(
       }
 
       return c.json({
-        thread,
+        thread: {
+          id: threadId,
+          title,
+          description,
+          organizer_user_id: userId,
+          status: 'active',
+          created_at: now
+        },
         candidates: candidates.map((candidate, i) => ({
           ...candidate,
           invite_token: invites[i].token,
