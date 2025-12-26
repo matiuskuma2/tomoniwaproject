@@ -7,7 +7,7 @@
 
 export interface EmailJobBase {
   job_id: string;
-  type: 'otp' | 'invite' | 'broadcast' | 'thread_message';
+  type: 'otp' | 'invite' | 'broadcast' | 'thread_message' | 'reminder' | 'finalized';
   to: string;
   subject: string;
   created_at: number;
@@ -50,7 +50,33 @@ export interface ThreadMessageEmailJob extends EmailJobBase {
   };
 }
 
-export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob;
+export interface ReminderEmailJob extends EmailJobBase {
+  type: 'reminder';
+  data: {
+    token: string;
+    invite_url: string;
+    thread_title: string;
+    inviter_name: string;
+    custom_message?: string | null;
+    expires_at: string;
+  };
+}
+
+export interface FinalizedEmailJob extends EmailJobBase {
+  type: 'finalized';
+  data: {
+    thread_title: string;
+    selected_slot: {
+      start_at: string;
+      end_at: string;
+      timezone: string;
+      label?: string | null;
+    };
+    participants_count: number;
+  };
+}
+
+export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob | ReminderEmailJob | FinalizedEmailJob;
 
 export class EmailQueueService {
   constructor(

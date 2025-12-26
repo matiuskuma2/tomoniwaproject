@@ -18,6 +18,9 @@ import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
 import threadsRoutes from './routes/threads';
+import threadsStatusRoutes from './routes/threadsStatus';
+import threadsRemindRoutes from './routes/threadsRemind';
+import threadsFinalizeRoutes from './routes/threadsFinalize';
 import inviteRoutes from './routes/invite';
 import inboxRoutes from './routes/inbox';
 import roomsRoutes from './routes/rooms';
@@ -105,17 +108,14 @@ app.route('/api/work-items', workItemsRoutes);
 app.use('/api/voice/*', requireAuth);
 app.route('/api/voice', voiceRoutes);
 
-// Threads API (Ticket 10)
+// Threads API (Ticket 10 + Phase B)
 app.use('/api/threads/*', requireAuth);
 app.route('/api/threads', threadsRoutes);
 
-// Scheduling API (Phase B: Attendance Engine Integration)
-// Note: /i/:token/* endpoints are public (no auth required)
-app.use('/api/threads/:id/status', requireAuth);
-app.use('/api/threads/:id/remind', requireAuth);
-app.use('/api/threads/:id/finalize', requireAuth);
-app.use('/api/threads/:id/rule', requireAuth);
-app.route('/api/threads', schedulingApiRoutes);
+// Phase B: Attendance Engine Integration APIs
+app.route('/api/threads', threadsStatusRoutes);
+app.route('/api/threads', threadsRemindRoutes);
+app.route('/api/threads', threadsFinalizeRoutes);
 
 // Inbox API (User notifications)
 app.use('/api/inbox/*', requireAuth);
