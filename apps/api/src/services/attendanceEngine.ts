@@ -69,6 +69,20 @@ export interface FinalizeResult {
   final_participants: string[]; // InviteeKey array
 }
 
+export interface AttendanceEvalResult {
+  rule_version: number;
+  finalize_policy: FinalizePolicy;
+  auto_finalize: boolean;
+  is_satisfied: boolean;
+  best_slot_id: string | null;
+  slot_scores: Array<{
+    slot_id: string;
+    accepted_count: number;
+    required_missing: string[];
+  }>;
+  final_participants?: string[];
+}
+
 // ============================================================
 // Attendance Engine Service
 // ============================================================
@@ -386,10 +400,17 @@ export class AttendanceEngine {
    */
   private async loadSlots(threadId: string): Promise<ThreadSlot[]> {
     const results = await this.db.prepare(`
-      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_at ASC
-    `).bind(threadId).all<ThreadSlot>();
+      SELECT slot_id, thread_id, start_at, end_at, timezone, label FROM scheduling_slots WHERE thread_id = ? ORDER BY start_at ASC
+    `).bind(threadId).all();
 
-    return results.results || [];
+    return (results.results || []).map((row: any) => ({
+      slot_id: row.slot_id,
+      thread_id: row.thread_id,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      timezone: row.timezone,
+      label: row.label,
+    }));
   }
 
   /**
@@ -401,6 +422,60 @@ export class AttendanceEngine {
     `).bind(threadId).all<ThreadSelection>();
 
     return results.results || [];
+  }
+
+  /**
+   * Evaluate thread (Phase B integration)
+   * Returns complete evaluation result including auto_finalize decision
+   */
+  async evaluateThread(threadId: string): Promise<AttendanceEvalResult> {
+    // 1. Load rule
+    const rule = await this.loadRule(threadId);
+    
+    // 2. Load slots
+    const slots = await this.loadSlots(threadId);
+    
+    // 3. Load selections
+    const selections = await this.loadSelections(threadId);
+    
+    // 4. Evaluate rule
+    const result = await this.evaluateRule(rule, selections, slots);
+    
+    // 5. Build slot scores
+    const slotScores: Array<{
+      slot_id: string;
+      accepted_count: number;
+      required_missing: string[];
+    }> = [];
+    
+    for (const slot of slots) {
+      const slotSelections = selections.filter(
+        s => s.status === 'selected' && s.selected_slot_id === slot.slot_id
+      );
+      const acceptedKeys = slotSelections.map(s => s.invitee_key);
+      const requiredKeys = rule.required || rule.participants || [];
+      const missingRequired = requiredKeys.filter(k => !acceptedKeys.includes(k));
+      
+      slotScores.push({
+        slot_id: slot.slot_id,
+        accepted_count: acceptedKeys.length,
+        required_missing: missingRequired,
+      });
+    }
+    
+    // 6. Determine finalize policy from rule (or default)
+    const finalizePolicy: FinalizePolicy = 'EARLIEST_VALID'; // Default for MVP
+    const autoFinalize = result.finalized; // If rule is satisfied, auto-finalize
+    
+    return {
+      rule_version: rule.version,
+      finalize_policy: finalizePolicy,
+      auto_finalize: autoFinalize,
+      is_satisfied: result.finalized,
+      best_slot_id: result.final_slot_id || null,
+      slot_scores: slotScores,
+      final_participants: result.final_participants,
+    };
   }
 }
 

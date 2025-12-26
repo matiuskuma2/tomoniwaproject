@@ -236,117 +236,192 @@ app.get('/:token', async (c) => {
 });
 
 /**
- * POST /:token/respond - New Phase B API for slot selection
+ * POST /:token/respond - Phase B API for RSVP with Attendance Engine
  * 
  * @route POST /:token/respond
- * @body { status: 'selected' | 'declined', selected_slot_id?: string }
+ * @body { status: 'selected' | 'declined', selected_slot_id?: string, timezone?: string, comment?: string }
  */
 app.post('/:token/respond', async (c) => {
   const { env } = c;
   const token = c.req.param('token');
 
+  let body: any;
   try {
-    const body = await c.req.json();
-    const { status, selected_slot_id } = body;
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'Invalid JSON body' }, 400);
+  }
 
-    if (!status || !['selected', 'declined'].includes(status)) {
-      return c.json({ error: 'Invalid status. Must be "selected" or "declined"' }, 400);
+  // 1) Invite取得
+  const invite = await env.DB.prepare(`
+    SELECT id, thread_id, email, invitee_key, status, expires_at
+    FROM thread_invites
+    WHERE token = ?
+    LIMIT 1
+  `).bind(token).first<{
+    id: string;
+    thread_id: string;
+    email: string;
+    invitee_key: string | null;
+    status: string | null;
+    expires_at: string | null;
+  }>();
+
+  if (!invite) {
+    return c.json({ ok: false, error: 'INVITE_NOT_FOUND' }, 404);
+  }
+
+  // 期限切れチェック
+  if (invite.expires_at) {
+    const exp = Date.parse(invite.expires_at);
+    if (!Number.isNaN(exp) && exp < Date.now()) {
+      return c.json({ ok: false, error: 'INVITE_EXPIRED' }, 410);
+    }
+  }
+
+  // 2) Finalize済みチェック（二重確定防止）
+  const alreadyFinalized = await env.DB.prepare(`
+    SELECT 1 FROM thread_finalize WHERE thread_id = ? LIMIT 1
+  `).bind(invite.thread_id).first();
+  
+  if (alreadyFinalized) {
+    return c.json({ ok: false, error: 'THREAD_ALREADY_FINALIZED' }, 409);
+  }
+
+  // 3) invitee_key確保（暫定：e:<lower(email)>）
+  let inviteeKey = invite.invitee_key;
+  if (!inviteeKey) {
+    inviteeKey = `e:${(invite.email || '').toLowerCase()}`;
+    await env.DB.prepare(`
+      UPDATE thread_invites SET invitee_key = ? WHERE id = ? AND invitee_key IS NULL
+    `).bind(inviteeKey, invite.id).run();
+  }
+
+  // 4) 入力バリデーション
+  if (body.status === 'selected') {
+    if (!body.selected_slot_id) {
+      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'selected_slot_id required' }, 400);
     }
 
-    if (status === 'selected' && !selected_slot_id) {
-      return c.json({ error: 'selected_slot_id is required when status is "selected"' }, 400);
+    // Slot存在確認
+    const slot = await env.DB.prepare(`
+      SELECT 1 FROM scheduling_slots WHERE id = ? AND thread_id = ? LIMIT 1
+    `).bind(body.selected_slot_id, invite.thread_id).first();
+    
+    if (!slot) {
+      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'slot not found for thread' }, 400);
     }
-
-    // Get invite
-    const threadsRepo = new ThreadsRepository(env.DB);
-    const invite = await threadsRepo.getInviteByToken(token);
-
-    if (!invite) {
-      return c.json({ error: 'Invite not found' }, 404);
+  } else if (body.status === 'declined') {
+    if (body.selected_slot_id !== undefined) {
+      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'selected_slot_id must be omitted for declined' }, 400);
     }
+  } else {
+    return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'status must be selected or declined' }, 400);
+  }
 
-    if (invite.status !== 'pending') {
-      return c.json({ error: `Invite already ${invite.status}` }, 400);
-    }
+  // 5) thread_selections upsert
+  const selectionId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
 
-    if (new Date(invite.expires_at) < new Date()) {
-      return c.json({ error: 'Invite expired' }, 400);
-    }
+  await env.DB.prepare(`
+    INSERT INTO thread_selections
+      (id, thread_id, invite_id, invitee_key, status, selected_slot_id, responded_at, created_at)
+    VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(thread_id, invitee_key) DO UPDATE SET
+      invite_id        = excluded.invite_id,
+      status           = excluded.status,
+      selected_slot_id = excluded.selected_slot_id,
+      responded_at     = excluded.responded_at
+  `).bind(
+    selectionId,
+    invite.thread_id,
+    invite.id,
+    inviteeKey,
+    body.status,
+    body.status === 'selected' ? body.selected_slot_id : null,
+    nowIso,
+    nowIso
+  ).run();
 
-    // Get thread
+  // Update invite status (backward compatibility)
+  await env.DB.prepare(`
+    UPDATE thread_invites 
+    SET status = ?, accepted_at = ?
+    WHERE id = ?
+  `).bind(body.status === 'selected' ? 'accepted' : 'declined', nowIso, invite.id).run();
+
+  // 6) AttendanceEngine評価
+  const { AttendanceEngine } = await import('../services/attendanceEngine');
+  const engine = new AttendanceEngine(env.DB);
+  
+  const evaluation = await engine.evaluateThread(invite.thread_id);
+
+  // 7) Auto finalize
+  let didFinalize = false;
+  let finalSlotId: string | null = null;
+
+  if (evaluation?.auto_finalize === true && evaluation?.is_satisfied === true && evaluation?.best_slot_id) {
+    finalSlotId = evaluation.best_slot_id;
+
+    // Idempotent finalize
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO thread_finalize
+        (thread_id, final_slot_id, finalize_policy, finalized_by, finalized_at, final_participants_json)
+      VALUES
+        (?, ?, ?, ?, ?, ?)
+    `).bind(
+      invite.thread_id,
+      finalSlotId,
+      evaluation.finalize_policy || 'EARLIEST_VALID',
+      'system',
+      nowIso,
+      JSON.stringify(evaluation.final_participants || [])
+    ).run();
+
+    // Update thread status
+    await env.DB.prepare(`
+      UPDATE scheduling_threads SET status = 'finalized' WHERE id = ?
+    `).bind(invite.thread_id).run();
+
+    didFinalize = true;
+
+    // Notify thread owner
     const thread = await env.DB.prepare(`
       SELECT * FROM scheduling_threads WHERE id = ?
     `).bind(invite.thread_id).first<any>();
 
-    if (!thread) {
-      return c.json({ error: 'Thread not found' }, 404);
+    if (thread) {
+      const inboxRepo = new InboxRepository(env.DB);
+      await inboxRepo.create({
+        user_id: thread.host_user_id || thread.organizer_user_id,
+        type: 'scheduling_finalized',
+        title: `Thread "${thread.title}" has been finalized!`,
+        message: `The scheduling thread has been automatically finalized with ${evaluation.final_participants?.length || 0} participants.`,
+        action_type: 'view_thread',
+        action_target_id: thread.id,
+        action_url: `/threads/${thread.id}`,
+        priority: 'high',
+      });
     }
-
-    // Insert or update thread_selections
-    if (status === 'selected' && selected_slot_id) {
-      // Verify slot exists
-      const slot = await env.DB.prepare(`
-        SELECT * FROM scheduling_slots WHERE id = ? AND thread_id = ?
-      `).bind(selected_slot_id, thread.id).first<any>();
-
-      if (!slot) {
-        return c.json({ error: 'Invalid slot_id' }, 400);
-      }
-
-      // Insert selection
-      await env.DB.prepare(`
-        INSERT OR REPLACE INTO thread_selections 
-        (thread_id, invitee_key, slot_id, status, responded_at)
-        VALUES (?, ?, ?, 'selected', datetime('now'))
-      `).bind(thread.id, invite.invitee_key, selected_slot_id).run();
-
-      console.log(`[Invite] Selection recorded: invitee=${invite.invitee_key}, slot=${selected_slot_id}`);
-    } else if (status === 'declined') {
-      // Record decline (no slot selected)
-      await env.DB.prepare(`
-        INSERT OR REPLACE INTO thread_selections 
-        (thread_id, invitee_key, slot_id, status, responded_at)
-        VALUES (?, ?, NULL, 'declined', datetime('now'))
-      `).bind(thread.id, invite.invitee_key).run();
-
-      console.log(`[Invite] Decline recorded: invitee=${invite.invitee_key}`);
-    }
-
-    // Update invite status (backward compatibility)
-    await env.DB.prepare(`
-      UPDATE thread_invites 
-      SET status = ?, accepted_at = datetime('now')
-      WHERE token = ?
-    `).bind(status === 'selected' ? 'accepted' : 'declined', token).run();
-
-    // Notify thread owner
-    const inboxRepo = new InboxRepository(env.DB);
-    await inboxRepo.create({
-      user_id: thread.organizer_user_id,
-      type: 'scheduling_invite',
-      title: `${invite.candidate_name} ${status === 'selected' ? 'selected a time slot' : 'declined'}`,
-      message: `${invite.candidate_name} has ${status === 'selected' ? 'selected a time slot' : 'declined the invitation'} for "${thread.title}"`,
-      action_type: 'view_thread',
-      action_target_id: thread.id,
-      action_url: `/threads/${thread.id}`,
-      priority: 'high',
-    });
-
-    return c.json({
-      success: true,
-      message: status === 'selected' ? 'Slot selection recorded' : 'Decline recorded',
-      thread: {
-        id: thread.id,
-        title: thread.title,
-      },
-    });
-  } catch (error) {
-    console.error('[Invite] Error in /respond:', error);
-    return c.json({
-      error: 'Failed to process response',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, 500);
   }
+
+  return c.json({
+    ok: true,
+    thread_id: invite.thread_id,
+    invite_id: invite.id,
+    invitee_key: inviteeKey,
+    selection: {
+      status: body.status,
+      selected_slot_id: body.status === 'selected' ? body.selected_slot_id : null,
+      responded_at: nowIso,
+    },
+    evaluation,
+    finalize: {
+      did_finalize: didFinalize,
+      final_slot_id: finalSlotId,
+    },
+  });
 });
 
 /**
