@@ -19,6 +19,141 @@ import type { EmailJob } from '../services/emailQueue';
 const app = new Hono<{ Bindings: Env }>();
 
 /**
+ * Get user's threads
+ * 
+ * @route GET /threads
+ * @query status?: 'draft' | 'sent' | 'confirmed' | 'cancelled'
+ * @query limit?: number (default: 50)
+ * @query offset?: number (default: 0)
+ */
+app.get('/', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdLegacy(c as any);
+
+  try {
+    const status = c.req.query('status');
+    const limit = parseInt(c.req.query('limit') || '50', 10);
+    const offset = parseInt(c.req.query('offset') || '0', 10);
+
+    const threadsRepo = new ThreadsRepository(env.DB);
+    
+    // Get threads for user
+    let query = `
+      SELECT 
+        t.id,
+        t.organizer_user_id,
+        t.title,
+        t.description,
+        t.status,
+        t.mode,
+        t.created_at,
+        t.updated_at,
+        COUNT(DISTINCT ti.id) as invite_count,
+        COUNT(DISTINCT CASE WHEN ti.status = 'accepted' THEN ti.id END) as accepted_count
+      FROM scheduling_threads t
+      LEFT JOIN thread_invites ti ON ti.thread_id = t.id
+      WHERE t.organizer_user_id = ?
+    `;
+    
+    const params: any[] = [userId];
+    
+    if (status) {
+      query += ` AND t.status = ?`;
+      params.push(status);
+    }
+    
+    query += ` 
+      GROUP BY t.id
+      ORDER BY t.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    params.push(limit, offset);
+
+    const { results } = await env.DB.prepare(query).bind(...params).all();
+
+    // Get total count
+    let countQuery = `
+      SELECT COUNT(*) as total
+      FROM scheduling_threads
+      WHERE organizer_user_id = ?
+    `;
+    const countParams: any[] = [userId];
+    
+    if (status) {
+      countQuery += ` AND status = ?`;
+      countParams.push(status);
+    }
+
+    const countResult = await env.DB.prepare(countQuery).bind(...countParams).first<{ total: number }>();
+    const total = countResult?.total || 0;
+
+    return c.json({
+      threads: results,
+      pagination: {
+        total,
+        limit,
+        offset,
+        has_more: offset + limit < total,
+      },
+    });
+  } catch (error) {
+    console.error('[Threads] List error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * Get thread details
+ * 
+ * @route GET /threads/:id
+ */
+app.get('/:id', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdLegacy(c as any);
+  const threadId = c.req.param('id');
+
+  try {
+    // Get thread from scheduling_threads
+    const thread = await env.DB.prepare(`
+      SELECT * FROM scheduling_threads WHERE id = ?
+    `).bind(threadId).first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    if (thread.organizer_user_id !== userId) {
+      return c.json({ error: 'Access denied' }, 403);
+    }
+
+    // Get invites
+    const { results: invites } = await env.DB.prepare(`
+      SELECT 
+        ti.id,
+        ti.thread_id,
+        ti.candidate_name,
+        ti.candidate_email,
+        ti.candidate_reason,
+        ti.invite_token,
+        ti.status,
+        ti.accepted_at,
+        ti.created_at
+      FROM thread_invites ti
+      WHERE ti.thread_id = ?
+      ORDER BY ti.created_at DESC
+    `).bind(threadId).all();
+
+    return c.json({
+      thread,
+      invites,
+    });
+  } catch (error) {
+    console.error('[Threads] Get details error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
  * Create new thread with AI-generated candidates
  * 
  * @route POST /threads
