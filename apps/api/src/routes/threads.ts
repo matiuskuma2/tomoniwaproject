@@ -187,7 +187,7 @@ app.post(
       
       await env.DB.prepare(`
         INSERT INTO scheduling_threads (id, organizer_user_id, title, description, status, mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', 'one_on_one', ?, ?)
+        VALUES (?, ?, ?, ?, 'draft', 'one_on_one', ?, ?)
       `).bind(threadId, userId, title, description || null, now, now).run();
 
       console.log('[Threads] Created thread in scheduling_threads:', threadId);
@@ -308,7 +308,7 @@ app.post(
           title,
           description,
           organizer_user_id: userId,
-          status: 'active',
+          status: 'draft',
           created_at: now
         },
         candidates: candidates.map((candidate, i) => ({
