@@ -389,6 +389,17 @@ User input: "${text}"`;
   }
 
   /**
+   * Estimate Gemini cost (gemini-2.0-flash-exp pricing)
+   */
+  private estimateGeminiCost(inputTokens: number, outputTokens: number): number {
+    // gemini-2.0-flash-exp: Free tier (usage-based pricing coming soon)
+    // For now, assume minimal cost: $0.05 / 1M input tokens, $0.15 / 1M output tokens
+    const inputCost = (inputTokens / 1_000_000) * 0.05;
+    const outputCost = (outputTokens / 1_000_000) * 0.15;
+    return inputCost + outputCost;
+  }
+
+  /**
    * Estimate OpenAI cost (gpt-4o-mini pricing)
    */
   private estimateOpenAICost(inputTokens: number, outputTokens: number): number {
@@ -396,6 +407,162 @@ User input: "${text}"`;
     const inputCost = (inputTokens / 1_000_000) * 0.15;
     const outputCost = (outputTokens / 1_000_000) * 0.60;
     return inputCost + outputCost;
+  }
+
+  /**
+   * Generic content generation with LLM (Gemini → OpenAI fallback)
+   * Used for candidate generation, summaries, etc.
+   */
+  async generateContent(options: {
+    feature: string;
+    prompt: string;
+    temperature?: number;
+    userId?: string;
+    roomId?: string;
+  }): Promise<string> {
+    const { feature, prompt, temperature = 0.7, userId, roomId } = options;
+
+    // Try Gemini first
+    try {
+      const result = await this.generateWithGemini(prompt, temperature, feature, userId, roomId);
+      return result;
+    } catch (geminiError) {
+      console.warn('[AIRouter] Gemini content generation failed, trying OpenAI fallback:', geminiError);
+
+      // Try OpenAI fallback
+      try {
+        const result = await this.generateWithOpenAI(prompt, temperature, feature, userId, roomId);
+        return result;
+      } catch (openaiError) {
+        console.error('[AIRouter] Both Gemini and OpenAI content generation failed:', openaiError);
+        throw new Error('AI content generation failed');
+      }
+    }
+  }
+
+  /**
+   * Generate content with Gemini
+   */
+  private async generateWithGemini(
+    prompt: string,
+    temperature: number,
+    feature: string,
+    userId?: string,
+    roomId?: string
+  ): Promise<string> {
+    const model = 'gemini-2.0-flash-exp';
+    const startTime = Date.now();
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: 2048,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} ${errorText}`);
+    }
+
+    const data: any = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!content) {
+      throw new Error('Empty response from Gemini');
+    }
+
+    // Estimate tokens and cost
+    const inputTokens = Math.ceil(prompt.length / 4);
+    const outputTokens = Math.ceil(content.length / 4);
+    const estimatedCost = this.estimateGeminiCost(inputTokens, outputTokens);
+
+    // Log usage
+    await this.logUsage({
+      user_id: userId,
+      room_id: roomId,
+      provider: 'gemini',
+      model,
+      feature,
+      status: 'success',
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated_cost_usd: estimatedCost,
+    });
+
+    return content;
+  }
+
+  /**
+   * Generate content with OpenAI
+   */
+  private async generateWithOpenAI(
+    prompt: string,
+    temperature: number,
+    feature: string,
+    userId?: string,
+    roomId?: string
+  ): Promise<string> {
+    const model = 'gpt-4o-mini';
+    const startTime = Date.now();
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature,
+        max_tokens: 2048,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
+    }
+
+    const data: any = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    // Get actual token usage
+    const inputTokens = data.usage?.prompt_tokens || 0;
+    const outputTokens = data.usage?.completion_tokens || 0;
+    const estimatedCost = this.estimateOpenAICost(inputTokens, outputTokens);
+
+    // Log usage
+    await this.logUsage({
+      user_id: userId,
+      room_id: roomId,
+      provider: 'openai',
+      model,
+      feature,
+      status: 'success',
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated_cost_usd: estimatedCost,
+    });
+
+    return content;
   }
 
   /**
