@@ -209,17 +209,38 @@ auth.get('/google/callback', async (c) => {
 
 // ============================================================
 // POST /auth/logout
-// Revoke current session
+// Revoke current session (uses Cookie or Bearer token)
 // ============================================================
 auth.post('/logout', async (c) => {
   const { env } = c;
+  
+  // Extract session token from Authorization header OR Cookie
+  let sessionToken: string | null = null;
+  
+  // 1) Try Authorization: Bearer
   const authorization = c.req.header('Authorization');
-
-  if (!authorization?.startsWith('Bearer ')) {
-    return c.json({ error: 'Missing or invalid Authorization header' }, 401);
+  if (authorization?.startsWith('Bearer ')) {
+    sessionToken = authorization.substring(7).trim();
+  }
+  
+  // 2) Try Cookie: session
+  if (!sessionToken) {
+    const cookieHeader = c.req.header('Cookie');
+    if (cookieHeader) {
+      const parts = cookieHeader.split(';').map(s => s.trim());
+      for (const part of parts) {
+        if (part.startsWith('session=')) {
+          sessionToken = decodeURIComponent(part.slice(8));
+          break;
+        }
+      }
+    }
+  }
+  
+  if (!sessionToken) {
+    return c.json({ error: 'Missing session token (provide Bearer token or session cookie)' }, 401);
   }
 
-  const sessionToken = authorization.substring(7);
   const tokenHash = await hashToken(sessionToken);
 
   const sessionRepo = new SessionRepository(env.DB);
@@ -234,17 +255,38 @@ auth.post('/logout', async (c) => {
 
 // ============================================================
 // GET /auth/me
-// Get current user info
+// Get current user info (uses Cookie or Bearer token)
 // ============================================================
 auth.get('/me', async (c) => {
   const { env } = c;
+  
+  // Extract session token from Authorization header OR Cookie
+  let sessionToken: string | null = null;
+  
+  // 1) Try Authorization: Bearer
   const authorization = c.req.header('Authorization');
-
-  if (!authorization?.startsWith('Bearer ')) {
-    return c.json({ error: 'Missing or invalid Authorization header' }, 401);
+  if (authorization?.startsWith('Bearer ')) {
+    sessionToken = authorization.substring(7).trim();
+  }
+  
+  // 2) Try Cookie: session
+  if (!sessionToken) {
+    const cookieHeader = c.req.header('Cookie');
+    if (cookieHeader) {
+      const parts = cookieHeader.split(';').map(s => s.trim());
+      for (const part of parts) {
+        if (part.startsWith('session=')) {
+          sessionToken = decodeURIComponent(part.slice(8));
+          break;
+        }
+      }
+    }
+  }
+  
+  if (!sessionToken) {
+    return c.json({ error: 'Missing session token (provide Bearer token or session cookie)' }, 401);
   }
 
-  const sessionToken = authorization.substring(7);
   const tokenHash = await hashToken(sessionToken);
 
   const sessionRepo = new SessionRepository(env.DB);
