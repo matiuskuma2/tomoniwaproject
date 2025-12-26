@@ -6,9 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import { getUserIdLegacy } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
-import type { FinalizedEmailJob } from '../services/emailQueue';
 
 type Variables = {
   userId?: string;
@@ -31,7 +29,8 @@ app.post('/:id/finalize', async (c) => {
   
   try {
     // ====== (0) Authorization ======
-    const userId = await getUserIdLegacy(c);
+    // userId is set by requireAuth middleware
+    const userId = c.get('userId');
     if (!userId) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -208,7 +207,7 @@ app.post('/:id/finalize', async (c) => {
           message,
           priority,
           created_at
-        ) VALUES (?, ?, 'thread_finalized', ?, ?, 'high', datetime('now'))
+        ) VALUES (?, ?, 'system_message', ?, ?, 'high', datetime('now'))
       `).bind(
         inboxId,
         userId,
@@ -239,21 +238,17 @@ app.post('/:id/finalize', async (c) => {
     for (const invite of invites) {
       if (finalParticipants.includes(invite.invitee_key)) {
         try {
-          const emailJob: FinalizedEmailJob = {
+          const emailJob = {
             job_id: `finalize-${invite.id}-${Date.now()}`,
-            type: 'finalized',
+            type: 'thread_message' as const,  // Use existing EmailJob type
             to: String(invite.email),
             subject: `Confirmed: ${thread.title}`,
             created_at: Date.now(),
             data: {
-              thread_title: String(thread.title),
-              selected_slot: {
-                start_at: String(slot.start_at),
-                end_at: String(slot.end_at),
-                timezone: String(slot.timezone),
-                label: slot.label ? String(slot.label) : undefined
-              },
-              participants_count: finalParticipants.length
+              thread_id: String(threadId),
+              delivery_id: crypto.randomUUID(),
+              message: `Your scheduling has been confirmed. Time: ${slot.start_at} - ${slot.end_at}`,
+              sender_name: 'Tomoniwao',
             }
           };
           

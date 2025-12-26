@@ -6,9 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import { getUserIdLegacy } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
-import type { ReminderEmailJob } from '../services/emailQueue';
 
 type Variables = {
   userId?: string;
@@ -31,7 +29,8 @@ app.post('/:id/remind', async (c) => {
   
   try {
     // ====== (0) Authorization ======
-    const userId = await getUserIdLegacy(c);
+    // userId is set by requireAuth middleware
+    const userId = c.get('userId');
     if (!userId) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -157,19 +156,17 @@ app.post('/:id/remind', async (c) => {
     
     for (const invite of pending) {
       try {
-        const emailJob: ReminderEmailJob = {
+        const emailJob = {
           job_id: `remind-${invite.id}-${Date.now()}`,
-          type: 'reminder',
+          type: 'thread_message' as const,  // Use existing EmailJob type
           to: String(invite.email),
           subject: `Reminder: ${thread.title} - Please respond`,
           created_at: Date.now(),
           data: {
-            token: String(invite.token),
-            invite_url: `https://${host}/i/${invite.token}`,
-            thread_title: String(thread.title),
-            inviter_name: 'Tomoniwao', // TODO: get from user
-            custom_message: body.message || null,
-            expires_at: String(invite.expires_at)
+            thread_id: String(threadId),
+            delivery_id: crypto.randomUUID(),
+            message: body.message || `Please respond to: ${thread.title}`,
+            sender_name: 'Tomoniwao',  // TODO: get from user
           }
         };
         
@@ -221,7 +218,7 @@ app.post('/:id/remind', async (c) => {
           message,
           priority,
           created_at
-        ) VALUES (?, ?, 'thread_reminder_sent', ?, ?, 'normal', datetime('now'))
+        ) VALUES (?, ?, 'system_message', ?, ?, 'normal', datetime('now'))
       `).bind(
         inboxId,
         userId,

@@ -111,11 +111,9 @@ app.route('/api/voice', voiceRoutes);
 // Threads API (Ticket 10 + Phase B)
 app.use('/api/threads/*', requireAuth);
 app.route('/api/threads', threadsRoutes);
-
-// Phase B: Attendance Engine Integration APIs
-app.route('/api/threads', threadsStatusRoutes);
-app.route('/api/threads', threadsRemindRoutes);
-app.route('/api/threads', threadsFinalizeRoutes);
+app.route('/api/threads', threadsStatusRoutes);   // GET /:id/status
+app.route('/api/threads', threadsRemindRoutes);   // POST /:id/remind
+app.route('/api/threads', threadsFinalizeRoutes); // POST /:id/finalize
 
 // Inbox API (User notifications)
 app.use('/api/inbox/*', requireAuth);

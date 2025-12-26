@@ -6,7 +6,6 @@
  */
 
 import { Hono } from 'hono';
-import { getUserIdLegacy } from '../middleware/auth';
 import { AttendanceEngine } from '../services/attendanceEngine';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
@@ -28,7 +27,8 @@ app.get('/:id/status', async (c) => {
   
   try {
     // ====== (0) Authorization ======
-    const userId = await getUserIdLegacy(c);
+    // userId is set by requireAuth middleware
+    const userId = c.get('userId');
     if (!userId) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
@@ -127,7 +127,7 @@ app.get('/:id/status', async (c) => {
     // ====== (5) Load Selections ======
     const selectionsResult = await env.DB.prepare(`
       SELECT 
-        id as selection_id,
+        selection_id,
         invitee_key,
         status,
         selected_slot_id,
@@ -143,12 +143,11 @@ app.get('/:id/status', async (c) => {
     const finalize = await env.DB.prepare(`
       SELECT 
         thread_id,
-        selected_slot_id as final_slot_id,
+        final_slot_id,
+        finalize_policy,
         finalized_by_user_id as finalized_by,
         finalized_at,
-        reason,
-        auto_finalized,
-        final_participants
+        final_participants_json
       FROM thread_finalize
       WHERE thread_id = ?
       LIMIT 1
