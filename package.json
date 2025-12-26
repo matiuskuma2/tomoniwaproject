@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "dev:local": "wrangler dev --local",
+    "dev": "wrangler dev --local",
+    "dev:remote": "wrangler dev",
     "build": "tsc --noEmit && echo 'Build check passed'",
     "deploy": "wrangler deploy",
-    "deploy:prod": "wrangler deploy --env production",
+    "deploy:prod": "wrangler deploy",
     "db:create": "wrangler d1 create webapp-production",
     "db:migrate:local": "wrangler d1 migrations apply webapp-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply webapp-production",
@@ -31,9 +31,11 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250705.0",
+    "@hono/vite-cloudflare-pages": "^0.4.3",
     "@types/node": "^22.10.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "vite": "^7.3.0",
     "wrangler": "^3.96.0"
   }
 }

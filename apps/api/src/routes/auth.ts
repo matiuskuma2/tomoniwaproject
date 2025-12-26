@@ -254,6 +254,48 @@ auth.post('/logout', async (c) => {
 });
 
 // ============================================================
+// POST /auth/token
+// Get Bearer token from current session (for mobile/PWA)
+// Requires valid session cookie
+// ============================================================
+auth.post('/token', async (c) => {
+  const { env } = c;
+  
+  // Extract session token from Cookie only (not Bearer)
+  let sessionToken: string | null = null;
+  const cookieHeader = c.req.header('Cookie');
+  
+  if (cookieHeader) {
+    const parts = cookieHeader.split(';').map(s => s.trim());
+    for (const part of parts) {
+      if (part.startsWith('session=')) {
+        sessionToken = decodeURIComponent(part.slice(8));
+        break;
+      }
+    }
+  }
+  
+  if (!sessionToken) {
+    return c.json({ error: 'No active session. Please login first.' }, 401);
+  }
+
+  const tokenHash = await hashToken(sessionToken);
+  const sessionRepo = new SessionRepository(env.DB);
+  const session = await sessionRepo.findByTokenHash(tokenHash);
+
+  if (!session) {
+    return c.json({ error: 'Invalid or expired session' }, 401);
+  }
+
+  // Return the session token as Bearer token
+  return c.json({
+    access_token: sessionToken,
+    token_type: 'Bearer',
+    expires_at: session.expires_at,
+  });
+});
+
+// ============================================================
 // GET /auth/me
 // Get current user info (uses Cookie or Bearer token)
 // ============================================================

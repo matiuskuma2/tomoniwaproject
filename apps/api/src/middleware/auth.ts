@@ -15,6 +15,7 @@ export interface AuthContext {
 
 type Variables = {
   userId?: string;
+  userRole?: string;
 };
 
 /**
@@ -135,6 +136,53 @@ export async function optionalAuth(c: Context<{ Bindings: Env; Variables: Variab
   }
   
   await next();
+}
+
+/**
+ * Require admin role middleware
+ * Must be used AFTER requireAuth
+ * 
+ * Usage:
+ * app.use('/admin/*', requireAuth, requireAdmin)
+ */
+export async function requireAdmin(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
+  const { env } = c;
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json(
+      { 
+        error: 'Unauthorized',
+        message: 'Authentication required'
+      },
+      401
+    );
+  }
+
+  // Get user role from database
+  try {
+    const result = await env.DB.prepare(`
+      SELECT role FROM users WHERE id = ?
+    `).bind(userId).first<{ role: string }>();
+
+    if (!result || (result.role !== 'admin' && result.role !== 'super_admin')) {
+      return c.json(
+        { 
+          error: 'Forbidden',
+          message: 'Admin access required'
+        },
+        403
+      );
+    }
+
+    // Store role in context for downstream handlers
+    c.set('userRole', result.role);
+    
+    await next();
+  } catch (error) {
+    console.error('Role check error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
 }
 
 /**

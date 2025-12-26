@@ -22,7 +22,7 @@ import inviteRoutes from './routes/invite';
 import inboxRoutes from './routes/inbox';
 
 // Middleware
-import { requireAuth } from './middleware/auth';
+import { requireAuth, requireAdmin } from './middleware/auth';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -61,13 +61,15 @@ app.get('/health', (c) => {
 // ============================================================
 
 // Admin System Settings (super_admin only)
+app.use('/admin/system/*', requireAuth, requireAdmin);
 app.route('/admin/system', adminSystemRoutes);
 
 // Admin AI Cost Center (super_admin for write, admin for read)
+app.use('/admin/ai/*', requireAuth, requireAdmin);
 app.route('/admin/ai', adminAiRoutes);
 
 // Admin Dashboard (admin only - monitoring and management)
-app.use('/admin/dashboard/*', requireAuth);
+app.use('/admin/dashboard/*', requireAuth, requireAdmin);
 app.route('/admin/dashboard', adminDashboardRoutes);
 
 // Test Routes (only in development environment)
@@ -119,6 +121,11 @@ app.route('/api/inbox', inboxRoutes);
 // app.route('/rooms', roomsRoutes);
 // app.route('/lists', listsRoutes);
 // app.route('/hosted-events', hostedEventsRoutes);
+
+// ============================================================
+// Frontend SPA Routes (Will be served by Cloudflare Pages)
+// Note: index.html and static assets are automatically served from public/
+// ============================================================
 
 // ============================================================
 // 404 Handler
