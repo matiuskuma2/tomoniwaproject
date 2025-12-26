@@ -24,6 +24,7 @@ export interface ThreadInvite {
   email: string;
   candidate_name: string;
   candidate_reason: string | null;
+  invitee_key: string | null; // Phase B: InviteeKey for attendance tracking
   status: 'pending' | 'accepted' | 'declined' | 'expired';
   expires_at: string;
   accepted_at: string | null;
@@ -104,10 +105,20 @@ export class ThreadsRepository {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + (data.expires_in_hours || 72) * 60 * 60 * 1000);
 
+    // Generate invitee_key (e: prefix for email-based invites)
+    // Use Web Crypto API for hashing (Cloudflare Workers compatible)
+    const encoder = new TextEncoder();
+    const emailData = encoder.encode(data.email.toLowerCase());
+    const hashBuffer = await crypto.subtle.digest('SHA-256', emailData);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const emailHash = hashHex.substring(0, 16);
+    const inviteeKey = `e:${emailHash}`;
+
     await this.db
       .prepare(
-        `INSERT INTO thread_invites (id, thread_id, token, email, candidate_name, candidate_reason, status, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+        `INSERT INTO thread_invites (id, thread_id, token, email, candidate_name, candidate_reason, invitee_key, status, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
       )
       .bind(
         id,
@@ -116,6 +127,7 @@ export class ThreadsRepository {
         data.email,
         data.candidate_name,
         data.candidate_reason || null,
+        inviteeKey,
         expiresAt.toISOString(),
         now.toISOString()
       )

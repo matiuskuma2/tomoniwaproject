@@ -403,3 +403,109 @@ export class AttendanceEngine {
     return results.results || [];
   }
 }
+
+/**
+ * Exported standalone functions for Phase B API integration
+ */
+
+export function evaluateRule(
+  ruleJson: any,
+  slots: any[],
+  invites: any[],
+  selections: any[]
+): any {
+  // Implement evaluation logic inline for simplicity
+  const slotResults = slots.map(slot => {
+    const slotSelections = selections.filter((s: any) => s.slot_id === slot.id && s.status === 'selected');
+    const selectedInviteeKeys = slotSelections.map((s: any) => s.invitee_key);
+    const allInviteeKeys = invites.map((i: any) => i.invitee_key || `e:${i.email}`);
+    const missingInviteeKeys = allInviteeKeys.filter(k => !selectedInviteeKeys.includes(k));
+
+    let isValid = false;
+    let score = selectedInviteeKeys.length;
+
+    switch (ruleJson.type) {
+      case 'ALL':
+        isValid = missingInviteeKeys.length === 0;
+        break;
+      case 'ANY':
+        isValid = selectedInviteeKeys.length > 0;
+        break;
+      case 'K_OF_N':
+        isValid = selectedInviteeKeys.length >= (ruleJson.rule?.k || 1);
+        break;
+      case 'REQUIRED_PLUS_K':
+        const requiredSet = ruleJson.rule?.required_invitee_keys || [];
+        const hasAllRequired = requiredSet.every((r: string) => selectedInviteeKeys.includes(r));
+        isValid = hasAllRequired && selectedInviteeKeys.length >= requiredSet.length + (ruleJson.rule?.k || 0);
+        break;
+      case 'GROUP_ANY':
+        const groups = ruleJson.rule?.groups || [];
+        isValid = groups.every((group: any) => {
+          const groupMembers = group.invitee_keys || [];
+          return groupMembers.some((m: string) => selectedInviteeKeys.includes(m));
+        });
+        break;
+    }
+
+    return {
+      slot_id: slot.id,
+      is_valid: isValid,
+      score,
+      counts: {
+        selected: selectedInviteeKeys.length,
+        missing: missingInviteeKeys,
+      },
+    };
+  });
+
+  const validSlots = slotResults.filter(sr => sr.is_valid);
+  const bestSlot = validSlots.length > 0 
+    ? validSlots.reduce((best, current) => current.score > best.score ? current : best)
+    : null;
+
+  return {
+    thread_id: 'unknown',
+    slot_results: slotResults,
+    recommendation: bestSlot ? {
+      slot_id: bestSlot.slot_id,
+      reason: `Selected by ${bestSlot.score} participants`,
+    } : null,
+    followups: {
+      pending_invitees: selections.filter((s: any) => s.status === 'pending').map((s: any) => s.invitee_key),
+    },
+  };
+}
+
+export async function finalizeThread(
+  db: any,
+  threadId: string,
+  selectedSlotId: string,
+  userId: string | null,
+  reason: string
+): Promise<any> {
+  // Insert into thread_finalize
+  await db.prepare(`
+    INSERT OR REPLACE INTO thread_finalize (
+      thread_id,
+      selected_slot_id,
+      finalized_by_user_id,
+      finalized_at,
+      reason,
+      auto_finalized
+    ) VALUES (?, ?, ?, datetime('now'), ?, ?)
+  `).bind(
+    threadId,
+    selectedSlotId,
+    userId,
+    reason,
+    userId === null ? 1 : 0
+  ).run();
+
+  return {
+    thread_id: threadId,
+    selected_slot_id: selectedSlotId,
+    finalized_at: new Date().toISOString(),
+    reason,
+  };
+}

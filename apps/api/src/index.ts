@@ -21,6 +21,7 @@ import threadsRoutes from './routes/threads';
 import inviteRoutes from './routes/invite';
 import inboxRoutes from './routes/inbox';
 import roomsRoutes from './routes/rooms';
+import schedulingApiRoutes from './routes/schedulingApi';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -107,6 +108,14 @@ app.route('/api/voice', voiceRoutes);
 // Threads API (Ticket 10)
 app.use('/api/threads/*', requireAuth);
 app.route('/api/threads', threadsRoutes);
+
+// Scheduling API (Phase B: Attendance Engine Integration)
+// Note: /i/:token/* endpoints are public (no auth required)
+app.use('/api/threads/:id/status', requireAuth);
+app.use('/api/threads/:id/remind', requireAuth);
+app.use('/api/threads/:id/finalize', requireAuth);
+app.use('/api/threads/:id/rule', requireAuth);
+app.route('/api/threads', schedulingApiRoutes);
 
 // Inbox API (User notifications)
 app.use('/api/inbox/*', requireAuth);

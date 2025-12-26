@@ -191,6 +191,60 @@ app.post(
 
       console.log('[Threads] Created thread:', thread.id);
 
+      // Step 1.5: Create default attendance rule (ALL type)
+      const defaultRule = {
+        version: '1.0',
+        type: 'ALL',
+        slot_policy: { multiple_slots_allowed: true },
+        invitee_scope: { allow_unregistered: true },
+        rule: {},
+        finalize_policy: {
+          auto_finalize: true,
+          policy: 'EARLIEST_VALID',
+        },
+      };
+
+      await env.DB.prepare(`
+        INSERT INTO thread_attendance_rules (thread_id, rule_json)
+        VALUES (?, ?)
+      `).bind(thread.id, JSON.stringify(defaultRule)).run();
+
+      console.log('[Threads] Created default attendance rule');
+
+      // Step 1.6: Create default scheduling slots (3 slots: tomorrow, day after, 3 days from now)
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(14, 0, 0, 0); // 2 PM
+
+      const dayAfter = new Date(now);
+      dayAfter.setDate(dayAfter.getDate() + 2);
+      dayAfter.setHours(14, 0, 0, 0);
+
+      const threeDays = new Date(now);
+      threeDays.setDate(threeDays.getDate() + 3);
+      threeDays.setHours(14, 0, 0, 0);
+
+      const slots = [
+        { start: tomorrow, end: new Date(tomorrow.getTime() + 60 * 60 * 1000) }, // 1 hour
+        { start: dayAfter, end: new Date(dayAfter.getTime() + 60 * 60 * 1000) },
+        { start: threeDays, end: new Date(threeDays.getTime() + 60 * 60 * 1000) },
+      ];
+
+      for (const slot of slots) {
+        await env.DB.prepare(`
+          INSERT INTO scheduling_slots (thread_id, start_time, end_time, timezone)
+          VALUES (?, ?, ?, ?)
+        `).bind(
+          thread.id,
+          slot.start.toISOString(),
+          slot.end.toISOString(),
+          Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        ).run();
+      }
+
+      console.log('[Threads] Created 3 default scheduling slots');
+
       // Step 2: Generate candidates with AI
       // Check if AI fallback is allowed (default: false for free tier)
       const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
