@@ -18,6 +18,7 @@ import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
 import threadsRoutes from './routes/threads';
 import inviteRoutes from './routes/invite';
+import inboxRoutes from './routes/inbox';
 
 // Middleware
 import { requireAuth } from './middleware/auth';
@@ -99,18 +100,17 @@ app.route('/api/voice', voiceRoutes);
 app.use('/api/threads/*', requireAuth);
 app.route('/api/threads', threadsRoutes);
 
+// Inbox API (User notifications)
+app.use('/api/inbox/*', requireAuth);
+app.route('/api/inbox', inboxRoutes);
+
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
 // app.route('/admin/users', adminUsersRoutes);
 // app.route('/admin/workspaces', adminWorkspacesRoutes);
-// app.route('/auth', authRoutes);
 // app.route('/me', meRoutes);
-// app.route('/voice', voiceRoutes);
-// app.route('/work-items', workItemsRoutes);
 // app.route('/scheduling', schedulingRoutes);
-// app.route('/i', externalInviteRoutes);
 // app.route('/e', externalEventRoutes);
-// app.route('/inbox', inboxRoutes);
 // app.route('/rooms', roomsRoutes);
 // app.route('/lists', listsRoutes);
 // app.route('/hosted-events', hostedEventsRoutes);

@@ -326,9 +326,11 @@ app.post('/i/:token/accept', async (c) => {
       user_id: thread.user_id,
       type: 'scheduling_invite', // Thread acceptance notification as scheduling_invite
       title: `${invite.candidate_name} accepted your invitation`,
-      description: `${invite.candidate_name} has accepted your invitation to join "${thread.title}"`,
-      related_entity_type: 'thread',
-      related_entity_id: thread.id,
+      message: `${invite.candidate_name} has accepted your invitation to join "${thread.title}"`,
+      action_type: 'view_thread',
+      action_target_id: thread.id,
+      action_url: `/threads/${thread.id}`,
+      priority: 'high',
     });
 
     console.log('[Threads] Created inbox notification for owner');
