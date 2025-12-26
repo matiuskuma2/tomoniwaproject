@@ -22,6 +22,7 @@ export interface Env {
   ENVIRONMENT: string;
   LOG_LEVEL: string;
   CORS_ORIGINS: string;
+  AI_FALLBACK_ENABLED?: string;
   
   // Secrets (set via wrangler secret put)
   JWT_SECRET?: string;

@@ -41,11 +41,18 @@ export class AIRouterService {
   private geminiApiKey: string;
   private openaiApiKey: string;
   private db: D1Database;
+  private allowFallback: boolean;
 
-  constructor(geminiApiKey: string, openaiApiKey: string, db: D1Database) {
+  constructor(
+    geminiApiKey: string, 
+    openaiApiKey: string, 
+    db: D1Database,
+    allowFallback: boolean = true // Default: allow fallback (for backward compatibility)
+  ) {
     this.geminiApiKey = geminiApiKey;
     this.openaiApiKey = openaiApiKey;
     this.db = db;
+    this.allowFallback = allowFallback;
   }
 
   /**
@@ -57,9 +64,16 @@ export class AIRouterService {
       const result = await this.parseWithGemini(text, userId, roomId);
       return result;
     } catch (geminiError) {
-      console.warn('[AIRouter] Gemini failed, trying OpenAI fallback:', geminiError);
+      console.warn('[AIRouter] Gemini failed:', geminiError);
+
+      // Check if fallback is allowed
+      if (!this.allowFallback) {
+        console.error('[AIRouter] OpenAI fallback disabled, using pattern fallback');
+        return this.parseWithPattern(text);
+      }
 
       // Try OpenAI fallback
+      console.warn('[AIRouter] Trying OpenAI fallback');
       try {
         const result = await this.parseWithOpenAI(text, userId, roomId);
         return result;
@@ -427,9 +441,16 @@ User input: "${text}"`;
       const result = await this.generateWithGemini(prompt, temperature, feature, userId, roomId);
       return result;
     } catch (geminiError) {
-      console.warn('[AIRouter] Gemini content generation failed, trying OpenAI fallback:', geminiError);
+      console.warn('[AIRouter] Gemini content generation failed:', geminiError);
+
+      // Check if fallback is allowed
+      if (!this.allowFallback) {
+        console.error('[AIRouter] OpenAI fallback disabled for free tier');
+        throw new Error('AI generation unavailable. Please try again later.');
+      }
 
       // Try OpenAI fallback
+      console.warn('[AIRouter] Trying OpenAI fallback');
       try {
         const result = await this.generateWithOpenAI(prompt, temperature, feature, userId, roomId);
         return result;

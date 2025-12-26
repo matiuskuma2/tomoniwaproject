@@ -192,10 +192,14 @@ app.post(
       console.log('[Threads] Created thread:', thread.id);
 
       // Step 2: Generate candidates with AI
+      // Check if AI fallback is allowed (default: false for free tier)
+      const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
+      
       const aiRouter = new AIRouterService(
         env.GEMINI_API_KEY || '',
         env.OPENAI_API_KEY || '',
-        env.DB
+        env.DB,
+        allowFallback
       );
 
       const candidateGen = new CandidateGeneratorService(aiRouter, userId);

@@ -20,6 +20,7 @@ import voiceRoutes from './routes/voice';
 import threadsRoutes from './routes/threads';
 import inviteRoutes from './routes/invite';
 import inboxRoutes from './routes/inbox';
+import roomsRoutes from './routes/rooms';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -110,6 +111,10 @@ app.route('/api/threads', threadsRoutes);
 // Inbox API (User notifications)
 app.use('/api/inbox/*', requireAuth);
 app.route('/api/inbox', inboxRoutes);
+
+// Rooms API (Team collaboration)
+app.use('/api/rooms/*', requireAuth);
+app.route('/api/rooms', roomsRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
