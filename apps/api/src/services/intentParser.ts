@@ -32,9 +32,10 @@ export class IntentParserService {
   constructor(
     private readonly openaiApiKey: string,
     private readonly geminiApiKey: string,
-    private readonly db: D1Database
+    private readonly db: D1Database,
+    allowFallback: boolean = true // Default: allow fallback for backward compatibility
   ) {
-    this.aiRouter = new AIRouterService(geminiApiKey, openaiApiKey, db);
+    this.aiRouter = new AIRouterService(geminiApiKey, openaiApiKey, db, allowFallback);
   }
 
   /**

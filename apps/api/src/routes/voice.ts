@@ -40,10 +40,15 @@ app.post(
 
       // Parse intent with LLM (Gemini優先 → OpenAI → Pattern)
       const roomId = c.req.header('x-room-id'); // Optional for room context
+      
+      // Check if AI fallback is allowed (default: false for free tier)
+      const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
+      
       const parser = new IntentParserService(
         env.OPENAI_API_KEY || '',
         env.GEMINI_API_KEY || '',
-        env.DB
+        env.DB,
+        allowFallback
       );
       const intent = await parser.parse(text, userId, roomId);
 
