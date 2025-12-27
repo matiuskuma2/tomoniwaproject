@@ -51,11 +51,21 @@ auth.get('/google/start', async (c) => {
   const state = await generateSessionToken();
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   
+  // Phase 0B: Add Calendar Events scope for Google Meet generation
+  const scopes = [
+    'openid',
+    'email',
+    'profile',
+    'https://www.googleapis.com/auth/calendar.events', // Required for Meet
+  ];
+  
   authUrl.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
   authUrl.searchParams.set('redirect_uri', env.GOOGLE_REDIRECT_URI);
   authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', 'openid email profile');
+  authUrl.searchParams.set('scope', scopes.join(' '));
   authUrl.searchParams.set('state', state);
+  authUrl.searchParams.set('access_type', 'offline'); // Required for refresh token
+  authUrl.searchParams.set('prompt', 'consent'); // Force consent to get refresh token
 
   // Store state in cookie for CSRF protection
   setCookie(c, 'oauth_state', state, {
@@ -113,7 +123,13 @@ auth.get('/google/callback', async (c) => {
       return c.json({ error: 'Failed to exchange code for token', details: errorData }, 400);
     }
 
-    const tokens = await tokenResponse.json<{ access_token: string; id_token: string }>();
+    const tokens = await tokenResponse.json<{
+      access_token: string;
+      refresh_token?: string;
+      id_token: string;
+      expires_in: number;
+      scope: string;
+    }>();
 
     // Get user info from Google
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -174,6 +190,80 @@ auth.get('/google/callback', async (c) => {
            VALUES (?, ?, ?, ?)`
         )
         .bind(userId, userInfo.email, userInfo.name, userInfo.picture || null)
+        .run();
+    }
+
+    // Phase 0B: Save Google Account tokens (for Calendar API)
+    const tokenExpiresAt = new Date(Date.now() + (tokens.expires_in * 1000)).toISOString();
+    
+    // Check if Google account already exists
+    const existingGoogleAccount = await env.DB
+      .prepare(`SELECT id FROM google_accounts WHERE google_sub = ?`)
+      .bind(userInfo.id)
+      .first<{ id: string }>();
+    
+    if (existingGoogleAccount) {
+      // Update existing Google account
+      // Only update refresh_token if we got a new one (it's not always returned)
+      if (tokens.refresh_token) {
+        await env.DB
+          .prepare(
+            `UPDATE google_accounts
+             SET access_token_enc = ?,
+                 refresh_token_enc = ?,
+                 token_expires_at = ?,
+                 scope = ?,
+                 updated_at = datetime('now')
+             WHERE google_sub = ?`
+          )
+          .bind(
+            tokens.access_token,
+            tokens.refresh_token,
+            tokenExpiresAt,
+            tokens.scope,
+            userInfo.id
+          )
+          .run();
+      } else {
+        // Update without changing refresh_token
+        await env.DB
+          .prepare(
+            `UPDATE google_accounts
+             SET access_token_enc = ?,
+                 token_expires_at = ?,
+                 scope = ?,
+                 updated_at = datetime('now')
+             WHERE google_sub = ?`
+          )
+          .bind(
+            tokens.access_token,
+            tokenExpiresAt,
+            tokens.scope,
+            userInfo.id
+          )
+          .run();
+      }
+    } else {
+      // Create new Google account
+      const googleAccountId = `goog-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      await env.DB
+        .prepare(
+          `INSERT INTO google_accounts (
+            id, user_id, google_sub, email,
+            access_token_enc, refresh_token_enc,
+            token_expires_at, scope, is_primary
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+        )
+        .bind(
+          googleAccountId,
+          userId,
+          userInfo.id,
+          userInfo.email,
+          tokens.access_token,
+          tokens.refresh_token || null,
+          tokenExpiresAt,
+          tokens.scope
+        )
         .run();
     }
 

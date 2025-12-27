@@ -145,10 +145,16 @@ app.post('/:id/finalize', async (c) => {
     try {
       console.log('[Finalize] Attempting to create Google Meet...');
       
-      // Get organizer's access token
-      const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId);
+      // Get organizer's access token (with auto-refresh)
+      const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
       
       if (accessToken) {
+        // Get organizer's email for attendees
+        const organizerUser = await env.DB
+          .prepare('SELECT email FROM users WHERE id = ?')
+          .bind(userId)
+          .first<{ email: string }>();
+        
         const calendarService = new GoogleCalendarService(accessToken, env);
         
         const event = await calendarService.createEventWithMeet({
@@ -157,6 +163,7 @@ app.post('/:id/finalize', async (c) => {
           start: slot.start_at as string,
           end: slot.end_at as string,
           timeZone: (slot.timezone as string) || 'Asia/Tokyo',
+          organizerEmail: organizerUser?.email, // Phase 0B: Add organizer as attendee
         });
         
         if (event && event.hangoutLink) {
