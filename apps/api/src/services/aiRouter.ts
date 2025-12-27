@@ -588,11 +588,22 @@ User input: "${text}"`;
 
   /**
    * Log AI usage to D1
+   * 
+   * 優先A: null撲滅 - 集計クエリ（SUM）でnullが混入しないよう必須フィールドを補正
    */
   private async logUsage(log: AIUsageLog): Promise<void> {
     try {
       const id = crypto.randomUUID();
       const timestamp = Math.floor(Date.now() / 1000);
+
+      // null撲滅: 数値フィールドは0、文字列フィールドは'unknown'で補正
+      const provider = log.provider || 'unknown';
+      const model = log.model || 'unknown';
+      const feature = log.feature || 'unknown_feature';
+      const status = log.status || 'error';
+      const inputTokens = log.input_tokens ?? 0;  // null/undefined → 0
+      const outputTokens = log.output_tokens ?? 0;
+      const estimatedCost = log.estimated_cost_usd ?? 0;
 
       await this.db
         .prepare(
@@ -606,13 +617,13 @@ User input: "${text}"`;
           log.user_id || null,
           log.room_id || null,
           log.workspace_id || null,
-          log.provider,
-          log.model,
-          log.feature,
-          log.status,
-          log.input_tokens || null,
-          log.output_tokens || null,
-          log.estimated_cost_usd || null,
+          provider,
+          model,
+          feature,
+          status,
+          inputTokens,
+          outputTokens,
+          estimatedCost,
           log.error_message || null,
           timestamp
         )
