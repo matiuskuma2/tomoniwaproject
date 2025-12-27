@@ -73,12 +73,11 @@ app.post('/:id/finalize', async (c) => {
     const existing = await env.DB.prepare(`
       SELECT 
         thread_id,
-        selected_slot_id as final_slot_id,
+        final_slot_id,
+        finalize_policy,
         finalized_by_user_id as finalized_by,
         finalized_at,
-        reason,
-        auto_finalized,
-        final_participants
+        final_participants_json
       FROM thread_finalize
       WHERE thread_id = ?
       LIMIT 1
@@ -93,9 +92,8 @@ app.post('/:id/finalize', async (c) => {
         selected_slot_id: existing.final_slot_id,
         finalized_at: existing.finalized_at,
         finalized_by_user_id: existing.finalized_by,
-        auto_finalized: existing.auto_finalized === 1,
-        final_participants: JSON.parse((existing.final_participants as string) || '[]'),
-        reason: existing.reason
+        finalize_policy: existing.finalize_policy,
+        final_participants: JSON.parse((existing.final_participants_json as string) || '[]')
       });
     }
     
@@ -141,18 +139,16 @@ app.post('/:id/finalize', async (c) => {
       await env.DB.prepare(`
         INSERT INTO thread_finalize (
           thread_id,
-          selected_slot_id,
+          final_slot_id,
+          finalize_policy,
           finalized_by_user_id,
           finalized_at,
-          reason,
-          auto_finalized,
-          final_participants
-        ) VALUES (?, ?, ?, datetime('now'), ?, 0, ?)
+          final_participants_json
+        ) VALUES (?, ?, 'MANUAL', ?, datetime('now'), ?)
       `).bind(
         threadId,
         body.selected_slot_id,
         userId,
-        reason,
         JSON.stringify(finalParticipants)
       ).run();
       
