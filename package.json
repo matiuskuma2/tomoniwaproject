@@ -6,10 +6,9 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "dev:remote": "wrangler dev",
-    "build": "vite build",
-    "type-check": "tsc --noEmit && echo 'Type check passed'",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name webapp",
-    "deploy:prod": "npm run build && wrangler pages deploy dist --project-name webapp",
+    "build": "tsc --noEmit && echo 'Build check passed'",
+    "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy",
     "db:create": "wrangler d1 create webapp-production",
     "db:migrate:local": "wrangler d1 migrations apply webapp-production --local",
     "db:migrate:prod": "wrangler d1 migrations apply webapp-production",
