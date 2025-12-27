@@ -297,6 +297,15 @@ curl http://localhost:3000/admin/ai/providers \
 
 ## 📚 主要ドキュメント
 
+### OAuth & Google Integration
+- `docs/OAUTH_CONSENT_SCREEN_APPLICATION.md` - **OAuth審査申請ガイド（重要）**
+- `docs/GOOGLE_MEET_PHASE0B_SPEC.md` - Google Meet Phase 0B仕様
+- `docs/PHASE_0B_COMPLETION_CHECKLIST.md` - Phase 0B完了チェックリスト
+- `scripts/oauth-verification-test.sh` - OAuth検証スクリプト（Bash）
+- `scripts/oauth-verification-test.ps1` - OAuth検証スクリプト（PowerShell）
+- `scripts/verify-phase0b.sql` - Phase 0B検証SQL
+
+### API & Database
 - `docs/31_ACCESS_CONTROL.md` - アクセス制御仕様
 - `docs/14_TENANCY_AND_ROLES.md` - テナント・ロール仕様
 - `docs/15_EMAIL_OTP_RATE_LIMIT.md` - OTP・レート制限仕様
