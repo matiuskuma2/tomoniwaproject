@@ -26,6 +26,7 @@ import inboxRoutes from './routes/inbox';
 import roomsRoutes from './routes/rooms';
 import schedulingApiRoutes from './routes/schedulingApi';
 import contactsRoutes from './routes/contacts';
+import listsRoutes from './routes/lists';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -127,6 +128,10 @@ app.route('/api/rooms', roomsRoutes);
 // Contacts API (台帳管理)
 app.use('/api/contacts/*', requireAuth);
 app.route('/api/contacts', contactsRoutes);
+
+// Lists API (送信セグメント)
+app.use('/api/lists/*', requireAuth);
+app.route('/api/lists', listsRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);

@@ -11,6 +11,8 @@ import { ThreadsRepository } from '../repositories/threadsRepository';
 import { InboxRepository } from '../repositories/inboxRepository';
 import { AIRouterService } from '../services/aiRouter';
 import { CandidateGeneratorService } from '../services/candidateGenerator';
+import { ContactsRepository } from '../repositories/contactsRepository';
+import { ListsRepository } from '../repositories/listsRepository';
 import { getUserIdLegacy } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import type { Env } from '../../../../packages/shared/src/types/env';
@@ -18,6 +20,9 @@ import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS, isValidThreadStatus } from '../../../../packages/shared/src/types/thread';
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Default workspace_id (暫定)
+const DEFAULT_WORKSPACE = 'ws-default';
 
 /**
  * Get user's threads
@@ -162,11 +167,18 @@ app.get('/:id', async (c) => {
 });
 
 /**
- * Create new thread with AI-generated candidates
+ * Create new thread with AI-generated candidates OR bulk invite from list
  * 
  * @route POST /threads
- * @body { title: string, description?: string }
+ * @body { title: string, description?: string, target_list_id?: string }
  * @ratelimit 10 per minute by user
+ * 
+ * If target_list_id is provided:
+ * - Load list_members → contacts → create invites
+ * - Email queue for bulk sending
+ * 
+ * Otherwise:
+ * - AI-generated candidates (original flow)
  */
 app.post(
   '/',
@@ -183,13 +195,13 @@ app.post(
 
     try {
       const body = await c.req.json();
-      const { title, description } = body;
+      const { title, description, target_list_id } = body;
 
       if (!title || typeof title !== 'string') {
         return c.json({ error: 'Missing or invalid field: title' }, 400);
       }
 
-      // Step 1: Create thread in scheduling_threads (Phase B: correct table)
+      // Step 1: Create thread in scheduling_threads
       const threadId = crypto.randomUUID();
       const now = new Date().toISOString();
       
@@ -256,39 +268,109 @@ app.post(
 
       console.log('[Threads] Created 3 default scheduling slots');
 
-      // Step 2: Generate candidates with AI
-      // Check if AI fallback is allowed (default: false for free tier)
-      const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
-      
-      const aiRouter = new AIRouterService(
-        env.GEMINI_API_KEY || '',
-        env.OPENAI_API_KEY || '',
-        env.DB,
-        allowFallback
-      );
+      let candidates: any[] = [];
+      let invites: any[] = [];
+      let skippedCount = 0; // ローカル変数で管理（c.set/get は使わない）
 
-      const candidateGen = new CandidateGeneratorService(aiRouter, userId);
-      const candidates = await candidateGen.generateCandidates(title, description);
+      // ============================
+      // Branch: Bulk invite from list OR AI-generated candidates
+      // ============================
+      if (target_list_id) {
+        // Step 2A: Bulk invite from list
+        console.log('[Threads] Bulk invite mode: target_list_id =', target_list_id);
 
-      console.log('[Threads] Generated candidates:', candidates.length);
+        const listsRepo = new ListsRepository(env.DB);
+        const contactsRepo = new ContactsRepository(env.DB);
 
-      // Step 3: Create invites for each candidate (with invitee_key)
-      const threadsRepo = new ThreadsRepository(env.DB);
-      const invites = await Promise.all(
-        candidates.map((candidate) =>
-          threadsRepo.createInvite({
-            thread_id: threadId,
-            email: candidate.email,
-            candidate_name: candidate.name,
-            candidate_reason: candidate.reason,
-            expires_in_hours: 72, // 3 days
+        // Verify list ownership
+        const list = await listsRepo.getById(target_list_id, DEFAULT_WORKSPACE, userId);
+        if (!list) {
+          return c.json({ error: 'List not found or access denied' }, 404);
+        }
+
+        // Get total count first (最重要ポイント 2: 上限1000件チェック)
+        const { members, total } = await listsRepo.getMembers(target_list_id, DEFAULT_WORKSPACE, 1001, 0);
+
+        if (total > 1000) {
+          return c.json({ 
+            error: 'List size exceeds 1000 contacts. Please split into smaller lists.',
+            total,
+            limit: 1000
+          }, 400);
+        }
+
+        if (members.length === 0) {
+          return c.json({ error: 'List is empty. Add contacts first.' }, 400);
+        }
+
+        console.log(`[Threads] Bulk inviting ${members.length} contacts from list`);
+
+        // 最重要ポイント 3: email が無い contact は除外
+        const validMembers = members.filter((m) => m.contact_email);
+        skippedCount = members.length - validMembers.length;
+
+        if (skippedCount > 0) {
+          console.warn(`[Threads] Skipped ${skippedCount} contacts without email`);
+        }
+
+        // Step 3A: Create invites for each valid contact
+        const threadsRepo = new ThreadsRepository(env.DB);
+        invites = await Promise.all(
+          validMembers.map(async (member) => {
+            return threadsRepo.createInvite({
+              thread_id: threadId,
+              email: member.contact_email!,
+              candidate_name: member.contact_display_name || member.contact_email!,
+              candidate_reason: `From list: ${list.name}`,
+              expires_in_hours: 72, // 3 days
+            });
           })
-        )
-      );
+        );
 
-      console.log('[Threads] Created invites:', invites.length);
+        console.log('[Threads] Created bulk invites:', invites.length);
 
-      // Step 4: Send invite emails via queue
+        // Convert to candidates format for response
+        candidates = validMembers.map((m) => ({
+          name: m.contact_display_name || m.contact_email!,
+          email: m.contact_email!,
+          reason: `From list: ${list.name}`,
+        }));
+      } else {
+        // Step 2B: Generate candidates with AI (original flow)
+        console.log('[Threads] AI candidate generation mode');
+
+        const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
+        
+        const aiRouter = new AIRouterService(
+          env.GEMINI_API_KEY || '',
+          env.OPENAI_API_KEY || '',
+          env.DB,
+          allowFallback
+        );
+
+        const candidateGen = new CandidateGeneratorService(aiRouter, userId);
+        candidates = await candidateGen.generateCandidates(title, description);
+
+        console.log('[Threads] Generated candidates:', candidates.length);
+
+        // Step 3B: Create invites for each candidate
+        const threadsRepo = new ThreadsRepository(env.DB);
+        invites = await Promise.all(
+          candidates.map((candidate) =>
+            threadsRepo.createInvite({
+              thread_id: threadId,
+              email: candidate.email,
+              candidate_name: candidate.name,
+              candidate_reason: candidate.reason,
+              expires_in_hours: 72, // 3 days
+            })
+          )
+        );
+
+        console.log('[Threads] Created invites:', invites.length);
+      }
+
+      // Step 4: Send invite emails via queue (共通)
       for (const invite of invites) {
         const candidate = candidates.find((c) => c.email === invite.email);
         if (!candidate) continue;
@@ -325,6 +407,8 @@ app.post(
           invite_url: `https://webapp.snsrilarc.workers.dev/i/${invites[i].token}`,
         })),
         message: `Thread created with ${candidates.length} candidate invitations sent`,
+        // 最重要ポイント 3: skipped_count をレスポンスに含める（target_list_id モード時のみ）
+        ...(target_list_id ? { skipped_count: skippedCount } : {}),
       });
     } catch (error) {
       console.error('[Threads] Error creating thread:', error);
