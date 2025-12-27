@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
 import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
+import { GoogleCalendarService } from '../services/googleCalendar';
 
 type Variables = {
   userId?: string;
@@ -136,8 +137,46 @@ app.post('/:id/finalize', async (c) => {
     const now = new Date().toISOString();
     const reason = body.reason || 'Manual finalization by organizer';
     
+    // ====== (4.5) Create Google Meet (Phase 0A) ======
+    let meetingUrl: string | null = null;
+    let meetingProvider: string | null = null;
+    let calendarEventId: string | null = null;
+    
     try {
-      // (5-1) Insert into thread_finalize
+      console.log('[Finalize] Attempting to create Google Meet...');
+      
+      // Get organizer's access token
+      const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId);
+      
+      if (accessToken) {
+        const calendarService = new GoogleCalendarService(accessToken, env);
+        
+        const event = await calendarService.createEventWithMeet({
+          summary: String(thread.title || 'Scheduled Meeting'),
+          description: String(thread.description || 'Meeting scheduled via Tomoniwao'),
+          start: slot.start_at as string,
+          end: slot.end_at as string,
+          timeZone: (slot.timezone as string) || 'Asia/Tokyo',
+        });
+        
+        if (event && event.hangoutLink) {
+          meetingUrl = event.hangoutLink;
+          meetingProvider = 'google_meet';
+          calendarEventId = event.id;
+          console.log('[Finalize] Google Meet created:', meetingUrl);
+        } else {
+          console.warn('[Finalize] Google Meet creation returned no hangoutLink');
+        }
+      } else {
+        console.warn('[Finalize] No Google account access token found for organizer');
+      }
+    } catch (meetError) {
+      console.error('[Finalize] Failed to create Google Meet (non-fatal):', meetError);
+      // Continue with finalization even if Meet creation fails
+    }
+    
+    try {
+      // (5-1) Insert into thread_finalize (with meeting info)
       await env.DB.prepare(`
         INSERT INTO thread_finalize (
           thread_id,
@@ -145,13 +184,19 @@ app.post('/:id/finalize', async (c) => {
           finalize_policy,
           finalized_by_user_id,
           finalized_at,
-          final_participants_json
-        ) VALUES (?, ?, 'MANUAL', ?, datetime('now'), ?)
+          final_participants_json,
+          meeting_provider,
+          meeting_url,
+          calendar_event_id
+        ) VALUES (?, ?, 'MANUAL', ?, datetime('now'), ?, ?, ?, ?)
       `).bind(
         threadId,
         body.selected_slot_id,
         userId,
-        JSON.stringify(finalParticipants)
+        JSON.stringify(finalParticipants),
+        meetingProvider,
+        meetingUrl,
+        calendarEventId
       ).run();
       
       // (5-2) Update thread status to 'confirmed'
@@ -196,6 +241,10 @@ app.post('/:id/finalize', async (c) => {
     // (6-1) Inbox notification to organizer
     try {
       const inboxId = crypto.randomUUID();
+      const inboxMessage = meetingUrl 
+        ? `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)\n\nGoogle Meet: ${meetingUrl}`
+        : `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)`;
+      
       await env.DB.prepare(`
         INSERT INTO inbox (
           id,
@@ -211,7 +260,7 @@ app.post('/:id/finalize', async (c) => {
         userId,
         INBOX_TYPE.SYSTEM_MESSAGE,
         `Thread finalized: ${thread.title}`,
-        `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)`,
+        inboxMessage,
         INBOX_PRIORITY.HIGH
       ).run();
     } catch (error) {
@@ -238,6 +287,10 @@ app.post('/:id/finalize', async (c) => {
     for (const invite of invites) {
       if (finalParticipants.includes(invite.invitee_key)) {
         try {
+          const emailMessage = meetingUrl
+            ? `Your scheduling has been confirmed.\n\nTime: ${slot.start_at} - ${slot.end_at}\n\nGoogle Meet: ${meetingUrl}`
+            : `Your scheduling has been confirmed.\n\nTime: ${slot.start_at} - ${slot.end_at}`;
+          
           const emailJob = {
             job_id: `finalize-${invite.id}-${Date.now()}`,
             type: 'thread_message' as const,  // Use existing EmailJob type
@@ -247,7 +300,7 @@ app.post('/:id/finalize', async (c) => {
             data: {
               thread_id: String(threadId),
               delivery_id: crypto.randomUUID(),
-              message: `Your scheduling has been confirmed. Time: ${slot.start_at} - ${slot.end_at}`,
+              message: emailMessage,
               sender_name: 'Tomoniwao',
             }
           };
@@ -277,6 +330,11 @@ app.post('/:id/finalize', async (c) => {
         timezone: slot.timezone,
         label: slot.label
       },
+      meeting: meetingUrl ? {
+        provider: meetingProvider,
+        url: meetingUrl,
+        calendar_event_id: calendarEventId
+      } : null,
       final_participants: finalParticipants,
       participants_count: finalParticipants.length,
       finalized_at: now,
