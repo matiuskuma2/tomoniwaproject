@@ -7,6 +7,8 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
+import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
 
 type Variables = {
   userId?: string;
@@ -155,9 +157,9 @@ app.post('/:id/finalize', async (c) => {
       // (5-2) Update thread status to 'confirmed'
       await env.DB.prepare(`
         UPDATE scheduling_threads
-        SET status = 'confirmed', updated_at = datetime('now')
+        SET status = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).bind(threadId).run();
+      `).bind(THREAD_STATUS.CONFIRMED, threadId).run();
       
       // (5-3) Update thread_participants (internal users only)
       for (const key of finalParticipants) {
@@ -203,12 +205,14 @@ app.post('/:id/finalize', async (c) => {
           message,
           priority,
           created_at
-        ) VALUES (?, ?, 'system_message', ?, ?, 'high', datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       `).bind(
         inboxId,
         userId,
+        INBOX_TYPE.SYSTEM_MESSAGE,
         `Thread finalized: ${thread.title}`,
-        `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)`
+        `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)`,
+        INBOX_PRIORITY.HIGH
       ).run();
     } catch (error) {
       console.error('[Finalize] Failed to create inbox notification:', error);

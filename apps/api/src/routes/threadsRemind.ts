@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
 
 type Variables = {
   userId?: string;
@@ -218,12 +219,14 @@ app.post('/:id/remind', async (c) => {
           message,
           priority,
           created_at
-        ) VALUES (?, ?, 'system_message', ?, ?, 'normal', datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       `).bind(
         inboxId,
         userId,
+        INBOX_TYPE.SYSTEM_MESSAGE,
         `Reminder sent for: ${thread.title}`,
-        `Sent reminder to ${results.length} pending invitee(s)`
+        `Sent reminder to ${results.length} pending invitee(s)`,
+        INBOX_PRIORITY.NORMAL
       ).run();
     } catch (error) {
       console.error('[Remind] Failed to create inbox notification:', error);

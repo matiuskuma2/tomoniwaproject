@@ -15,6 +15,7 @@ import { getUserIdLegacy } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { EmailJob } from '../services/emailQueue';
+import { THREAD_STATUS, isValidThreadStatus } from '../../../../packages/shared/src/types/thread';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -57,7 +58,14 @@ app.get('/', async (c) => {
     
     const params: any[] = [userId];
     
+    // Validate status parameter
     if (status) {
+      if (!isValidThreadStatus(status)) {
+        return c.json({ 
+          error: 'Invalid status',
+          message: `Status must be one of: ${Object.values(THREAD_STATUS).join(', ')}`
+        }, 400);
+      }
       query += ` AND t.status = ?`;
       params.push(status);
     }
@@ -187,8 +195,8 @@ app.post(
       
       await env.DB.prepare(`
         INSERT INTO scheduling_threads (id, organizer_user_id, title, description, status, mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'draft', 'one_on_one', ?, ?)
-      `).bind(threadId, userId, title, description || null, now, now).run();
+        VALUES (?, ?, ?, ?, ?, 'one_on_one', ?, ?)
+      `).bind(threadId, userId, title, description || null, THREAD_STATUS.DRAFT, now, now).run();
 
       console.log('[Threads] Created thread in scheduling_threads:', threadId);
 
