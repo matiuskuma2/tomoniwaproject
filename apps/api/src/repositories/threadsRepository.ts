@@ -17,6 +17,18 @@ export interface Thread {
   updated_at: string;
 }
 
+// SchedulingThread interface (from scheduling_threads table)
+export interface SchedulingThread {
+  id: string;
+  organizer_user_id: string;
+  title: string | null;
+  description: string | null;
+  status: 'draft' | 'sent' | 'confirmed' | 'cancelled';
+  mode: 'one_on_one' | 'group' | 'public';
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ThreadInvite {
   id: string;
   thread_id: string;
@@ -256,6 +268,34 @@ export class ThreadsRepository {
       .all<ThreadInvite>();
 
     return result.results || [];
+  }
+
+  /**
+   * Update invite status
+   */
+  async updateInviteStatus(inviteId: string, newStatus: 'pending' | 'accepted' | 'declined' | 'expired'): Promise<void> {
+    const now = new Date().toISOString();
+    const updateField = newStatus === 'accepted' ? ', accepted_at = ?' : '';
+    const bindings = newStatus === 'accepted' 
+      ? [newStatus, now, inviteId]
+      : [newStatus, inviteId];
+
+    await this.db
+      .prepare(`UPDATE thread_invites SET status = ?${updateField} WHERE id = ?`)
+      .bind(...bindings)
+      .run();
+  }
+
+  /**
+   * Get scheduling thread by ID (from scheduling_threads table)
+   */
+  async getSchedulingThreadById(id: string): Promise<SchedulingThread | null> {
+    const result = await this.db
+      .prepare('SELECT * FROM scheduling_threads WHERE id = ?')
+      .bind(id)
+      .first<SchedulingThread>();
+
+    return result || null;
   }
 
   /**

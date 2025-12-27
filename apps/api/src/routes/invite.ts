@@ -1,7 +1,10 @@
 /**
  * External Invite Routes (Ticket 10)
  * 
- * Top-level /i/:token route for stranger invite acceptance
+ * TimeRex/Spear型の外部招待体験
+ * - モバイルファースト
+ * - 視覚フィードバック豊富
+ * - エラー状態を明確に伝える
  */
 
 import { Hono } from 'hono';
@@ -10,6 +13,110 @@ import { InboxRepository } from '../repositories/inboxRepository';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
+
+/**
+ * 日本語日時フォーマット
+ */
+function formatDateTimeJP(dateStr: string): string {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  const weekday = weekdays[date.getDay()];
+  
+  return `${year}年${month}月${day}日（${weekday}）${hours}:${minutes}`;
+}
+
+/**
+ * 共通HTMLヘッダー
+ */
+function getHtmlHead(title: string): string {
+  return `
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <title>${title}</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+      <style>
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+          animation: fadeIn 0.3s ease-out;
+        }
+        .slot-card {
+          transition: all 0.2s ease;
+        }
+        .slot-card:hover {
+          border-color: #3B82F6;
+          background-color: #EFF6FF;
+        }
+        .slot-card.selected {
+          border-color: #3B82F6;
+          background-color: #DBEAFE;
+          border-width: 3px;
+        }
+        .spinner {
+          border: 3px solid rgba(255,255,255,.3);
+          border-radius: 50%;
+          border-top-color: #fff;
+          width: 20px;
+          height: 20px;
+          animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </head>
+  `;
+}
+
+/**
+ * エラー画面HTML生成
+ */
+function errorPage(type: 'not-found' | 'expired' | 'already-responded', details?: any): string {
+  const configs = {
+    'not-found': {
+      icon: '⚠️',
+      title: 'この招待リンクは無効です',
+      message: 'このリンクは削除されたか、正しくありません。<br>招待元にお問い合わせください。',
+      color: 'red'
+    },
+    'expired': {
+      icon: '⌛',
+      title: 'この招待は期限切れです',
+      message: `有効期限: ${details?.expires_at ? formatDateTimeJP(details.expires_at) : '不明'}<br><br>新しい招待リンクが必要な場合は、<br>主催者にお問い合わせください。`,
+      color: 'amber'
+    },
+    'already-responded': {
+      icon: '✓',
+      title: 'すでに回答済みです',
+      message: `あなたの回答: ${details?.status === 'accepted' ? '参加' : '辞退'}<br><br>変更が必要な場合は、主催者にお問い合わせください。`,
+      color: 'blue'
+    }
+  };
+
+  const config = configs[type];
+  
+  return `
+    ${getHtmlHead(config.title)}
+    <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center fade-in">
+        <div class="text-6xl mb-4">${config.icon}</div>
+        <h1 class="text-2xl font-bold text-${config.color}-600 mb-4">${config.title}</h1>
+        <p class="text-gray-700 leading-relaxed">${config.message}</p>
+      </div>
+    </body>
+    </html>
+  `;
+}
 
 /**
  * View invite (for /i/:token page)
@@ -24,137 +131,155 @@ app.get('/:token', async (c) => {
     const threadsRepo = new ThreadsRepository(env.DB);
     const invite = await threadsRepo.getInviteByToken(token);
 
+    // 無効なトークン
     if (!invite) {
-      return c.html(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Invitation Not Found</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-          <div class="bg-white p-8 rounded-lg shadow-lg max-w-md">
-            <h1 class="text-2xl font-bold text-red-600 mb-4">Invitation Not Found</h1>
-            <p class="text-gray-700">This invitation link is invalid or has been removed.</p>
-          </div>
-        </body>
-        </html>
-      `, 404);
+      return c.html(errorPage('not-found'), 404);
     }
 
+    // 既に回答済み
     if (invite.status !== 'pending') {
-      return c.html(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Invitation Already Processed</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-          <div class="bg-white p-8 rounded-lg shadow-lg max-w-md">
-            <h1 class="text-2xl font-bold text-yellow-600 mb-4">Already Processed</h1>
-            <p class="text-gray-700">This invitation has already been ${invite.status}.</p>
-          </div>
-        </body>
-        </html>
-      `);
+      return c.html(errorPage('already-responded', invite));
     }
 
+    // 期限切れ
     if (new Date(invite.expires_at) < new Date()) {
-      return c.html(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Invitation Expired</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-          <div class="bg-white p-8 rounded-lg shadow-lg max-w-md">
-            <h1 class="text-2xl font-bold text-red-600 mb-4">Invitation Expired</h1>
-            <p class="text-gray-700">This invitation has expired. Please contact the thread owner for a new invitation.</p>
-          </div>
-        </body>
-        </html>
-      `);
+      return c.html(errorPage('expired', invite));
     }
 
     const thread = await threadsRepo.getById(invite.thread_id);
 
-    // Get available slots
+    // Get available slots（カラム名修正: start_time → start_at）
     const { results: slots } = await env.DB.prepare(`
-      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_time ASC
+      SELECT slot_id, start_at, end_at, timezone FROM scheduling_slots 
+      WHERE thread_id = ? 
+      ORDER BY start_at ASC
     `).bind(invite.thread_id).all();
 
     const slotsHtml = slots && slots.length > 0 ? `
       <div class="mb-6">
-        <h3 class="font-semibold text-gray-800 mb-3">Available Time Slots:</h3>
-        <div id="slots" class="space-y-2">
-          ${slots.map((slot: any, index: number) => `
-            <label class="flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition">
+        <h3 class="font-semibold text-gray-800 mb-3">候補日時を選択してください：</h3>
+        <div id="slots" class="space-y-3">
+          ${slots.map((slot: any, index: number) => {
+            const startTime = formatDateTimeJP(slot.start_at);
+            const endTime = new Date(slot.end_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            return `
+            <label class="slot-card block p-4 border-2 border-gray-200 rounded-lg cursor-pointer ${index === 0 ? 'selected' : ''}">
               <input 
                 type="radio" 
                 name="slot" 
-                value="${slot.id}" 
-                class="mr-3 w-4 h-4 text-blue-600"
+                value="${slot.slot_id}" 
+                class="hidden"
                 ${index === 0 ? 'checked' : ''}
+                onchange="updateSelection(this)"
               />
-              <div>
-                <div class="font-semibold text-gray-800">${new Date(slot.start_time).toLocaleString()}</div>
-                <div class="text-sm text-gray-600">to ${new Date(slot.end_time).toLocaleString()}</div>
-                ${slot.timezone ? `<div class="text-xs text-gray-500 mt-1">${slot.timezone}</div>` : ''}
+              <div class="flex items-center">
+                <div class="flex-shrink-0 w-6 h-6 rounded-full border-2 border-gray-300 flex items-center justify-center mr-3 check-circle">
+                  <div class="w-3 h-3 rounded-full bg-blue-500 hidden check-inner"></div>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-gray-900">${startTime}</div>
+                  <div class="text-sm text-gray-600">${endTime}まで</div>
+                  ${slot.timezone ? `<div class="text-xs text-gray-500 mt-1">${slot.timezone}</div>` : ''}
+                </div>
               </div>
             </label>
-          `).join('')}
+          `}).join('')}
         </div>
       </div>
     ` : '';
 
     return c.html(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Thread Invitation</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-      </head>
+      ${getHtmlHead('日程調整のご案内')}
       <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-        <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl">
-          <h1 class="text-3xl font-bold text-gray-800 mb-4">You're Invited!</h1>
+        <div class="bg-white p-6 sm:p-8 rounded-lg shadow-lg max-w-2xl w-full fade-in">
+          <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">日程調整のご案内</h1>
           
           <div class="bg-blue-50 p-4 rounded-lg mb-6">
-            <h2 class="text-xl font-semibold text-blue-900 mb-2">${thread?.title || 'Conversation'}</h2>
-            ${thread?.description ? `<p class="text-gray-700">${thread.description}</p>` : ''}
+            <h2 class="text-lg sm:text-xl font-semibold text-blue-900 mb-2">${thread?.title || '会議'}</h2>
+            ${thread?.description ? `<p class="text-gray-700 text-sm sm:text-base">${thread.description}</p>` : ''}
           </div>
 
-          <div class="mb-6">
-            <h3 class="font-semibold text-gray-800 mb-2">Why you were selected:</h3>
-            <p class="text-gray-700 italic">"${invite.candidate_reason || 'You would be a great fit for this conversation.'}"</p>
+          <div class="mb-6 bg-gray-50 p-4 rounded-lg">
+            <h3 class="font-semibold text-gray-800 mb-2">招待理由：</h3>
+            <p class="text-gray-700 text-sm sm:text-base italic">"${invite.candidate_reason || 'あなたに参加していただきたく、ご案内しています。'}"</p>
           </div>
 
           ${slotsHtml}
 
-          <div class="flex gap-4">
+          <div class="flex flex-col sm:flex-row gap-3 mb-4">
             <button 
+              id="acceptBtn"
               onclick="selectSlot()"
-              class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition"
+              class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center"
             >
-              ${slots && slots.length > 0 ? 'Select This Slot' : 'Accept Invitation'}
+              <span id="acceptText">${slots && slots.length > 0 ? 'この日程で参加する' : '参加する'}</span>
+              <div id="acceptSpinner" class="spinner ml-2 hidden"></div>
             </button>
             <button 
+              id="declineBtn"
               onclick="declineInvite()"
-              class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-3 px-6 rounded-lg transition"
+              class="flex-1 bg-gray-300 hover:bg-gray-400 disabled:bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg transition flex items-center justify-center"
             >
-              Decline
+              <span id="declineText">辞退する</span>
+              <div id="declineSpinner" class="spinner ml-2 hidden" style="border-top-color: #374151;"></div>
             </button>
           </div>
 
-          <p class="text-sm text-gray-500 mt-4">
-            This invitation expires on ${new Date(invite.expires_at).toLocaleString()}
+          <div id="errorMessage" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+            <div class="flex items-center">
+              <span class="text-xl mr-2">❌</span>
+              <div>
+                <div class="font-semibold">送信に失敗しました</div>
+                <div class="text-sm">インターネット接続を確認して、もう一度お試しください。</div>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-xs sm:text-sm text-gray-500 text-center">
+            この招待は <strong>${formatDateTimeJP(invite.expires_at)}</strong> まで有効です
           </p>
         </div>
 
         <script>
+          function updateSelection(radio) {
+            // Update visual feedback
+            document.querySelectorAll('.slot-card').forEach(card => {
+              card.classList.remove('selected');
+              card.querySelector('.check-inner').classList.add('hidden');
+            });
+            
+            const card = radio.closest('.slot-card');
+            card.classList.add('selected');
+            card.querySelector('.check-inner').classList.remove('hidden');
+          }
+
+          function setLoading(btnId, loading) {
+            const btn = document.getElementById(btnId);
+            const text = document.getElementById(btnId.replace('Btn', 'Text'));
+            const spinner = document.getElementById(btnId.replace('Btn', 'Spinner'));
+            
+            btn.disabled = loading;
+            if (loading) {
+              spinner.classList.remove('hidden');
+            } else {
+              spinner.classList.add('hidden');
+            }
+          }
+
+          function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            if (message) {
+              errorDiv.querySelector('div.text-sm').textContent = message;
+              errorDiv.classList.remove('hidden');
+              setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+            }
+          }
+
           async function selectSlot() {
             try {
+              setLoading('acceptBtn', true);
+              setLoading('declineBtn', true);
+              
               const selectedSlotRadio = document.querySelector('input[name="slot"]:checked');
               const selectedSlotId = selectedSlotRadio ? selectedSlotRadio.value : null;
 
@@ -168,315 +293,176 @@ app.get('/:token', async (c) => {
               });
               
               if (response.ok) {
+                const data = await response.json();
+                const selectedSlotLabel = selectedSlotRadio 
+                  ? selectedSlotRadio.closest('.slot-card').querySelector('.font-semibold').textContent
+                  : '';
+                
                 document.body.innerHTML = \`
-                  <div class="bg-gray-100 flex items-center justify-center min-h-screen">
-                    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md text-center">
+                  <div class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center fade-in">
                       <div class="text-green-600 text-6xl mb-4">✓</div>
-                      <h1 class="text-2xl font-bold text-gray-800 mb-4">Slot Selected!</h1>
-                      <p class="text-gray-700">Your selection has been recorded. You'll receive a notification once the meeting is confirmed.</p>
+                      <h1 class="text-2xl font-bold text-gray-800 mb-4">日程を選択しました</h1>
+                      <div class="bg-green-50 p-4 rounded-lg mb-4">
+                        <p class="text-sm text-gray-600 mb-1">選択した日程：</p>
+                        <p class="font-semibold text-gray-900">\${selectedSlotLabel}</p>
+                      </div>
+                      <p class="text-gray-700 mb-2">主催者が確定すると、メールで通知が届きます。</p>
+                      <p class="text-gray-700 mb-4">しばらくお待ちください。</p>
+                      <p class="text-sm text-gray-500">このページは閉じて構いません</p>
                     </div>
                   </div>
                 \`;
               } else {
-                alert('Failed to select slot. Please try again.');
+                const error = await response.json();
+                showError(error.error || '送信に失敗しました。もう一度お試しください。');
+                setLoading('acceptBtn', false);
+                setLoading('declineBtn', false);
               }
             } catch (error) {
-              alert('Network error. Please try again.');
+              console.error('Network error:', error);
+              showError('ネットワークエラーが発生しました。接続を確認してください。');
+              setLoading('acceptBtn', false);
+              setLoading('declineBtn', false);
             }
           }
 
           async function declineInvite() {
-            if (confirm('Are you sure you want to decline this invitation?')) {
-              try {
-                const response = await fetch('/i/${token}/respond', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    status: 'declined'
-                  })
-                });
+            if (!confirm('本当に辞退しますか？\\n\\n主催者には自動で通知されます。')) {
+              return;
+            }
 
-                if (response.ok) {
-                  document.body.innerHTML = \`
-                    <div class="bg-gray-100 flex items-center justify-center min-h-screen">
-                      <div class="bg-white p-8 rounded-lg shadow-lg max-w-md text-center">
-                        <h1 class="text-2xl font-bold text-gray-800 mb-4">Invitation Declined</h1>
-                        <p class="text-gray-700">Thank you for your response.</p>
-                      </div>
+            try {
+              setLoading('acceptBtn', true);
+              setLoading('declineBtn', true);
+              
+              const response = await fetch('/i/${token}/respond', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'declined'
+                })
+              });
+
+              if (response.ok) {
+                document.body.innerHTML = \`
+                  <div class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center fade-in">
+                      <div class="text-gray-600 text-6xl mb-4">✗</div>
+                      <h1 class="text-2xl font-bold text-gray-800 mb-4">参加を辞退しました</h1>
+                      <p class="text-gray-700 mb-2">ご都合が合わなかったようで残念です。</p>
+                      <p class="text-gray-700 mb-4">主催者には自動で通知されます。</p>
+                      <p class="text-gray-600">またの機会にご参加ください。</p>
                     </div>
-                  \`;
-                }
-              } catch (error) {
-                alert('Network error. Please try again.');
+                  </div>
+                \`;
+              } else {
+                const error = await response.json();
+                showError(error.error || '送信に失敗しました。もう一度お試しください。');
+                setLoading('acceptBtn', false);
+                setLoading('declineBtn', false);
               }
+            } catch (error) {
+              console.error('Network error:', error);
+              showError('ネットワークエラーが発生しました。接続を確認してください。');
+              setLoading('acceptBtn', false);
+              setLoading('declineBtn', false);
             }
           }
+
+          // Initialize first slot selection
+          document.addEventListener('DOMContentLoaded', () => {
+            const firstRadio = document.querySelector('input[name="slot"]:checked');
+            if (firstRadio) {
+              updateSelection(firstRadio);
+            }
+          });
         </script>
       </body>
       </html>
     `);
   } catch (error) {
-    console.error('[Invite] Error viewing invite:', error);
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Error</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-      </head>
-      <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-        <div class="bg-white p-8 rounded-lg shadow-lg max-w-md">
-          <h1 class="text-2xl font-bold text-red-600 mb-4">Error</h1>
-          <p class="text-gray-700">An error occurred while loading this invitation.</p>
-        </div>
-      </body>
-      </html>
-    `, 500);
+    console.error('[Invite] Error:', error);
+    return c.html(errorPage('not-found'), 500);
   }
 });
 
 /**
- * POST /:token/respond - Phase B API for RSVP with Attendance Engine
+ * Respond to invite
  * 
  * @route POST /:token/respond
- * @body { status: 'selected' | 'declined', selected_slot_id?: string, timezone?: string, comment?: string }
+ * @body { status: 'selected' | 'declined', selected_slot_id?: string }
  */
 app.post('/:token/respond', async (c) => {
   const { env } = c;
   const token = c.req.param('token');
 
-  let body: any;
   try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'Invalid JSON body' }, 400);
-  }
+    const body = await c.req.json();
+    const { status, selected_slot_id } = body;
 
-  // 1) Invite取得
-  const invite = await env.DB.prepare(`
-    SELECT id, thread_id, email, invitee_key, status, expires_at
-    FROM thread_invites
-    WHERE token = ?
-    LIMIT 1
-  `).bind(token).first<{
-    id: string;
-    thread_id: string;
-    email: string;
-    invitee_key: string | null;
-    status: string | null;
-    expires_at: string | null;
-  }>();
-
-  if (!invite) {
-    return c.json({ ok: false, error: 'INVITE_NOT_FOUND' }, 404);
-  }
-
-  // 期限切れチェック
-  if (invite.expires_at) {
-    const exp = Date.parse(invite.expires_at);
-    if (!Number.isNaN(exp) && exp < Date.now()) {
-      return c.json({ ok: false, error: 'INVITE_EXPIRED' }, 410);
-    }
-  }
-
-  // 2) Finalize済みチェック（二重確定防止）
-  const alreadyFinalized = await env.DB.prepare(`
-    SELECT 1 FROM thread_finalize WHERE thread_id = ? LIMIT 1
-  `).bind(invite.thread_id).first();
-  
-  if (alreadyFinalized) {
-    return c.json({ ok: false, error: 'THREAD_ALREADY_FINALIZED' }, 409);
-  }
-
-  // 3) invitee_key確保（暫定：e:<lower(email)>）
-  let inviteeKey = invite.invitee_key;
-  if (!inviteeKey) {
-    inviteeKey = `e:${(invite.email || '').toLowerCase()}`;
-    await env.DB.prepare(`
-      UPDATE thread_invites SET invitee_key = ? WHERE id = ? AND invitee_key IS NULL
-    `).bind(inviteeKey, invite.id).run();
-  }
-
-  // 4) 入力バリデーション
-  if (body.status === 'selected') {
-    if (!body.selected_slot_id) {
-      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'selected_slot_id required' }, 400);
+    if (!status || !['selected', 'declined'].includes(status)) {
+      return c.json({ error: 'Invalid status' }, 400);
     }
 
-    // Slot存在確認
-    const slot = await env.DB.prepare(`
-      SELECT 1 FROM scheduling_slots WHERE id = ? AND thread_id = ? LIMIT 1
-    `).bind(body.selected_slot_id, invite.thread_id).first();
-    
-    if (!slot) {
-      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'slot not found for thread' }, 400);
+    const threadsRepo = new ThreadsRepository(env.DB);
+    const invite = await threadsRepo.getInviteByToken(token);
+
+    if (!invite) {
+      return c.json({ error: 'Invitation not found' }, 404);
     }
-  } else if (body.status === 'declined') {
-    if (body.selected_slot_id !== undefined) {
-      return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'selected_slot_id must be omitted for declined' }, 400);
+
+    if (invite.status !== 'pending') {
+      return c.json({ error: 'Invitation already processed' }, 400);
     }
-  } else {
-    return c.json({ ok: false, error: 'VALIDATION_ERROR', details: 'status must be selected or declined' }, 400);
-  }
 
-  // 5) thread_selections upsert
-  const selectionId = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
+    if (new Date(invite.expires_at) < new Date()) {
+      return c.json({ error: 'Invitation expired' }, 400);
+    }
 
-  await env.DB.prepare(`
-    INSERT INTO thread_selections
-      (id, thread_id, invite_id, invitee_key, status, selected_slot_id, responded_at, created_at)
-    VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(thread_id, invitee_key) DO UPDATE SET
-      invite_id        = excluded.invite_id,
-      status           = excluded.status,
-      selected_slot_id = excluded.selected_slot_id,
-      responded_at     = excluded.responded_at
-  `).bind(
-    selectionId,
-    invite.thread_id,
-    invite.id,
-    inviteeKey,
-    body.status,
-    body.status === 'selected' ? body.selected_slot_id : null,
-    nowIso,
-    nowIso
-  ).run();
+    // Update invite status
+    const newStatus = status === 'selected' ? 'accepted' : 'declined';
+    await threadsRepo.updateInviteStatus(invite.id, newStatus);
 
-  // Update invite status (backward compatibility)
-  await env.DB.prepare(`
-    UPDATE thread_invites 
-    SET status = ?, accepted_at = ?
-    WHERE id = ?
-  `).bind(body.status === 'selected' ? 'accepted' : 'declined', nowIso, invite.id).run();
+    // Record slot selection if accepted
+    if (status === 'selected' && selected_slot_id) {
+      const selectionId = `sel-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO thread_selections (
+          selection_id, thread_id, invite_id, invitee_key, selected_slot_id, status, responded_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'selected', datetime('now'), datetime('now'))
+      `).bind(selectionId, invite.thread_id, invite.id, invite.invitee_key, selected_slot_id).run();
+    }
 
-  // 6) AttendanceEngine評価
-  const { AttendanceEngine } = await import('../services/attendanceEngine');
-  const engine = new AttendanceEngine(env.DB);
-  
-  const evaluation = await engine.evaluateThread(invite.thread_id);
-
-  // 7) Auto finalize
-  let didFinalize = false;
-  let finalSlotId: string | null = null;
-
-  if (evaluation?.auto_finalize === true && evaluation?.is_satisfied === true && evaluation?.best_slot_id) {
-    finalSlotId = evaluation.best_slot_id;
-
-    // Idempotent finalize
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO thread_finalize
-        (thread_id, final_slot_id, finalize_policy, finalized_by, finalized_at, final_participants_json)
-      VALUES
-        (?, ?, ?, ?, ?, ?)
-    `).bind(
-      invite.thread_id,
-      finalSlotId,
-      evaluation.finalize_policy || 'EARLIEST_VALID',
-      'system',
-      nowIso,
-      JSON.stringify(evaluation.final_participants || [])
-    ).run();
-
-    // Update thread status
-    await env.DB.prepare(`
-      UPDATE scheduling_threads SET status = 'finalized' WHERE id = ?
-    `).bind(invite.thread_id).run();
-
-    didFinalize = true;
-
-    // Notify thread owner
-    const thread = await env.DB.prepare(`
-      SELECT * FROM scheduling_threads WHERE id = ?
-    `).bind(invite.thread_id).first<any>();
-
-    if (thread) {
+    // Send notification to organizer (via inbox)
+    const schedulingThread = await threadsRepo.getSchedulingThreadById(invite.thread_id);
+    if (schedulingThread) {
       const inboxRepo = new InboxRepository(env.DB);
+      const message = status === 'selected' 
+        ? `${invite.candidate_name}さんが日程候補を選択しました`
+        : `${invite.candidate_name}さんが辞退しました`;
+
       await inboxRepo.create({
-        user_id: thread.host_user_id || thread.organizer_user_id,
-        type: 'scheduling_finalized',
-        title: `Thread "${thread.title}" has been finalized!`,
-        message: `The scheduling thread has been automatically finalized with ${evaluation.final_participants?.length || 0} participants.`,
+        user_id: schedulingThread.organizer_user_id,
+        type: 'system_message',
+        priority: 'normal',
+        title: `${schedulingThread.title || 'スレッド'} - 返信がありました`,
+        message,
         action_type: 'view_thread',
-        action_target_id: thread.id,
-        action_url: `/threads/${thread.id}`,
-        priority: 'high',
+        action_target_id: invite.thread_id,
+        action_url: `/scheduling/threads/${invite.thread_id}`,
+        data: { thread_id: invite.thread_id, invite_id: invite.id }
       });
     }
-  }
 
-  return c.json({
-    ok: true,
-    thread_id: invite.thread_id,
-    invite_id: invite.id,
-    invitee_key: inviteeKey,
-    selection: {
-      status: body.status,
-      selected_slot_id: body.status === 'selected' ? body.selected_slot_id : null,
-      responded_at: nowIso,
-    },
-    evaluation,
-    finalize: {
-      did_finalize: didFinalize,
-      final_slot_id: finalSlotId,
-    },
-  });
-});
-
-/**
- * Accept invite (Legacy - backward compatibility)
- * 
- * @route POST /:token/accept
- */
-app.post('/:token/accept', async (c) => {
-  const { env } = c;
-  const token = c.req.param('token');
-
-  try {
-    const threadsRepo = new ThreadsRepository(env.DB);
-    const invite = await threadsRepo.acceptInvite(token);
-
-    console.log('[Invite] Invite accepted:', invite.id);
-
-    // Get thread details
-    const thread = await threadsRepo.getById(invite.thread_id);
-    if (!thread) {
-      throw new Error('Thread not found');
-    }
-
-    // Create inbox notification for thread owner
-    const inboxRepo = new InboxRepository(env.DB);
-    await inboxRepo.create({
-      user_id: thread.user_id,
-      type: 'scheduling_invite', // Thread acceptance notification as scheduling_invite
-      title: `${invite.candidate_name} accepted your invitation`,
-      message: `${invite.candidate_name} has accepted your invitation to join "${thread.title}"`,
-      action_type: 'view_thread',
-      action_target_id: thread.id,
-      action_url: `/threads/${thread.id}`,
-      priority: 'high',
-    });
-
-    console.log('[Invite] Created inbox notification for owner');
-
-    return c.json({
+    return c.json({ 
       success: true,
-      message: 'Invitation accepted',
-      thread: {
-        id: thread.id,
-        title: thread.title,
-      },
+      status: newStatus,
+      message: status === 'selected' ? 'Slot selected' : 'Invitation declined'
     });
   } catch (error) {
-    console.error('[Invite] Error accepting invite:', error);
-    return c.json(
-      {
-        error: 'Failed to accept invitation',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500
-    );
+    console.error('[Invite] Respond error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

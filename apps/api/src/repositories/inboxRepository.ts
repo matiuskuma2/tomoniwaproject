@@ -16,6 +16,7 @@ export interface InboxItem {
   is_read: number;
   read_at: string | null;
   created_at: string;
+  data?: any; // Optional JSON data for additional context
 }
 
 export interface InboxQueryParams {
