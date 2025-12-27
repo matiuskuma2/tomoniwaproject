@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
 import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
+import { MEETING_PROVIDER } from '../../../../packages/shared/src/types/meeting';
 import { GoogleCalendarService } from '../services/googleCalendar';
 
 type Variables = {
@@ -168,7 +169,7 @@ app.post('/:id/finalize', async (c) => {
         
         if (event && event.hangoutLink) {
           meetingUrl = event.hangoutLink;
-          meetingProvider = 'google_meet';
+          meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
           calendarEventId = event.id;
           console.log('[Finalize] Google Meet created:', meetingUrl);
         } else {
