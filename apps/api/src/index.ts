@@ -27,6 +27,7 @@ import roomsRoutes from './routes/rooms';
 import schedulingApiRoutes from './routes/schedulingApi';
 import contactsRoutes from './routes/contacts';
 import listsRoutes from './routes/lists';
+import businessCardsRoutes from './routes/businessCards';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -132,6 +133,10 @@ app.route('/api/contacts', contactsRoutes);
 // Lists API (送信セグメント)
 app.use('/api/lists/*', requireAuth);
 app.route('/api/lists', listsRoutes);
+
+// Business Cards API (名刺登録)
+app.use('/api/business-cards/*', requireAuth);
+app.route('/api/business-cards', businessCardsRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
