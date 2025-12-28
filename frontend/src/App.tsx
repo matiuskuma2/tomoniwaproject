@@ -31,6 +31,14 @@ function App() {
           }
         />
         <Route
+          path="/threads/new"
+          element={
+            <ProtectedRoute>
+              <ThreadDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/threads/:threadId"
           element={
             <ProtectedRoute>
