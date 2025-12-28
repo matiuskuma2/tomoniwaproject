@@ -10,7 +10,9 @@ import type { ApiError } from '../models';
 // Configuration
 // ============================================================
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://webapp.snsrilarc.workers.dev';
+// Use same-origin (relative paths) for production
+// This allows the frontend to call APIs on the same domain (app.tomoniwao.jp)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 // ============================================================
 // Types
