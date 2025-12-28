@@ -64,6 +64,15 @@ app.get('/health', (c) => {
   });
 });
 
+// API Health Check (for Routes)
+app.get('/api/health', (c) => {
+  return c.json({
+    status: 'ok',
+    timestamp: Math.floor(Date.now() / 1000),
+    environment: c.env.ENVIRONMENT || 'unknown',
+  });
+});
+
 // ============================================================
 // API Routes
 // ============================================================
@@ -91,6 +100,8 @@ app.use('/test/*', async (c, next) => {
 app.route('/test/rate-limit', testRateLimitRoutes);
 
 // Authentication Routes (Public - no auth required)
+// Note: /auth/* routes are accessed via Routes (app.tomoniwao.jp/auth/*)
+// Workers receives the full path including /auth
 app.route('/auth', authRoutes);
 
 // OTP Service (Ticket 05 - Public for registration)
