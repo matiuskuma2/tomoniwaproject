@@ -5,52 +5,63 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { redirectToLogin, exchangeToken, saveAuth, isAuthenticated } from '../core/auth';
-import { API_BASE_URL } from '../core/api';
+import { isAuthenticated } from '../core/auth';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Check if already authenticated
+  // Check if already authenticated OR try to exchange cookie for token
   useEffect(() => {
+    // すでにtokenがあるなら即ダッシュボード
     if (isAuthenticated()) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
+      return;
     }
-  }, [navigate]);
 
-  // Handle OAuth callback (if redirected back from Google)
-  useEffect(() => {
-    const handleCallback = async () => {
-      // Check if we're coming back from OAuth (has 'code' in URL)
-      const params = new URLSearchParams(window.location.search);
-      if (!params.has('code')) return;
-
-      setLoading(true);
-      setError(null);
-
+    // ログイン直後（cookie sessionあり）の場合、tokenを取得して保存→遷移
+    (async () => {
       try {
-        // Exchange code for token
-        const authToken = await exchangeToken(API_BASE_URL);
-        
-        // Save auth data
-        saveAuth(authToken);
-        
-        // Redirect to dashboard
-        navigate('/dashboard');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to login');
-        setLoading(false);
-      }
-    };
+        const res = await fetch('/auth/token', {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+        });
 
-    handleCallback();
+        const text = await res.text();
+        if (!res.ok) {
+          // Token取得失敗（未ログイン状態）- エラー表示せず、ログインボタンを表示
+          if (res.status === 401 || res.status === 403) {
+            return; // 正常な未ログイン状態
+          }
+          setError(`Token取得失敗: ${res.status} ${text.slice(0, 200)}`);
+          return;
+        }
+
+        const data = JSON.parse(text) as { access_token?: string; user?: any };
+        if (!data.access_token) {
+          setError(`Tokenレスポンス不正: ${text.slice(0, 200)}`);
+          return;
+        }
+
+        // ★ここが最重要: token保存
+        sessionStorage.setItem('tomoniwao_token', data.access_token);
+        if (data.user) {
+          sessionStorage.setItem('tomoniwao_user', JSON.stringify(data.user));
+        }
+        
+        navigate('/dashboard', { replace: true });
+      } catch (e: any) {
+        setError(`Token取得中に例外: ${e?.message || String(e)}`);
+      }
+    })();
   }, [navigate]);
 
   const handleLogin = () => {
     setLoading(true);
-    redirectToLogin(API_BASE_URL);
+    // 同一オリジンなので相対パスでOK
+    window.location.href = '/auth/google/start';
   };
 
   return (
