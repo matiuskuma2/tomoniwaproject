@@ -134,7 +134,8 @@ app.use('/api/voice*', requireAuth);
 app.route('/api/voice', voiceRoutes);
 
 // Threads API (Ticket 10 + Phase B)
-app.use('/api/threads*', requireAuth);  // Remove trailing slash to match /api/threads and /api/threads/*
+app.use('/api/threads', requireAuth);     // Match /api/threads
+app.use('/api/threads/*', requireAuth);   // Match /api/threads/* (including /api/threads/:id/status)
 app.route('/api/threads', threadsRoutes);
 app.route('/api/threads', threadsStatusRoutes);   // GET /:id/status
 app.route('/api/threads', threadsRemindRoutes);   // POST /:id/remind
