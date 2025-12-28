@@ -42,6 +42,17 @@ const app = new Hono<{ Bindings: Env }>();
 // ============================================================
 app.use('*', logger());
 
+// Normalize trailing slashes for API endpoints
+// Redirects /api/threads/ to /api/threads (308 Permanent Redirect)
+app.use('/api/*', async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.pathname.endsWith('/') && url.pathname !== '/api/') {
+    url.pathname = url.pathname.replace(/\/+$/, '');
+    return c.redirect(url.toString(), 308);
+  }
+  await next();
+});
+
 // CORS - adjust origins in production via wrangler.jsonc
 app.use('/api/*', cors({
   origin: (origin) => {
