@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { isAuthenticated } from './core/auth';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ThreadCreatePage } from './pages/ThreadCreatePage';
 import { ThreadDetailPage } from './pages/ThreadDetailPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
@@ -34,7 +35,7 @@ function App() {
           path="/threads/new"
           element={
             <ProtectedRoute>
-              <ThreadDetailPage />
+              <ThreadCreatePage />
             </ProtectedRoute>
           }
         />

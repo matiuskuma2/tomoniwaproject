@@ -401,11 +401,15 @@ app.post(
           status: 'draft',
           created_at: now
         },
-        candidates: candidates.map((candidate, i) => ({
-          ...candidate,
-          invite_token: invites[i].token,
-          invite_url: `https://webapp.snsrilarc.workers.dev/i/${invites[i].token}`,
-        })),
+        candidates: candidates.map((candidate, i) => {
+          // Get the host from the request
+          const host = c.req.header('host') || 'app.tomoniwao.jp';
+          return {
+            ...candidate,
+            invite_token: invites[i].token,
+            invite_url: `https://${host}/i/${invites[i].token}`,
+          };
+        }),
         message: `Thread created with ${candidates.length} candidate invitations sent`,
         // 最重要ポイント 3: skipped_count をレスポンスに含める（target_list_id モード時のみ）
         ...(target_list_id ? { skipped_count: skippedCount } : {}),
