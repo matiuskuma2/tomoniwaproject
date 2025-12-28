@@ -13,12 +13,28 @@ const USER_KEY = 'tomoniwao_user';
 // ============================================================
 
 /**
+ * Set access token
+ */
+export function setToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+/**
+ * Set user info
+ */
+export function setUser(user: User): void {
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+/**
  * Save auth token and user info to sessionStorage
  * Use localStorage for persistent login (future consideration)
  */
 export function saveAuth(authToken: AuthToken): void {
-  sessionStorage.setItem(TOKEN_KEY, authToken.access_token);
-  sessionStorage.setItem(USER_KEY, JSON.stringify(authToken.user));
+  setToken(authToken.access_token);
+  if (authToken.user) {
+    setUser(authToken.user);
+  }
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { isAuthenticated } from '../core/auth';
+import { isAuthenticated, setToken } from '../core/auth';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -45,11 +45,8 @@ export function LoginPage() {
           return;
         }
 
-        // ★ここが最重要: token保存
-        sessionStorage.setItem('tomoniwao_token', data.access_token);
-        if (data.user) {
-          sessionStorage.setItem('tomoniwao_user', JSON.stringify(data.user));
-        }
+        // ★ここが最重要: token保存（関数を使う）
+        setToken(data.access_token);
         
         navigate('/dashboard', { replace: true });
       } catch (e: any) {
