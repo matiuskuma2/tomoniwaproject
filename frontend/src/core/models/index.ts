@@ -57,17 +57,41 @@ export interface ThreadInvite {
 export type InviteStatus = 'pending' | 'accepted' | 'declined';
 
 export interface ThreadStatus_API {
-  thread_id: string;
-  title: string;
-  status: ThreadStatus;
-  pending_count: number;
-  accepted_count: number;
-  declined_count: number;
-  total_invites: number;
-  pending_invites: ThreadInvite[];
-  accepted_invites: ThreadInvite[];
-  declined_invites: ThreadInvite[];
+  thread: {
+    id: string;
+    organizer_user_id: string;
+    title: string;
+    description?: string;
+    status: ThreadStatus;
+    mode?: string;
+    created_at: string;
+    updated_at: string;
+  };
+  rule: {
+    version: number;
+    type: string;
+    finalize_policy: string;
+    details: any;
+  };
   slots: Slot[];
+  invites: Array<{
+    invite_id: string;
+    email: string;
+    candidate_name?: string;
+    invitee_key?: string;
+    status: InviteStatus | null;
+    token: string;
+    invite_url: string;
+    expires_at?: string;
+    responded_at?: string;
+  }>;
+  selections: any[];
+  evaluation: any;
+  pending: {
+    count: number;
+    invites: any[];
+    required_missing: string[];
+  };
 }
 
 export interface Meeting {

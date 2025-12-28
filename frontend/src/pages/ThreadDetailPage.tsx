@@ -108,9 +108,9 @@ export function ThreadDetailPage() {
         >
           ← 一覧に戻る
         </button>
-        <h2 className="text-2xl font-bold text-gray-900">{status.title}</h2>
+        <h2 className="text-2xl font-bold text-gray-900">{status.thread.title}</h2>
         <span className="mt-2 inline-block px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
-          {status.status}
+          {status.thread.status}
         </span>
       </div>
 
@@ -120,31 +120,37 @@ export function ThreadDetailPage() {
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="bg-gray-50 p-4 rounded">
             <p className="text-sm text-gray-500">招待数</p>
-            <p className="text-2xl font-bold text-gray-900">{status.total_invites}</p>
+            <p className="text-2xl font-bold text-gray-900">{status.invites?.length || 0}</p>
           </div>
           <div className="bg-yellow-50 p-4 rounded">
             <p className="text-sm text-gray-500">未回答</p>
-            <p className="text-2xl font-bold text-yellow-600">{status.pending_count}</p>
+            <p className="text-2xl font-bold text-yellow-600">
+              {status.invites?.filter((inv: any) => inv.status === 'pending' || !inv.status).length || 0}
+            </p>
           </div>
           <div className="bg-green-50 p-4 rounded">
             <p className="text-sm text-gray-500">承諾</p>
-            <p className="text-2xl font-bold text-green-600">{status.accepted_count}</p>
+            <p className="text-2xl font-bold text-green-600">
+              {status.invites?.filter((inv: any) => inv.status === 'accepted').length || 0}
+            </p>
           </div>
           <div className="bg-red-50 p-4 rounded">
             <p className="text-sm text-gray-500">辞退</p>
-            <p className="text-2xl font-bold text-red-600">{status.declined_count}</p>
+            <p className="text-2xl font-bold text-red-600">
+              {status.invites?.filter((inv: any) => inv.status === 'declined').length || 0}
+            </p>
           </div>
         </div>
       </div>
 
       {/* Actions */}
-      {status.status === 'draft' || status.status === 'active' ? (
+      {status.thread.status === 'draft' || status.thread.status === 'active' ? (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">アクション</h3>
           <div className="flex gap-4">
             <button
               onClick={handleRemind}
-              disabled={reminding || status.pending_count === 0}
+              disabled={reminding || (status.invites?.filter((inv: any) => inv.status === 'pending' || !inv.status).length || 0) === 0}
               className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {reminding ? '送信中...' : 'リマインダー送信'}
@@ -154,7 +160,7 @@ export function ThreadDetailPage() {
       ) : null}
 
       {/* Slots (for finalization) */}
-      {status.status === 'draft' || status.status === 'active' ? (
+      {status.thread.status === 'draft' || status.thread.status === 'active' ? (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">候補日時</h3>
           <div className="space-y-2">
@@ -200,18 +206,18 @@ export function ThreadDetailPage() {
         <h3 className="text-lg font-medium text-gray-900 mb-4">招待リスト</h3>
         
         {/* Pending */}
-        {status.pending_invites.length > 0 && (
+        {status.invites && status.invites.filter((inv: any) => inv.status === 'pending' || !inv.status).length > 0 && (
           <div className="mb-6">
             <h4 className="text-sm font-medium text-gray-700 mb-2">未回答</h4>
             <ul className="divide-y divide-gray-200">
-              {status.pending_invites.map((invite) => (
-                <li key={invite.id} className="py-3">
+              {status.invites.filter((inv: any) => inv.status === 'pending' || !inv.status).map((invite: any) => (
+                <li key={invite.invite_id} className="py-3">
                   <div className="flex justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {invite.name || invite.email}
+                        {invite.candidate_name || invite.email}
                       </p>
-                      {invite.name && (
+                      {invite.candidate_name && (
                         <p className="text-sm text-gray-500">{invite.email}</p>
                       )}
                     </div>
@@ -224,18 +230,18 @@ export function ThreadDetailPage() {
         )}
 
         {/* Accepted */}
-        {status.accepted_invites.length > 0 && (
+        {status.invites && status.invites.filter((inv: any) => inv.status === 'accepted').length > 0 && (
           <div className="mb-6">
             <h4 className="text-sm font-medium text-gray-700 mb-2">承諾</h4>
             <ul className="divide-y divide-gray-200">
-              {status.accepted_invites.map((invite) => (
-                <li key={invite.id} className="py-3">
+              {status.invites.filter((inv: any) => inv.status === 'accepted').map((invite: any) => (
+                <li key={invite.invite_id} className="py-3">
                   <div className="flex justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {invite.name || invite.email}
+                        {invite.candidate_name || invite.email}
                       </p>
-                      {invite.name && (
+                      {invite.candidate_name && (
                         <p className="text-sm text-gray-500">{invite.email}</p>
                       )}
                     </div>
@@ -248,18 +254,18 @@ export function ThreadDetailPage() {
         )}
 
         {/* Declined */}
-        {status.declined_invites.length > 0 && (
+        {status.invites && status.invites.filter((inv: any) => inv.status === 'declined').length > 0 && (
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">辞退</h4>
             <ul className="divide-y divide-gray-200">
-              {status.declined_invites.map((invite) => (
-                <li key={invite.id} className="py-3">
+              {status.invites.filter((inv: any) => inv.status === 'declined').map((invite: any) => (
+                <li key={invite.invite_id} className="py-3">
                   <div className="flex justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-900">
-                        {invite.name || invite.email}
+                        {invite.candidate_name || invite.email}
                       </p>
-                      {invite.name && (
+                      {invite.candidate_name && (
                         <p className="text-sm text-gray-500">{invite.email}</p>
                       )}
                     </div>
