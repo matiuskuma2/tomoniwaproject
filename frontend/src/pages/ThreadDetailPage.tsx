@@ -57,7 +57,13 @@ export function ThreadDetailPage() {
   const handleFinalize = async () => {
     if (!threadId || !selectedSlotId) return;
     
-    if (!confirm('この日程で確定しますか？')) return;
+    // Improved confirmation message
+    const selectedSlot = status?.slots.find((s: Slot) => s.slot_id === selectedSlotId);
+    const confirmMessage = selectedSlot
+      ? `以下の日程で確定します。\nGoogle Meet URL が自動的に生成されます。\n\n${new Date(selectedSlot.start_at).toLocaleString('ja-JP')} 〜 ${new Date(selectedSlot.end_at).toLocaleString('ja-JP')}\n\nよろしいですか？`
+      : 'この日程で確定しますか？Google Meet URL が生成されます。';
+    
+    if (!confirm(confirmMessage)) return;
     
     try {
       setFinalizing(true);
@@ -69,7 +75,7 @@ export function ThreadDetailPage() {
       await loadStatus();
       
       // Success message (Meet URL will be shown in the page)
-      alert('確定しました！Google Meet URL が生成されました。');
+      alert('✅ 確定しました！\n\nGoogle Meet URL が生成されました。\n下にスクロールして「日程が確定しました」セクションをご確認ください。');
     } catch (err) {
       alert(err instanceof Error ? err.message : '確定に失敗しました');
     } finally {
@@ -243,32 +249,46 @@ export function ThreadDetailPage() {
       {/* Slots (for finalization) */}
       {status.thread.status === 'draft' || status.thread.status === 'active' ? (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">候補日時</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">候補日時と回答状況</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            主催者は全員の回答状況を確認し、最適な日程を選択して確定できます。
+          </p>
           <div className="space-y-2">
-            {status.slots.map((slot: Slot) => (
-              <label
-                key={slot.slot_id}
-                className="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
-              >
-                <input
-                  type="radio"
-                  name="slot"
-                  value={slot.slot_id}
-                  checked={selectedSlotId === slot.slot_id}
-                  onChange={(e) => setSelectedSlotId(e.target.value)}
-                  className="mr-3"
-                />
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">
-                    {new Date(slot.start_at).toLocaleString('ja-JP')} 〜{' '}
-                    {new Date(slot.end_at).toLocaleString('ja-JP')}
-                  </p>
-                  {slot.label && (
-                    <p className="text-sm text-gray-500">{slot.label}</p>
-                  )}
-                </div>
-              </label>
-            ))}
+            {status.slots.map((slot: Slot) => {
+              // Count how many people selected this slot
+              const selectedCount = status.selections?.filter((sel: any) => 
+                sel.selected_slot_id === slot.slot_id && sel.status === 'accepted'
+              ).length || 0;
+              
+              return (
+                <label
+                  key={slot.slot_id}
+                  className="flex items-center p-4 border rounded-lg cursor-pointer hover:bg-gray-50"
+                >
+                  <input
+                    type="radio"
+                    name="slot"
+                    value={slot.slot_id}
+                    checked={selectedSlotId === slot.slot_id}
+                    onChange={(e) => setSelectedSlotId(e.target.value)}
+                    className="mr-3"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">
+                      {new Date(slot.start_at).toLocaleString('ja-JP')} 〜{' '}
+                      {new Date(slot.end_at).toLocaleString('ja-JP')}
+                    </p>
+                    {slot.label && (
+                      <p className="text-sm text-gray-500">{slot.label}</p>
+                    )}
+                    {/* Show selection count */}
+                    <p className="text-sm text-blue-600 mt-1">
+                      {selectedCount > 0 ? `${selectedCount}名が選択` : '未選択'}
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
           </div>
           {selectedSlotId && (
             <button
