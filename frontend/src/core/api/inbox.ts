@@ -1,5 +1,6 @@
 /**
  * Inbox API
+ * Phase Next-1: GET only
  */
 
 import { api } from './client';
@@ -13,10 +14,8 @@ export const inboxApi = {
     return api.get('/api/inbox');
   },
 
-  /**
-   * Mark notification as read
-   */
-  async markAsRead(notificationId: string): Promise<{ success: boolean }> {
-    return api.patch(`/api/inbox/${notificationId}`, { read: true });
-  },
+  // Phase Next-2+: Mark as read (PATCH)
+  // async markAsRead(notificationId: string): Promise<{ success: boolean }> {
+  //   return api.patch(`/api/inbox/${notificationId}`, { read: true });
+  // },
 };
