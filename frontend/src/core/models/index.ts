@@ -86,7 +86,12 @@ export interface ThreadStatus_API {
     responded_at?: string;
   }>;
   selections: any[];
-  evaluation: any;
+  evaluation: {
+    finalized?: boolean;
+    final_slot_id?: string;
+    meeting?: Meeting;
+    [key: string]: any;
+  };
   pending: {
     count: number;
     invites: any[];

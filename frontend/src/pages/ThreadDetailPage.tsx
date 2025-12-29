@@ -61,18 +61,15 @@ export function ThreadDetailPage() {
     
     try {
       setFinalizing(true);
-      const result = await threadsApi.finalize(threadId, {
+      await threadsApi.finalize(threadId, {
         selected_slot_id: selectedSlotId,
       });
       
-      // Show success message with Meet URL if available
-      if (result.meeting?.url) {
-        alert(`確定しました！\n\nGoogle Meet: ${result.meeting.url}`);
-      } else {
-        alert('確定しました！');
-      }
-      
+      // Reload status to show Meet URL
       await loadStatus();
+      
+      // Success message (Meet URL will be shown in the page)
+      alert('確定しました！Google Meet URL が生成されました。');
     } catch (err) {
       alert(err instanceof Error ? err.message : '確定に失敗しました');
     } finally {
@@ -142,6 +139,90 @@ export function ThreadDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Google Meet (shown after finalization) */}
+      {status.thread.status === 'confirmed' && status.evaluation?.meeting?.url && (
+        <div className="bg-green-50 border-2 border-green-200 shadow rounded-lg p-6 mb-6">
+          <h3 className="text-lg font-medium text-green-900 mb-4 flex items-center">
+            <svg className="w-6 h-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            日程が確定しました
+          </h3>
+          
+          <div className="space-y-4">
+            {/* Selected Date/Time */}
+            {status.evaluation.final_slot_id && status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id) && (
+              <div className="bg-white rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-1">確定日時</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.start_at).toLocaleString('ja-JP', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    weekday: 'short',
+                  })}
+                  {' 〜 '}
+                  {new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.end_at).toLocaleString('ja-JP', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            )}
+
+            {/* Google Meet URL */}
+            <div className="bg-white rounded-lg p-4">
+              <p className="text-sm text-gray-500 mb-2">Google Meet</p>
+              <div className="flex items-center gap-3">
+                <a
+                  href={status.evaluation?.meeting?.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-blue-600 hover:text-blue-800 font-medium break-all"
+                >
+                  {status.evaluation?.meeting?.url}
+                </a>
+                <button
+                  onClick={() => {
+                    if (status.evaluation?.meeting?.url) {
+                      navigator.clipboard.writeText(status.evaluation.meeting.url);
+                      alert('Google Meet URL をコピーしました');
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium whitespace-nowrap"
+                >
+                  📋 コピー
+                </button>
+                <a
+                  href={status.evaluation?.meeting?.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium whitespace-nowrap"
+                >
+                  参加する
+                </a>
+              </div>
+            </div>
+
+            {/* Calendar Button */}
+            {status.evaluation.final_slot_id && status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id) && (
+              <div className="flex gap-3">
+                <a
+                  href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(status.thread.title)}&dates=${new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.start_at).toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.end_at).toISOString().replace(/[-:]/g, '').split('.')[0]}Z&details=${encodeURIComponent(`Google Meet: ${status.evaluation?.meeting?.url || ''}\n\n${status.thread.description || ''}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 px-4 py-2 bg-white border-2 border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium text-center"
+                >
+                  📅 Google カレンダーに追加
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       {status.thread.status === 'draft' || status.thread.status === 'active' ? (
