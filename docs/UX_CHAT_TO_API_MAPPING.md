@@ -214,3 +214,16 @@ API：
 👉 **この対応表を変更する場合は必ず設計レビューを行う**
 
 ---
+
+## 8. Phase Next-2 への接続
+
+Phase Next-2 では、この対応表をベースに **Intent 分類**を実装する。
+
+詳細は **`PHASE_NEXT2_INTENT_CLASSIFICATION.md`** を参照。
+
+**実装優先順位（P0）**:
+1. `schedule.external.create`（外部招待型日程調整作成）
+2. `schedule.status.check`（日程調整状況確認）
+3. `schedule.finalize`（日程確定）
+
+---
