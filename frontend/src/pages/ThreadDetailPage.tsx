@@ -356,21 +356,47 @@ export function ThreadDetailPage() {
           <div className="mb-6">
             <h4 className="text-sm font-medium text-gray-700 mb-2">承諾</h4>
             <ul className="divide-y divide-gray-200">
-              {status.invites.filter((inv: any) => inv.status === 'accepted').map((invite: any) => (
-                <li key={invite.invite_id} className="py-3">
-                  <div className="flex justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {invite.candidate_name || invite.email}
-                      </p>
-                      {invite.candidate_name && (
-                        <p className="text-sm text-gray-500">{invite.email}</p>
-                      )}
+              {status.invites.filter((inv: any) => inv.status === 'accepted').map((invite: any) => {
+                // Find the selection for this invite
+                const selection = status.selections?.find((sel: any) => 
+                  sel.invitee_key === invite.invitee_key
+                );
+                
+                // Find the selected slot
+                const selectedSlot = selection 
+                  ? status.slots.find((s: Slot) => s.slot_id === selection.selected_slot_id)
+                  : null;
+                
+                return (
+                  <li key={invite.invite_id} className="py-3">
+                    <div className="flex justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {invite.candidate_name || invite.email}
+                        </p>
+                        {invite.candidate_name && (
+                          <p className="text-sm text-gray-500">{invite.email}</p>
+                        )}
+                        {/* Show selected slot */}
+                        {selectedSlot && (
+                          <p className="text-sm text-blue-600 mt-1">
+                            → {new Date(selectedSlot.start_at).toLocaleString('ja-JP', {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })} 〜 {new Date(selectedSlot.end_at).toLocaleString('ja-JP', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })} を選択
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-sm text-green-600 ml-4">承諾</span>
                     </div>
-                    <span className="text-sm text-green-600">承諾</span>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
