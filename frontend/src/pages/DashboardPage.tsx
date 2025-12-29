@@ -31,9 +31,20 @@ export function DashboardPage() {
     }
   };
 
-  const handleLogout = () => {
-    clearAuth();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      // Call backend logout endpoint to clear session
+      await fetch('/auth/logout', {
+        method: 'POST',
+        credentials: 'include', // Include cookies
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Clear local token regardless of backend response
+      clearAuth();
+      navigate('/login');
+    }
   };
 
   const getStatusBadge = (status: string) => {

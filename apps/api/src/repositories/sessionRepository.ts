@@ -101,6 +101,16 @@ export class SessionRepository {
   }
 
   /**
+   * Delete session by token hash
+   */
+  async deleteByTokenHash(token_hash: string): Promise<void> {
+    await this.db
+      .prepare(`DELETE FROM sessions WHERE token_hash = ?`)
+      .bind(token_hash)
+      .run();
+  }
+
+  /**
    * Revoke all sessions for a user
    */
   async revokeAllForUser(user_id: string): Promise<void> {

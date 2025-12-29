@@ -447,4 +447,40 @@ auth.get('/me', async (c) => {
   return c.json({ user });
 });
 
+// ============================================================
+// POST /auth/logout
+// Logout user and clear session
+// ============================================================
+auth.post('/logout', async (c) => {
+  const { env } = c;
+
+  try {
+    // Get session token from cookie
+    const sessionToken = c.req.header('cookie')?.match(/session=([^;]+)/)?.[1];
+
+    if (sessionToken) {
+      // Hash the session token
+      const tokenHash = await hashToken(sessionToken);
+
+      // Delete session from database
+      const sessionRepo = new SessionRepository(env.DB);
+      await sessionRepo.deleteByTokenHash(tokenHash);
+    }
+
+    // Clear session cookie
+    setCookie(c, 'session', '', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 0, // Expire immediately
+      path: '/',
+    });
+
+    return c.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('[Auth] Logout error:', error);
+    return c.json({ error: 'Logout failed' }, 500);
+  }
+});
+
 export default auth;
