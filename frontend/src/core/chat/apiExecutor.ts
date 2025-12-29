@@ -60,47 +60,51 @@ export async function executeIntent(
 
 /**
  * P0-1: schedule.external.create
+ * Phase Next-2: Fixed title/description, email-based candidates
  */
 async function executeCreate(
-  _intentResult: IntentResult,
-  additionalParams?: Record<string, any>
+  intentResult: IntentResult,
+  _additionalParams?: Record<string, any>
 ): Promise<ExecutionResult> {
-  // Check required params
-  if (!additionalParams?.title) {
+  // Extract emails from intent params
+  const emails = intentResult.params.emails as string[] | undefined;
+  
+  if (!emails || emails.length === 0) {
     return {
       success: false,
-      message: '調整のタイトルを入力してください。\n\n例: 「来週の打ち合わせ」',
+      message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
       needsClarification: {
-        field: 'title',
-        message: '調整のタイトルを入力してください。',
+        field: 'emails',
+        message: '送信先のメールアドレスを貼ってください。',
       },
     };
   }
 
   try {
+    // Build candidates from emails
+    const candidates = emails.map((email) => ({
+      email,
+      name: email.split('@')[0], // Use email prefix as name
+    }));
+
+    // Create thread with FIXED title/description
     const response = await threadsApi.create({
-      title: additionalParams.title,
-      description: additionalParams.description,
-      target_list_id: additionalParams.target_list_id,
+      title: '日程調整（自動生成）',
+      description: '', // Empty description
+      candidates,
     });
 
-    // Build success message
+    // Build success message with invite URLs
     const inviteCount = response.candidates?.length || 0;
-    let message = `✅ 調整を作成しました: ${response.thread.title}\n`;
+    let message = `✅ 調整を作成しました（${inviteCount}名）\n\n`;
     
     if (inviteCount > 0) {
-      message += `📧 ${inviteCount}名に招待リンクを送信しました\n\n`;
-      
-      // Show invite URLs (first 3)
-      const showCandidates = response.candidates?.slice(0, 3) || [];
       message += '招待リンク:\n';
-      showCandidates.forEach((c) => {
-        message += `- ${c.name}: ${c.invite_url}\n`;
-      });
       
-      if (inviteCount > 3) {
-        message += `... 他${inviteCount - 3}名\n`;
-      }
+      // Show ALL invite URLs
+      response.candidates?.forEach((c) => {
+        message += `- ${c.email}: ${c.invite_url}\n`;
+      });
     }
 
     return {

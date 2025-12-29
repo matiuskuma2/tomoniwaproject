@@ -30,16 +30,34 @@ export function classifyIntent(input: string, context?: {
   const normalizedInput = input.toLowerCase().trim();
 
   // P0-1: schedule.external.create
-  // Keywords: 送る、調整、案内、招待
+  // PRIORITY: Email extraction first!
+  const emails = extractEmails(input);
+  
   if (
     /送(って|る)|調整|案内|招待/.test(normalizedInput) &&
     !/(状況|進捗|確認|教えて)/.test(normalizedInput)
   ) {
+    // Check if emails are provided
+    if (emails.length === 0) {
+      return {
+        intent: 'schedule.external.create',
+        confidence: 0.8,
+        params: {
+          rawInput: input,
+        },
+        needsClarification: {
+          field: 'emails',
+          message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
+        },
+      };
+    }
+    
     return {
       intent: 'schedule.external.create',
-      confidence: 0.8,
+      confidence: 0.9,
       params: {
         rawInput: input,
+        emails,
       },
     };
   }

@@ -27,6 +27,10 @@ export const threadsApi = {
     title: string;
     description?: string;
     target_list_id?: string;
+    candidates?: Array<{
+      name: string;
+      email: string;
+    }>;
   }): Promise<{
     thread: Thread;
     candidates?: Array<{
