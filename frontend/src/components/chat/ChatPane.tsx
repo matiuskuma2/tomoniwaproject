@@ -1,24 +1,108 @@
 /**
  * ChatPane
- * Center pane: displays chat-like template text based on thread status
- * Uses GET /api/threads/:id/status
- * AI is NOT implemented - only template text generation
+ * Center pane: displays chat-like conversation with intent execution
+ * Phase Next-2: Text input → Intent classification → API execution
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
+import { classifyIntent } from '../../core/chat/intentClassifier';
+import { executeIntent } from '../../core/chat/apiExecutor';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
 
 interface ChatPaneProps {
   status: ThreadStatus_API | null;
   loading: boolean;
+  onThreadUpdate?: () => void; // Callback to refresh thread list
 }
 
-export function ChatPane({ status, loading }: ChatPaneProps) {
+export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
   const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSendClick = () => {
-    // Show unimplemented toast
-    alert('この機能は Phase Next-2 で実装予定です');
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Add initial template message when status changes
+  useEffect(() => {
+    if (status && messages.length === 0) {
+      const templateMessages = generateTemplateText();
+      setMessages(templateMessages.map((msg, idx) => ({
+        id: `template-${idx}`,
+        role: 'assistant',
+        content: msg,
+        timestamp: new Date(),
+      })));
+    }
+  }, [status]);
+
+  const handleSendClick = async () => {
+    if (!message.trim() || isProcessing) return;
+
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: message.trim(),
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setMessage('');
+    setIsProcessing(true);
+
+    try {
+      // Classify intent
+      const intentResult = classifyIntent(message, {
+        selectedThreadId: status?.thread.id,
+      });
+
+      // Execute intent
+      const result = await executeIntent(intentResult);
+
+      // Add assistant response
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: result.message,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // If successful, trigger refresh
+      if (result.success && onThreadUpdate) {
+        setTimeout(() => {
+          onThreadUpdate();
+        }, 500);
+      }
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendClick();
+    }
   };
 
   const generateTemplateText = (): string[] => {
@@ -54,8 +138,6 @@ export function ChatPane({ status, loading }: ChatPaneProps) {
     return messages;
   };
 
-  const templateMessages = generateTemplateText();
-
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
@@ -81,46 +163,72 @@ export function ChatPane({ status, loading }: ChatPaneProps) {
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {templateMessages.map((msg, idx) => (
-          <div key={idx} className="flex items-start">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-              AI
-            </div>
-            <div className="ml-3 flex-1">
-              <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
-                <p className="text-sm text-gray-900">{msg}</p>
-              </div>
-            </div>
+        {messages.map((msg) => (
+          <div key={msg.id} className="flex items-start">
+            {msg.role === 'assistant' ? (
+              <>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                  AI
+                </div>
+                <div className="ml-3 flex-1">
+                  <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex-1"></div>
+                <div className="mr-3 flex-shrink-0">
+                  <div className="bg-blue-600 text-white rounded-lg p-3 inline-block max-w-2xl">
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 text-right">
+                    {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-700 text-sm font-medium">
+                  You
+                </div>
+              </>
+            )}
           </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area (Unimplemented) */}
+      {/* Input Area (Phase Next-2: Enabled) */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
         <div className="flex items-center space-x-2">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="メッセージを入力... (Phase Next-2 で実装予定)"
-            disabled
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500 cursor-not-allowed"
+            onKeyPress={handleKeyPress}
+            placeholder="メッセージを入力..."
+            disabled={isProcessing}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
           />
           <button
             onClick={handleSendClick}
-            className="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors cursor-not-allowed"
+            disabled={isProcessing || !message.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            送信
+            {isProcessing ? '処理中...' : '送信'}
           </button>
           <button
-            onClick={handleSendClick}
-            className="px-4 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition-colors cursor-not-allowed"
+            disabled
+            className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+            title="音声入力は Phase Next-3 で実装予定です"
           >
             🎤 音声
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          ※ テキスト送信・音声入力は Phase Next-2 で実装予定です
+          💡 使い方: 「〇〇さんに日程調整送って」「状況教えて」「1番で確定して」
         </p>
       </div>
     </div>

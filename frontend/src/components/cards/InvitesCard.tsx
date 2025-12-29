@@ -1,8 +1,10 @@
 /**
  * InvitesCard
- * Displays invitees, status, and selected candidate dates
+ * Displays invitees, status, selected candidate dates, and invite links
+ * Phase Next-2: Added invite link copy functionality
  */
 
+import { useState } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
 
 interface InvitesCardProps {
@@ -10,6 +12,8 @@ interface InvitesCardProps {
 }
 
 export function InvitesCard({ status }: InvitesCardProps) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   if (status.invites.length === 0) {
     return null;
   }
@@ -30,24 +34,52 @@ export function InvitesCard({ status }: InvitesCardProps) {
     return '未回答';
   };
 
+  const handleCopyInviteUrl = (invite: any) => {
+    navigator.clipboard.writeText(invite.invite_url);
+    setCopiedId(invite.invite_id);
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-4">
       <h3 className="text-lg font-semibold text-gray-900 mb-3">招待者</h3>
       
-      <div className="space-y-2">
+      <div className="space-y-3">
         {status.invites.map((invite) => (
-          <div key={invite.invite_id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">
-                {invite.candidate_name || invite.email}
-              </p>
-              {invite.candidate_name && (
-                <p className="text-xs text-gray-500">{invite.email}</p>
-              )}
+          <div key={invite.invite_id} className="p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">
+                  {invite.candidate_name || invite.email}
+                </p>
+                {invite.candidate_name && (
+                  <p className="text-xs text-gray-500">{invite.email}</p>
+                )}
+              </div>
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getInviteStatusBadge(invite.status)}`}>
+                {getInviteStatusText(invite.status)}
+              </span>
             </div>
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getInviteStatusBadge(invite.status)}`}>
-              {getInviteStatusText(invite.status)}
-            </span>
+            
+            {/* Invite Link (Phase Next-2: Copy button added) */}
+            {invite.invite_url && (
+              <div className="mt-2 flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={invite.invite_url}
+                  readOnly
+                  className="flex-1 text-xs px-2 py-1 bg-white border border-gray-300 rounded text-gray-600 truncate"
+                />
+                <button
+                  onClick={() => handleCopyInviteUrl(invite)}
+                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                >
+                  {copiedId === invite.invite_id ? '✓ コピー済み' : 'コピー'}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>

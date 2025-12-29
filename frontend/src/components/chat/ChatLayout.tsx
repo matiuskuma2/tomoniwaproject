@@ -46,6 +46,12 @@ export function ChatLayout() {
     }
   };
 
+  const handleThreadUpdate = () => {
+    if (threadId) {
+      loadThreadStatus(threadId);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await fetch('/auth/logout', {
@@ -66,7 +72,7 @@ export function ChatLayout() {
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <h1 className="text-xl font-bold text-gray-900">ToMoniWao Chat</h1>
-          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Phase Next-1 Shell</span>
+          <span className="text-xs text-gray-500 bg-green-100 px-2 py-1 rounded">Phase Next-2 (P0)</span>
         </div>
         
         <div className="flex items-center space-x-4">
@@ -119,7 +125,7 @@ export function ChatLayout() {
 
           {/* Center: ChatPane (flexible) */}
           <div className="flex-1">
-            <ChatPane status={status} loading={loading} />
+            <ChatPane status={status} loading={loading} onThreadUpdate={handleThreadUpdate} />
           </div>
 
           {/* Right: CardsPane (~400px) */}
@@ -131,7 +137,7 @@ export function ChatLayout() {
         {/* Mobile Layout */}
         <div className="lg:hidden h-full">
           {mobileTab === 'threads' && <ThreadsList />}
-          {mobileTab === 'chat' && <ChatPane status={status} loading={loading} />}
+          {mobileTab === 'chat' && <ChatPane status={status} loading={loading} onThreadUpdate={handleThreadUpdate} />}
           {mobileTab === 'cards' && <CardsPane status={status} loading={loading} />}
         </div>
       </div>
