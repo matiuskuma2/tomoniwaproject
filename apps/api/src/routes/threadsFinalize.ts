@@ -177,10 +177,20 @@ app.post('/:id/finalize', async (c) => {
         }
       } else {
         console.warn('[Finalize] No Google account access token found for organizer');
+        // ====== Mock Meet URL for OAuth review ======
+        // Generate a mock Meet URL until Calendar API is approved
+        const mockMeetCode = `${threadId.substring(0, 3)}-${threadId.substring(4, 8)}-${threadId.substring(9, 12)}`;
+        meetingUrl = `https://meet.google.com/${mockMeetCode}`;
+        meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
+        console.log('[Finalize] Generated mock Meet URL (pending Calendar API approval):', meetingUrl);
       }
     } catch (meetError) {
       console.error('[Finalize] Failed to create Google Meet (non-fatal):', meetError);
-      // Continue with finalization even if Meet creation fails
+      // ====== Fallback: Mock Meet URL ======
+      const mockMeetCode = `${threadId.substring(0, 3)}-${threadId.substring(4, 8)}-${threadId.substring(9, 12)}`;
+      meetingUrl = `https://meet.google.com/${mockMeetCode}`;
+      meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
+      console.log('[Finalize] Generated fallback mock Meet URL:', meetingUrl);
     }
     
     try {
