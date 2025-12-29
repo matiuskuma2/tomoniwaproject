@@ -212,16 +212,37 @@ export function ThreadDetailPage() {
             <ul className="divide-y divide-gray-200">
               {status.invites.filter((inv: any) => inv.status === 'pending' || !inv.status).map((invite: any) => (
                 <li key={invite.invite_id} className="py-3">
-                  <div className="flex justify-between">
-                    <div>
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">
                         {invite.candidate_name || invite.email}
                       </p>
                       {invite.candidate_name && (
                         <p className="text-sm text-gray-500">{invite.email}</p>
                       )}
+                      {invite.invite_url && (
+                        <div className="mt-2">
+                          <a 
+                            href={invite.invite_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:text-blue-800 break-all"
+                          >
+                            {invite.invite_url}
+                          </a>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(invite.invite_url);
+                              alert('招待リンクをコピーしました');
+                            }}
+                            className="ml-2 text-xs text-gray-500 hover:text-gray-700"
+                          >
+                            📋 コピー
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <span className="text-sm text-yellow-600">未回答</span>
+                    <span className="text-sm text-yellow-600 ml-4">未回答</span>
                   </div>
                 </li>
               ))}
