@@ -256,8 +256,9 @@ export function ThreadDetailPage() {
           <div className="space-y-2">
             {status.slots.map((slot: Slot) => {
               // Count how many people selected this slot
+              // Note: selections may have different status values or null
               const selectedCount = status.selections?.filter((sel: any) => 
-                sel.selected_slot_id === slot.slot_id && sel.status === 'accepted'
+                sel.selected_slot_id === slot.slot_id
               ).length || 0;
               
               return (
