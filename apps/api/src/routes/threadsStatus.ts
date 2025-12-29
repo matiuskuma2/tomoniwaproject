@@ -147,7 +147,10 @@ app.get('/:id/status', async (c) => {
         finalize_policy,
         finalized_by_user_id as finalized_by,
         finalized_at,
-        final_participants_json
+        final_participants_json,
+        meeting_url,
+        meeting_provider,
+        calendar_event_id
       FROM thread_finalize
       WHERE thread_id = ?
       LIMIT 1
@@ -156,7 +159,7 @@ app.get('/:id/status', async (c) => {
     let evaluation;
     
     if (finalize) {
-      // Already finalized - return snapshot
+      // Already finalized - return snapshot with meeting info
       evaluation = {
         finalized: true,
         final_slot_id: finalize.final_slot_id,
@@ -164,7 +167,12 @@ app.get('/:id/status', async (c) => {
         finalized_by: finalize.finalized_by,
         reason: finalize.reason,
         auto_finalized: finalize.auto_finalized === 1,
-        final_participants: JSON.parse((finalize.final_participants as string) || '[]')
+        final_participants: JSON.parse((finalize.final_participants_json as string) || '[]'),
+        meeting: finalize.meeting_url ? {
+          provider: finalize.meeting_provider || 'google_meet',
+          url: finalize.meeting_url,
+          calendar_event_id: finalize.calendar_event_id
+        } : null
       };
     } else {
       // Not finalized - run evaluation
