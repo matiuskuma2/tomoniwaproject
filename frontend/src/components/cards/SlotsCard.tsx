@@ -1,0 +1,74 @@
+/**
+ * SlotsCard
+ * Displays slots with start_at, end_at, and vote counts
+ */
+
+import type { ThreadStatus_API, Slot } from '../../core/models';
+
+interface SlotsCardProps {
+  status: ThreadStatus_API;
+}
+
+export function SlotsCard({ status }: SlotsCardProps) {
+  if (status.slots.length === 0) {
+    return null;
+  }
+
+  // Calculate vote counts for each slot
+  const getVoteCount = (slotId: string): number => {
+    if (!status.selections || status.selections.length === 0) {
+      return 0;
+    }
+    return status.selections.filter(
+      (sel: any) => sel.slot_id === slotId && sel.status === 'selected'
+    ).length;
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleString('ja-JP', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow p-4 mb-4">
+      <h3 className="text-lg font-semibold text-gray-900 mb-3">候補日時</h3>
+      
+      <div className="space-y-2">
+        {status.slots.map((slot: Slot) => {
+          const voteCount = getVoteCount(slot.slot_id);
+          
+          return (
+            <div key={slot.slot_id} className="p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900">
+                    {formatDateTime(slot.start_at)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    〜 {formatDateTime(slot.end_at)}
+                  </div>
+                  {slot.label && (
+                    <div className="text-xs text-gray-600 mt-1">{slot.label}</div>
+                  )}
+                </div>
+                <div className="ml-3 flex items-center">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    {voteCount} 票
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

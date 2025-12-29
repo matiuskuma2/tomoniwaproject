@@ -191,6 +191,20 @@ export interface BusinessCard {
 }
 
 // ============================================================
+// Inbox (Notifications)
+// ============================================================
+export interface InboxNotification {
+  id: string;
+  user_id: string;
+  kind: string;
+  payload_json?: string;
+  payload?: any;
+  read: boolean;
+  created_at: string;
+  read_at?: string;
+}
+
+// ============================================================
 // API Response Wrappers
 // ============================================================
 export interface PaginatedResponse<T> {

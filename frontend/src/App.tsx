@@ -6,6 +6,7 @@ import { ThreadCreatePage } from './pages/ThreadCreatePage';
 import { ThreadDetailPage } from './pages/ThreadDetailPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
+import { ChatPage } from './pages/ChatPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,24 @@ function App() {
           element={
             <ProtectedRoute>
               <ListsPage />
+            </ProtectedRoute>
+          }
+        />
+        
+        {/* Phase Next-1: Chat UI Shell */}
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat/:threadId"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
             </ProtectedRoute>
           }
         />
