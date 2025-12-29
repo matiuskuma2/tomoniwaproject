@@ -100,3 +100,33 @@
 - 最終形チャットUXは、E2Eと審査が落ち着いてから段階的に実装する。
 
 ---
+
+## 7. 現状（Phase 0B MVP）の実装状況
+
+### 実装済み
+- ✅ Dashboard のカード型 UI（Thread 一覧 → 詳細）
+- ✅ Thread 作成フォーム（ThreadCreatePage）
+- ✅ 招待リンク送付（external / メール通知）
+- ✅ 外部招待者の日程選択 UI（/i/:token）
+- ✅ 票数表示（各候補日時への選択数）
+- ✅ 主催者による手動確定（ThreadDetailPage）
+- ✅ Google Meet URL 生成（finalize 後）
+
+### 未実装（Phase Next で対応予定）
+- ❌ チャット UI（左スレッド一覧 / 右会話ログ）
+- ❌ ベルアイコン UI（inbox テーブルは実装済み）
+- ❌ 発話 → AI 判定 → API 呼び出し
+- ❌ AND/CORE/MAX の自動判定
+- ❌ AI 調整ループ（現状は主催者が手動確定）
+- ❌ coworker / family の関係性対応
+
+### 暫定 UI の位置づけ
+現状の Dashboard / ThreadCreatePage / ThreadDetailPage は **審査用の検証 UI** であり、最終形ではない。
+
+- **Phase Next-1**: チャット UI の器を実装（左スレッド一覧 / 右チャットログ）
+- **Phase Next-2**: 発話 → intent → API 呼び出しを実装
+- **Phase Next-3**: Google Calendar 読み取り + 権限管理を実装
+
+👉 **現状は「外部リンク型の日程調整」を中心に動作確認を行う段階**
+
+---
