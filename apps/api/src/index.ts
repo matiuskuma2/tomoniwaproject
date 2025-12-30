@@ -170,7 +170,8 @@ app.use('/api/business-cards*', requireAuth);
 app.route('/api/business-cards', businessCardsRoutes);
 
 // Calendar API (Phase Next-3 - Read-only calendar access)
-app.use('/api/calendar*', requireAuth);
+app.use('/api/calendar', requireAuth);
+app.use('/api/calendar/*', requireAuth);
 app.route('/api/calendar', calendarRoutes);
 
 // TODO: Add more routes
