@@ -60,7 +60,7 @@ export class SessionRepository {
     const result = await this.db
       .prepare(
         `SELECT * FROM sessions 
-         WHERE token_hash = ? AND expires_at > datetime('now')`
+         WHERE token_hash = ? AND datetime(expires_at) > datetime('now')`
       )
       .bind(token_hash)
       .first<Session>();
