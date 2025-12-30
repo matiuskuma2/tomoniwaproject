@@ -265,13 +265,6 @@ export function ChatPane({
           >
             {isProcessing ? '処理中...' : '送信'}
           </button>
-          <button
-            disabled
-            className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
-            title="音声入力は Phase Next-3 で実装予定です"
-          >
-            🎤 音声
-          </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
           💡 使い方: 「〇〇さんに日程調整送って」「状況教えて」「1番で確定して」
