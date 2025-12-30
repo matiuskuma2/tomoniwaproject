@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "Route API requests to Workers, everything else to Pages",
+  "include": [
+    "/api/*",
+    "/auth/*",
+    "/admin/*",
+    "/i/*",
+    "/health"
+  ],
+  "exclude": []
+}
