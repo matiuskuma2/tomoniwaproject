@@ -1,5 +1,5 @@
 /**
- * Intent Classifier for Phase Next-2 (P0 only)
+ * Intent Classifier for Phase Next-2 (P0) + Phase Next-3 (P1)
  * Rule-based intent classification for chat input
  */
 
@@ -7,6 +7,9 @@ export type IntentType =
   | 'schedule.external.create'
   | 'schedule.status.check'
   | 'schedule.finalize'
+  | 'schedule.today'      // Phase Next-3 (P1)
+  | 'schedule.week'       // Phase Next-3 (P1)
+  | 'schedule.freebusy'   // Phase Next-3 (P1)
   | 'unknown';
 
 export interface IntentResult {
@@ -28,6 +31,60 @@ export function classifyIntent(input: string, context?: {
   selectedSlotId?: string;
 }): IntentResult {
   const normalizedInput = input.toLowerCase().trim();
+
+  // ============================================================
+  // Phase Next-3 (P1): Calendar Read-only
+  // ============================================================
+
+  // P1-1: schedule.today
+  // Keywords: 今日、きょう、今日の予定
+  if (/(今日|きょう).*予定/.test(normalizedInput)) {
+    return {
+      intent: 'schedule.today',
+      confidence: 0.9,
+      params: {},
+    };
+  }
+
+  // P1-2: schedule.week
+  // Keywords: 今週、こんしゅう、週の予定
+  if (/(今週|こんしゅう|週).*予定/.test(normalizedInput)) {
+    return {
+      intent: 'schedule.week',
+      confidence: 0.9,
+      params: {},
+    };
+  }
+
+  // P1-3: schedule.freebusy
+  // Keywords: 空き、あき、空いて、あいて、フリー
+  if (/(空き|あき|空いて|あいて|フリー)/.test(normalizedInput)) {
+    // Determine range (today or week)
+    let range: 'today' | 'week' = 'week'; // Default to week
+    
+    if (/(今日|きょう)/.test(normalizedInput)) {
+      range = 'today';
+    } else if (/(今週|こんしゅう)/.test(normalizedInput)) {
+      range = 'week';
+    }
+    
+    // Need clarification if range is ambiguous
+    const hasTimeReference = /(今日|きょう|今週|こんしゅう)/.test(normalizedInput);
+    
+    return {
+      intent: 'schedule.freebusy',
+      confidence: hasTimeReference ? 0.9 : 0.7,
+      params: { range },
+      needsClarification: !hasTimeReference ? {
+        field: 'range',
+        message: '今日の空き時間ですか？それとも今週の空き時間ですか？',
+      } : undefined,
+    };
+  }
+
+  // ============================================================
+  // Phase Next-2 (P0): Scheduling
+  // ============================================================
 
   // P0-1: schedule.external.create
   // PRIORITY: Email extraction first!

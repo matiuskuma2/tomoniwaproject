@@ -15,9 +15,21 @@ import { ThreadsList } from './ThreadsList';
 import { ChatPane, type ChatMessage } from './ChatPane';
 import { CardsPane } from './CardsPane';
 import { NotificationBell } from './NotificationBell';
-import type { ThreadStatus_API } from '../../core/models';
+import type { 
+  ThreadStatus_API, 
+  CalendarTodayResponse, 
+  CalendarWeekResponse, 
+  CalendarFreeBusyResponse 
+} from '../../core/models';
 
 type MobileTab = 'threads' | 'chat' | 'cards';
+
+// Phase Next-3 (Day4): Calendar data state
+interface CalendarData {
+  today?: CalendarTodayResponse;
+  week?: CalendarWeekResponse;
+  freebusy?: CalendarFreeBusyResponse;
+}
 
 export function ChatLayout() {
   const navigate = useNavigate();
@@ -28,6 +40,9 @@ export function ChatLayout() {
   
   // NEW: Per-thread message history
   const [messagesByThreadId, setMessagesByThreadId] = useState<Record<string, ChatMessage[]>>({});
+  
+  // NEW (Day4): Calendar data state
+  const [calendarData, setCalendarData] = useState<CalendarData>({});
 
   useEffect(() => {
     if (threadId) {
@@ -75,6 +90,17 @@ export function ChatLayout() {
       if (prev[tid] && prev[tid].length > 0) return prev;
       return { ...prev, [tid]: seed };
     });
+  };
+
+  // NEW (Day4): Handle calendar data updates from ExecutionResult
+  const handleCalendarUpdate = (kind: string, payload: any) => {
+    if (kind === 'calendar.today') {
+      setCalendarData(prev => ({ ...prev, today: payload }));
+    } else if (kind === 'calendar.week') {
+      setCalendarData(prev => ({ ...prev, week: payload }));
+    } else if (kind === 'calendar.freebusy') {
+      setCalendarData(prev => ({ ...prev, freebusy: payload }));
+    }
   };
 
   const handleLogout = async () => {
@@ -160,13 +186,18 @@ export function ChatLayout() {
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
-              onThreadUpdate={handleThreadUpdate} 
+              onThreadUpdate={handleThreadUpdate}
+              onCalendarUpdate={handleCalendarUpdate}
             />
           </div>
 
           {/* Right: CardsPane (~400px) */}
           <div className="w-96 flex-shrink-0">
-            <CardsPane status={status} loading={loading} />
+            <CardsPane 
+              status={status} 
+              loading={loading} 
+              calendarData={calendarData}
+            />
           </div>
         </div>
 
@@ -181,10 +212,17 @@ export function ChatLayout() {
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
-              onThreadUpdate={handleThreadUpdate} 
+              onThreadUpdate={handleThreadUpdate}
+              onCalendarUpdate={handleCalendarUpdate}
             />
           )}
-          {mobileTab === 'cards' && <CardsPane status={status} loading={loading} />}
+          {mobileTab === 'cards' && (
+            <CardsPane 
+              status={status} 
+              loading={loading} 
+              calendarData={calendarData}
+            />
+          )}
         </div>
       </div>
     </div>

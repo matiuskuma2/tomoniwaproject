@@ -34,6 +34,9 @@ interface ChatPaneProps {
   
   // Existing: refresh thread status
   onThreadUpdate?: () => void;
+  
+  // NEW (Day4): calendar data update callback
+  onCalendarUpdate?: (kind: string, payload: any) => void;
 }
 
 export function ChatPane({ 
@@ -43,7 +46,8 @@ export function ChatPane({
   messages, 
   onAppend, 
   onSeedIfEmpty, 
-  onThreadUpdate 
+  onThreadUpdate,
+  onCalendarUpdate
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -106,6 +110,11 @@ export function ChatPane({
       };
 
       onAppend(threadId, assistantMessage);
+
+      // NEW (Day4): Update calendar data if result contains calendar payload
+      if (result.data?.kind && result.data.payload && onCalendarUpdate) {
+        onCalendarUpdate(result.data.kind, result.data.payload);
+      }
 
       // If successful, trigger refresh
       if (result.success && onThreadUpdate) {

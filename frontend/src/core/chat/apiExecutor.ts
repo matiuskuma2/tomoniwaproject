@@ -1,16 +1,20 @@
 /**
- * API Executor for Phase Next-2 (P0 only)
+ * API Executor for Phase Next-2 (P0) + Phase Next-3 (P1)
  * Execute API calls based on classified intent
  */
 
 import { threadsApi } from '../api/threads';
+import { calendarApi } from '../api/calendar';
 import type { IntentResult } from './intentClassifier';
-import type { ThreadStatus_API } from '../models';
+import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 
 export interface ExecutionResult {
   success: boolean;
   message: string;
-  data?: any;
+  data?: {
+    kind?: 'calendar.today' | 'calendar.week' | 'calendar.freebusy' | 'thread.status' | 'thread.create' | 'thread.finalize';
+    payload?: any;
+  };
   needsClarification?: {
     field: string;
     message: string;
@@ -35,6 +39,17 @@ export async function executeIntent(
   }
 
   switch (intentResult.intent) {
+    // Phase Next-3 (P1): Calendar
+    case 'schedule.today':
+      return executeToday();
+    
+    case 'schedule.week':
+      return executeWeek();
+    
+    case 'schedule.freebusy':
+      return executeFreeBusy(intentResult);
+    
+    // Phase Next-2 (P0): Scheduling
     case 'schedule.external.create':
       return executeCreate(intentResult, additionalParams);
     
@@ -57,6 +72,185 @@ export async function executeIntent(
       };
   }
 }
+
+// ============================================================
+// Phase Next-3 (P1): Calendar Read-only
+// ============================================================
+
+/**
+ * P1-1: schedule.today
+ */
+async function executeToday(): Promise<ExecutionResult> {
+  try {
+    const response = await calendarApi.getToday();
+    
+    // Handle warnings
+    if (response.warning) {
+      return {
+        success: true,
+        message: getWarningMessage(response.warning),
+        data: {
+          kind: 'calendar.today',
+          payload: response,
+        },
+      };
+    }
+    
+    // No events
+    if (response.events.length === 0) {
+      return {
+        success: true,
+        message: '今日の予定はありません。',
+        data: {
+          kind: 'calendar.today',
+          payload: response,
+        },
+      };
+    }
+    
+    // Build message with events
+    let message = `📅 今日の予定（${response.events.length}件）\n\n`;
+    response.events.forEach((event, index) => {
+      message += `${index + 1}. ${event.summary}\n`;
+      message += `   ${formatTimeRange(event.start, event.end)}\n`;
+      if (event.meet_url) {
+        message += `   🎥 Meet: ${event.meet_url}\n`;
+      }
+      message += '\n';
+    });
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'calendar.today',
+        payload: response,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P1-2: schedule.week
+ */
+async function executeWeek(): Promise<ExecutionResult> {
+  try {
+    const response = await calendarApi.getWeek();
+    
+    // Handle warnings
+    if (response.warning) {
+      return {
+        success: true,
+        message: getWarningMessage(response.warning),
+        data: {
+          kind: 'calendar.week',
+          payload: response,
+        },
+      };
+    }
+    
+    // No events
+    if (response.events.length === 0) {
+      return {
+        success: true,
+        message: '今週の予定はありません。',
+        data: {
+          kind: 'calendar.week',
+          payload: response,
+        },
+      };
+    }
+    
+    // Build message with events
+    let message = `📅 今週の予定（${response.events.length}件）\n\n`;
+    response.events.forEach((event, index) => {
+      message += `${index + 1}. ${event.summary}\n`;
+      message += `   ${formatDateTimeRange(event.start, event.end)}\n`;
+      if (event.meet_url) {
+        message += `   🎥 Meet: ${event.meet_url}\n`;
+      }
+      message += '\n';
+    });
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'calendar.week',
+        payload: response,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P1-3: schedule.freebusy
+ */
+async function executeFreeBusy(intentResult: IntentResult): Promise<ExecutionResult> {
+  const range = (intentResult.params.range as 'today' | 'week') || 'today';
+  
+  try {
+    const response = await calendarApi.getFreeBusy(range);
+    
+    // Handle warnings
+    if (response.warning) {
+      return {
+        success: true,
+        message: getWarningMessage(response.warning),
+        data: {
+          kind: 'calendar.freebusy',
+          payload: response,
+        },
+      };
+    }
+    
+    // No busy slots
+    if (response.busy.length === 0) {
+      return {
+        success: true,
+        message: range === 'today' ? '今日は終日空いています。' : '今週は終日空いています。',
+        data: {
+          kind: 'calendar.freebusy',
+          payload: response,
+        },
+      };
+    }
+    
+    // Build message with busy slots
+    let message = range === 'today' ? '📊 今日の予定が入っている時間:\n\n' : '📊 今週の予定が入っている時間:\n\n';
+    response.busy.forEach((slot, index) => {
+      message += `${index + 1}. ${formatDateTimeRange(slot.start, slot.end)}\n`;
+    });
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'calendar.freebusy',
+        payload: response,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+// ============================================================
+// Phase Next-2 (P0): Scheduling
+// ============================================================
 
 /**
  * P0-1: schedule.external.create
@@ -110,7 +304,10 @@ async function executeCreate(
     return {
       success: true,
       message,
-      data: response,
+      data: {
+        kind: 'thread.create',
+        payload: response,
+      },
     };
   } catch (error) {
     return {
@@ -150,7 +347,10 @@ async function executeStatusCheck(
       return {
         success: true,
         message,
-        data: { threads: activeThreads },
+        data: {
+          kind: 'thread.status',
+          payload: { threads: activeThreads },
+        },
       };
     }
 
@@ -180,7 +380,10 @@ async function executeStatusCheck(
     return {
       success: true,
       message,
-      data: status,
+      data: {
+        kind: 'thread.status',
+        payload: status,
+      },
     };
   } catch (error) {
     return {
@@ -269,7 +472,10 @@ async function executeFinalize(
     return {
       success: true,
       message,
-      data: response,
+      data: {
+        kind: 'thread.finalize',
+        payload: response,
+      },
     };
   } catch (error) {
     return {
@@ -279,7 +485,54 @@ async function executeFinalize(
   }
 }
 
-// Helper functions
+// ============================================================
+// Helper Functions
+// ============================================================
+
+/**
+ * Get user-friendly warning message
+ */
+function getWarningMessage(warning: string): string {
+  const messages: Record<string, string> = {
+    'google_calendar_permission_missing': '⚠️ Google Calendar の権限が不足しています。\n予定情報を取得できませんでした。',
+    'google_account_not_linked': '⚠️ Google アカウントが連携されていません。\n設定から連携してください。',
+  };
+  return messages[warning] || '⚠️ 予定情報を取得できませんでした。';
+}
+
+/**
+ * Format time range (same day, time only)
+ */
+function formatTimeRange(start: string, end: string): string {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  
+  return `${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/**
+ * Format date-time range (with date)
+ */
+function formatDateTimeRange(start: string, end: string): string {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  
+  const startStr = startDate.toLocaleString('ja-JP', { 
+    month: 'numeric', 
+    day: 'numeric', 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+  
+  const endStr = endDate.toLocaleString('ja-JP', { 
+    month: 'numeric', 
+    day: 'numeric', 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+  
+  return `${startStr} - ${endStr}`;
+}
 
 function getStatusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -309,3 +562,6 @@ function formatDateTime(dateStr: string): string {
     minute: '2-digit',
   });
 }
+
+// Export type for external use
+export type { CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse };

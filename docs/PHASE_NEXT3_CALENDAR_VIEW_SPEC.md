@@ -152,8 +152,16 @@ Next-3では「Room/Gridの予定を見せる」本番実装はしない。
 - ✅ 「今日の空いてる時間は？」で FreeBusyから空き枠が出せる
 - ✅ 既存E2E（招待→選択→確定→Meet生成）が一切壊れていない
 
+### Day2/Day3 完了状態（2025-12-30）
+- ✅ **Day2:** `/api/calendar/today`, `/api/calendar/week` 実装完了（events.list）
+- ✅ **Day3:** `/api/calendar/freebusy?range=today|week` 実装完了（busy のみ）
+- ✅ **API 契約:** JSON 形式・warning 設計・安定性 → 合格
+- ⚠️ **権限不足:** `google_calendar_permission_missing` により `busy` 実データは未取得
+- 📝 **UI 対応:** `warning` がある場合は「busy 無し扱い」で空き枠 UI を描く
+
 ### P1（任意）
 - ⬜ coworkerの "busy/free" を Room/Grid 設定の範囲で見れる（詳細は出さない）
+- ⬜ OAuth スコープ追加（`calendar.freebusy` または `calendar.readonly`）で `busy` 実データ取得
 
 ---
 

@@ -205,6 +205,44 @@ export interface InboxNotification {
 }
 
 // ============================================================
+// Calendar (Phase Next-3 Day4)
+// ============================================================
+export interface CalendarEvent {
+  id: string;
+  start: string;  // ISO 8601
+  end: string;    // ISO 8601
+  summary: string;
+  meet_url?: string | null;
+  location?: string;
+}
+
+export type CalendarWarning = 
+  | 'google_calendar_permission_missing' 
+  | 'google_account_not_linked' 
+  | null;
+
+export interface CalendarTodayResponse {
+  range: 'today';
+  timezone: string;
+  events: CalendarEvent[];
+  warning?: CalendarWarning;
+}
+
+export interface CalendarWeekResponse {
+  range: 'week';
+  timezone: string;
+  events: CalendarEvent[];
+  warning?: CalendarWarning;
+}
+
+export interface CalendarFreeBusyResponse {
+  range: 'today' | 'week';
+  timezone: string;
+  busy: Array<{ start: string; end: string }>;
+  warning?: CalendarWarning;
+}
+
+// ============================================================
 // API Response Wrappers
 // ============================================================
 export interface PaginatedResponse<T> {

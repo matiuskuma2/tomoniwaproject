@@ -8,3 +8,4 @@ export { threadsApi } from './threads';
 export { contactsApi } from './contacts';
 export { listsApi } from './lists';
 export { inboxApi } from './inbox';
+export { calendarApi } from './calendar';
