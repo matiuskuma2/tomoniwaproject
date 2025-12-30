@@ -73,6 +73,8 @@ app.get('/health', (c) => {
     status: 'ok',
     timestamp: Math.floor(Date.now() / 1000),
     environment: c.env.ENVIRONMENT || 'unknown',
+    version: 'ef764f3-session-fix',
+    deployed_at: '2025-12-30T06:10:00Z',
   });
 });
 
