@@ -21,7 +21,6 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
   const {
     isListening,
     transcript,
-    interimTranscript,
     error,
     isSupported,
     startListening,
@@ -56,26 +55,27 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {/* 音声認識ボタン */}
+    <div className="relative">
+      {/* 音声認識ボタン - コンパクトなデザイン */}
       <button
         onClick={handleClick}
         disabled={disabled}
         className={`
-          flex items-center justify-center
+          flex items-center justify-center flex-shrink-0
           w-10 h-10 rounded-full
           transition-all duration-200
           ${isListening
             ? 'bg-red-500 hover:bg-red-600 animate-pulse'
-            : 'bg-blue-500 hover:bg-blue-600'
+            : 'bg-gray-100 hover:bg-gray-200'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-          text-white shadow-md hover:shadow-lg
+          ${isListening ? 'text-white' : 'text-gray-600'}
+          border border-gray-300
         `}
         title={isListening ? '音声認識を停止' : '音声認識を開始'}
       >
         {isListening ? (
-          // 録音中アイコン
+          // 録音中アイコン（停止ボタン）
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <rect x="7" y="7" width="6" height="6" rx="1" />
           </svg>
@@ -87,25 +87,22 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
         )}
       </button>
 
-      {/* リスニング状態表示 */}
+      {/* リスニング状態表示 - ボタン上部に絶対配置 */}
       {isListening && (
-        <div className="text-xs text-gray-600 flex items-center gap-1">
-          <span className="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-          聞いています...
+        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
+          <div className="text-xs text-red-600 font-medium flex items-center gap-1 bg-white px-2 py-1 rounded-full shadow-sm border border-red-200">
+            <span className="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            聞いています
+          </div>
         </div>
       )}
 
-      {/* 途中結果表示（デバッグ用・任意） */}
-      {interimTranscript && (
-        <div className="text-xs text-gray-500 italic">
-          {interimTranscript}
-        </div>
-      )}
-
-      {/* エラーメッセージ */}
+      {/* エラーメッセージ - ボタン上部に表示 */}
       {error && (
-        <div className="text-xs text-red-600 p-2 bg-red-50 rounded border border-red-200">
-          {error}
+        <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 w-64">
+          <div className="text-xs text-red-600 p-2 bg-red-50 rounded border border-red-200 shadow-md">
+            {error}
+          </div>
         </div>
       )}
     </div>

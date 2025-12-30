@@ -238,7 +238,18 @@ export function ChatPane({
       {/* Input Area (Phase Next-2: Enabled, Phase Next-4 Day1: Voice input added) */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
         <div className="flex items-center space-x-2">
-          {/* Phase Next-4 Day1: Voice Recognition Button */}
+          {/* Input field - 標準的なチャットUIに合わせて左側に配置 */}
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="メッセージを入力..."
+            disabled={isProcessing}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+          />
+          
+          {/* Phase Next-4 Day1: Voice Recognition Button - 右側に配置 */}
           <VoiceRecognitionButton
             onTranscriptUpdate={(transcript) => {
               setMessage(prev => prev + transcript);
@@ -246,15 +257,7 @@ export function ChatPane({
             disabled={isProcessing}
           />
           
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="メッセージを入力... または 🎤 で音声入力"
-            disabled={isProcessing}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-          />
+          {/* Send button - 最も右側に配置 */}
           <button
             onClick={handleSendClick}
             disabled={isProcessing || !message.trim()}
