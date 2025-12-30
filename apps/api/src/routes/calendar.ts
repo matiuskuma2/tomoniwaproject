@@ -16,18 +16,22 @@ const app = new Hono<{ Bindings: Env }>();
 
 /**
  * Helper: Get today's time bounds (JST)
+ * FIXED: Correctly convert JST midnight to UTC
  */
 function getTodayBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; timeMax: string } {
   const now = new Date();
   const jstOffset = 9 * 60 * 60 * 1000; // JST = UTC+9
   
-  // Today 00:00:00 JST
-  const todayStart = new Date(now.getTime() + jstOffset);
-  todayStart.setUTCHours(0, 0, 0, 0);
+  // Get current time in JST
+  const jstNow = new Date(now.getTime() + jstOffset);
   
-  // Today 23:59:59 JST
-  const todayEnd = new Date(todayStart);
-  todayEnd.setUTCHours(23, 59, 59, 999);
+  // JST today 00:00:00
+  jstNow.setUTCHours(0, 0, 0, 0);
+  const todayStart = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
+  
+  // JST today 23:59:59
+  jstNow.setUTCHours(23, 59, 59, 999);
+  const todayEnd = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
   
   return {
     timeMin: todayStart.toISOString(),
@@ -37,23 +41,28 @@ function getTodayBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; tim
 
 /**
  * Helper: Get this week's time bounds (Monday - Sunday JST)
+ * FIXED: Correctly convert JST week bounds to UTC
  */
 function getWeekBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; timeMax: string } {
   const now = new Date();
   const jstOffset = 9 * 60 * 60 * 1000; // JST = UTC+9
   
-  // Calculate Monday 00:00:00 JST
-  const dayOfWeek = now.getUTCDay(); // 0 (Sun) - 6 (Sat)
+  // Get current time in JST
+  const jstNow = new Date(now.getTime() + jstOffset);
+  
+  // Calculate day of week in JST
+  const dayOfWeek = jstNow.getUTCDay(); // 0 (Sun) - 6 (Sat)
   const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start
   
-  const weekStart = new Date(now.getTime() + jstOffset);
-  weekStart.setUTCDate(weekStart.getUTCDate() + diff);
-  weekStart.setUTCHours(0, 0, 0, 0);
+  // Monday 00:00:00 JST
+  jstNow.setUTCDate(jstNow.getUTCDate() + diff);
+  jstNow.setUTCHours(0, 0, 0, 0);
+  const weekStart = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
   
-  // Calculate Sunday 23:59:59 JST
-  const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
-  weekEnd.setUTCHours(23, 59, 59, 999);
+  // Sunday 23:59:59 JST
+  jstNow.setUTCDate(jstNow.getUTCDate() + 6);
+  jstNow.setUTCHours(23, 59, 59, 999);
+  const weekEnd = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
   
   return {
     timeMin: weekStart.toISOString(),
