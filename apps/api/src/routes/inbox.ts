@@ -5,13 +5,17 @@
 
 import { Hono } from 'hono';
 import { InboxRepository } from '../repositories/inboxRepository';
-import { getUserIdFromContext } from '../middleware/auth';
 
 type Bindings = {
   DB: D1Database;
 };
 
-const inbox = new Hono<{ Bindings: Bindings; Variables: { userId: string } }>();
+type Variables = {
+  userId?: string;
+  userRole?: string;
+};
+
+const inbox = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // ============================================================
 // GET /api/inbox
@@ -19,7 +23,11 @@ const inbox = new Hono<{ Bindings: Bindings; Variables: { userId: string } }>();
 // ============================================================
 inbox.get('/', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
   // Query parameters
   const isReadParam = c.req.query('is_read');
@@ -72,7 +80,11 @@ inbox.get('/', async (c) => {
 // ============================================================
 inbox.get('/unread-count', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
   const inboxRepo = new InboxRepository(env.DB);
   const unreadCount = await inboxRepo.getUnreadCount(userId);
@@ -86,7 +98,12 @@ inbox.get('/unread-count', async (c) => {
 // ============================================================
 inbox.get('/:id', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const id = c.req.param('id');
 
   const inboxRepo = new InboxRepository(env.DB);
@@ -105,7 +122,12 @@ inbox.get('/:id', async (c) => {
 // ============================================================
 inbox.patch('/:id/read', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const id = c.req.param('id');
 
   const inboxRepo = new InboxRepository(env.DB);
@@ -128,7 +150,12 @@ inbox.patch('/:id/read', async (c) => {
 // ============================================================
 inbox.patch('/:id/unread', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const id = c.req.param('id');
 
   const inboxRepo = new InboxRepository(env.DB);
@@ -151,7 +178,11 @@ inbox.patch('/:id/unread', async (c) => {
 // ============================================================
 inbox.post('/mark-all-read', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
   const inboxRepo = new InboxRepository(env.DB);
   const changedCount = await inboxRepo.markAllAsRead(userId);
@@ -168,7 +199,12 @@ inbox.post('/mark-all-read', async (c) => {
 // ============================================================
 inbox.delete('/:id', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
   const id = c.req.param('id');
 
   const inboxRepo = new InboxRepository(env.DB);
@@ -191,7 +227,11 @@ inbox.delete('/:id', async (c) => {
 // ============================================================
 inbox.delete('/clear-read', async (c) => {
   const { env } = c;
-  const userId = getUserIdFromContext(c);
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
 
   const inboxRepo = new InboxRepository(env.DB);
   const deletedCount = await inboxRepo.deleteAllRead(userId);
