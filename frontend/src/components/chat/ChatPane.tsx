@@ -12,6 +12,7 @@ import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent } from '../../core/chat/apiExecutor';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
+import { SpeakButton } from './SpeakButton';
 
 export interface ChatMessage {
   id: string;
@@ -209,9 +210,12 @@ export function ChatPane({
                   <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
                     <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <p className="text-xs text-gray-400">
+                      {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <SpeakButton text={msg.content} />
+                  </div>
                 </div>
               </>
             ) : (
