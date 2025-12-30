@@ -118,32 +118,52 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
  * app.use('/api/protected/*', requireAuth)
  */
 export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
-  const userId = await getUserId(c);
+  let errorDetails: any = null;
+  
+  try {
+    const userId = await getUserId(c);
 
-  if (!userId) {
-    // DEBUG: Add more details to error response
-    const authHeader = c.req.header('Authorization');
-    const hasBearerToken = authHeader?.startsWith('Bearer ') || false;
-    const tokenLength = hasBearerToken && authHeader ? authHeader.substring(7).trim().length : 0;
+    if (!userId) {
+      // DEBUG: Add more details to error response
+      const authHeader = c.req.header('Authorization');
+      const hasBearerToken = authHeader?.startsWith('Bearer ') || false;
+      const tokenLength = hasBearerToken && authHeader ? authHeader.substring(7).trim().length : 0;
+      
+      return c.json(
+        { 
+          error: 'Unauthorized',
+          message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
+          debug: {
+            has_bearer_token: hasBearerToken,
+            token_length: tokenLength,
+            environment: c.env.ENVIRONMENT || 'unknown',
+            error_details: errorDetails
+          }
+        },
+        401
+      );
+    }
+
+    // Store userId in context for downstream handlers
+    c.set('userId', userId);
+    
+    await next();
+  } catch (error) {
+    console.error('[Auth] requireAuth middleware error:', error);
+    errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
     
     return c.json(
-      { 
+      {
         error: 'Unauthorized',
-        message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
+        message: 'Authentication middleware error',
         debug: {
-          has_bearer_token: hasBearerToken,
-          token_length: tokenLength,
+          error_details: errorDetails,
           environment: c.env.ENVIRONMENT || 'unknown'
         }
       },
       401
     );
   }
-
-  // Store userId in context for downstream handlers
-  c.set('userId', userId);
-  
-  await next();
 }
 
 /**
