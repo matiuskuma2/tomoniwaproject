@@ -69,6 +69,9 @@ export async function executeIntent(
     case 'schedule.auto_propose.cancel':
       return executeAutoProposeCancel();
     
+    case 'schedule.additional_propose':
+      return executeAdditionalPropose(intentResult);
+    
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
       return executeToday();
@@ -253,6 +256,82 @@ async function executeAutoProposeCancel(): Promise<ExecutionResult> {
       payload: {},
     },
   };
+}
+
+/**
+ * P2-4: schedule.additional_propose
+ * Phase Next-5 Day3: 追加候補提案（提案のみ、POSTなし）
+ * 
+ * Flow:
+ * 1. status を取得
+ * 2. analyzeStatusForPropose で判定
+ * 3. 条件を満たす場合: 追加候補を3本生成
+ * 4. 「この候補を追加しますか？」を表示
+ * 5. 「はい」で confirm フローに乗る（POST は confirm 時のみ）
+ */
+async function executeAdditionalPropose(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが選択されていません。',
+      needsClarification: {
+        field: 'threadId',
+        message: 'どのスレッドに追加候補を提案しますか？\n左のスレッド一覧から選択してください。',
+      },
+    };
+  }
+  
+  try {
+    // Get thread status
+    const status = await threadsApi.getStatus(threadId);
+    
+    // Analyze if additional proposals are needed
+    const needsMoreProposals = analyzeStatusForPropose(status);
+    
+    if (!needsMoreProposals) {
+      return {
+        success: true,
+        message: '現在の状況では追加候補は不要です。\n\n未返信が少なく、投票も安定しています。',
+      };
+    }
+    
+    // Generate 3 additional proposals (30 minutes, next week)
+    const duration = 30; // Default 30 minutes
+    const additionalProposals = generateProposalsWithoutBusy(duration).slice(0, 3);
+    
+    // Build message with proposals
+    let message = '✅ 追加候補を3本生成しました:\n\n';
+    additionalProposals.forEach((proposal, index) => {
+      message += `${index + 1}. ${proposal.label}\n`;
+    });
+    message += '\n📌 注意: この候補はまだスレッドに追加されていません。';
+    message += '\n「はい」と入力すると、候補をスレッドに追加できます。';
+    message += '\n「いいえ」でキャンセルします。';
+    
+    // Return as auto_propose.generated (reuse Day2 confirm flow)
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'auto_propose.generated',
+        payload: {
+          emails: [], // No emails needed for additional proposals
+          duration,
+          range: 'next_week',
+          proposals: additionalProposals,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
 }
 
 /**
@@ -566,6 +645,49 @@ async function executeCreate(
 }
 
 /**
+ * Phase Next-5 Day3: Analyze status for additional proposal
+ * Pure function: returns true if additional proposals are needed
+ * 
+ * Triggers:
+ * 1. 未返信 >= 1
+ * 2. 票が割れている（1位と2位が同票、または最大票が1）
+ */
+function analyzeStatusForPropose(status: ThreadStatus_API): boolean {
+  const { invites, slots } = status;
+  
+  // Rule 1: 未返信が1以上
+  const pendingCount = invites.filter((i) => i.status === 'pending').length;
+  if (pendingCount >= 1) {
+    return true;
+  }
+  
+  // Rule 2: 票が割れている
+  if (slots.length === 0) return false;
+  
+  // 各スロットの投票数を集計
+  const slotVotes = slots.map((slot) => ({
+    slotId: slot.slot_id,
+    votes: getSlotVotes(slot.slot_id, status),
+  }));
+  
+  // 最大票数
+  const maxVotes = Math.max(...slotVotes.map((sv) => sv.votes));
+  
+  // Case 2-1: 最大票が1票以下
+  if (maxVotes <= 1) {
+    return true;
+  }
+  
+  // Case 2-2: 1位と2位が同票
+  const topSlots = slotVotes.filter((sv) => sv.votes === maxVotes);
+  if (topSlots.length >= 2) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
  * P0-2: schedule.status.check
  */
 async function executeStatusCheck(
@@ -623,6 +745,14 @@ async function executeStatusCheck(
         const votes = getSlotVotes(slot.slot_id, status);
         message += `${index + 1}. ${formatDateTime(slot.start_at)} (${votes}票)\n`;
       });
+    }
+    
+    // Phase Next-5 Day3: 追加提案の判定
+    const needsMoreProposals = analyzeStatusForPropose(status);
+    
+    if (needsMoreProposals) {
+      message += '\n💡 未返信や票割れが発生しています。';
+      message += '\n「追加候補出して」と入力すると、追加の候補日時を提案できます。';
     }
 
     return {

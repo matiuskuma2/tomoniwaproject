@@ -13,6 +13,7 @@ export type IntentType =
   | 'schedule.auto_propose' // Phase Next-5 (P2) - 自動調整提案
   | 'schedule.auto_propose.confirm' // Phase Next-5 Day2 - 提案確定
   | 'schedule.auto_propose.cancel'  // Phase Next-5 Day2 - 提案キャンセル
+  | 'schedule.additional_propose'   // Phase Next-5 Day3 - 追加候補提案
   | 'unknown';
 
 export interface IntentResult {
@@ -106,6 +107,31 @@ export function classifyIntent(input: string, context?: {
       intent: 'schedule.auto_propose.cancel',
       confidence: 0.9,
       params: {},
+    };
+  }
+  
+  // P2-4: schedule.additional_propose (Phase Next-5 Day3)
+  // Keywords: 追加候補、もっと候補、追加で候補
+  if (/(追加.*候補|もっと.*候補|追加で.*候補|追加して)/.test(normalizedInput)) {
+    // Require threadId context
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.additional_propose',
+        confidence: 0.9,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message: 'どのスレッドに追加候補を提案しますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+    
+    return {
+      intent: 'schedule.additional_propose',
+      confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+      },
     };
   }
 
