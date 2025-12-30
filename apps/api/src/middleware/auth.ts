@@ -83,7 +83,7 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
   // Verify session token if present
   if (sessionToken && sessionToken.length > 0) {
     try {
-      console.log('[Auth] Verifying session token, length:', sessionToken.length);
+      console.error('[Auth] Verifying session token, length:', sessionToken.length);
       
       if (debugInfo && authDebug) {
         debugInfo.token_length = sessionToken.length;
@@ -99,7 +99,7 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
       
-      console.log('[Auth] Token hash:', tokenHash.substring(0, 16) + '...');
+      console.error('[Auth] Token hash:', tokenHash.substring(0, 16) + '...');
       
       if (debugInfo && authDebug) {
         debugInfo.token_hash_prefix = tokenHash.substring(0, 12);
@@ -109,7 +109,7 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       const sessionRepo = new SessionRepository(env.DB);
       const session = await sessionRepo.findByTokenHash(tokenHash);
       
-      console.log('[Auth] Session found:', !!session);
+      console.error('[Auth] Session found:', !!session);
       
       if (debugInfo && authDebug) {
         debugInfo.session_found_by_repo = !!session;
@@ -144,7 +144,7 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
         }
         // Update last_seen_at
         await sessionRepo.updateLastSeen(session.id);
-        console.log('[Auth] Session valid, userId:', session.user_id);
+        console.error('[Auth] Session valid, userId:', session.user_id);
         return session.user_id;
       } else {
         console.warn('[Auth] Session not found in DB for token hash:', tokenHash.substring(0, 16) + '...');
@@ -156,7 +156,7 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       }
     }
   } else {
-    console.warn('[Auth] No session token provided');
+    console.error('[Auth] No session token provided');
   }
 
   return null;
