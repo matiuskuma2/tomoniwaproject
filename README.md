@@ -354,6 +354,44 @@ curl http://localhost:3000/admin/ai/providers \
 - 集計テーブル（日次/月次サマリ）
 - KV TTL活用（期限付きデータ）
 
+## 🚀 Phase Next-5: Auto-propose (自動調整) 完了
+
+### Phase Next-5 Day1: 自動候補生成（提案のみ）
+- ✅ Intent: `schedule.auto_propose`
+- ✅ メール抽出のみ（名前抽出は Day2 以降）
+- ✅ 来週の候補を 5 件生成（busyチェックなし）
+- ✅ 「はい/いいえ」で確認（POST なし）
+
+### Phase Next-5 Day2: Yes → POST
+- ✅ Intent: `schedule.auto_propose.confirm` / `cancel`
+- ✅ `pendingAutoPropose` state 管理
+- ✅ confirm 時のみ POST `/api/threads`
+- ✅ ガードレール: pending なき場合は POST 不発
+
+### Phase Next-5 Day2.1: 技術的負債ゼロ化
+- ✅ `ExecutionResult` 型固定化（`as any` 排除）
+- ✅ `ExecutionContext` 型定義（`additionalParams` 廃止）
+- ✅ `onExecutionResult` で責務分離
+- ✅ confirm/cancel のガード強化
+- ✅ ドキュメント: `AUTO_PROPOSE_RUNBOOK.md`
+
+### Phase Next-5 Day3: 追加候補提案（提案のみ、POST なし）
+- ✅ Intent: `schedule.additional_propose`
+- ✅ `analyzeStatusForPropose(status)`: 純関数で判定ロジック
+  - 未返信 >= 1
+  - 票が割れている（1位と2位が同票、または最大票が1）
+- ✅ `executeAdditionalPropose`: 追加候補を3本生成
+- ✅ `executeStatusCheck` に判定ロジック追加（「追加候補出して」案内）
+- ✅ ガードレール: 提案のみ、POST は confirm 時のみ
+- ✅ ドキュメント: `ADDITIONAL_PROPOSE_RUNBOOK.md`
+
+**デプロイ情報**:
+- Production: https://app.tomoniwao.jp
+- Latest Deploy: https://53dbdb20.webapp-6t3.pages.dev
+- Git Commit: ee18c47
+
+---
+
 ## 🤝 コントリビューション
 
 このプロジェクトは現在開発中です。実装順序はチケット番号に従ってください。
@@ -364,6 +402,6 @@ curl http://localhost:3000/admin/ai/providers \
 
 ---
 
-**最終更新**: 2025-12-25  
-**バージョン**: 0.1.0  
-**ステータス**: チケット1-3完了、T04-T10実装中
+**最終更新**: 2025-12-30  
+**バージョン**: 0.2.0  
+**ステータス**: Phase Next-5 Day3 完了、T04-T10実装中
