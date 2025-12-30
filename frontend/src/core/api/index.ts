@@ -9,3 +9,4 @@ export { contactsApi } from './contacts';
 export { listsApi } from './lists';
 export { inboxApi } from './inbox';
 export { calendarApi } from './calendar';
+export { voiceApi } from './voice';

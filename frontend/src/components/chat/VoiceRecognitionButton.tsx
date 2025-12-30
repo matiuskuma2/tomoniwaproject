@@ -1,11 +1,13 @@
 /**
  * VoiceRecognitionButton - 音声認識ボタンコンポーネント
  * Phase Next-4 Day1: 🎤ボタンで音声認識を開始/停止
+ * Phase Next-4 Day1.5: Gemini補正機能の追加
  * エラー表示なし - サイレントエラーハンドリング
  */
 
 import { useEffect } from 'react';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { voiceApi } from '../../core/api';
 
 interface VoiceRecognitionButtonProps {
   onTranscriptUpdate: (transcript: string) => void;
@@ -28,11 +30,32 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
     resetTranscript,
   } = useSpeechRecognition();
 
-  // トランスクリプト更新時に親コンポーネントに通知
+  // トランスクリプト更新時にGemini補正を実行してから親コンポーネントに通知
   useEffect(() => {
     if (transcript) {
-      onTranscriptUpdate(transcript);
-      resetTranscript(); // 親に渡したらリセット
+      // Gemini補正を非同期で実行
+      const correctAndUpdate = async () => {
+        try {
+          console.log('[Voice] Original transcript:', transcript);
+          
+          // Gemini APIで補正
+          const result = await voiceApi.correct(transcript);
+          
+          console.log('[Voice] Corrected transcript:', result.corrected);
+          
+          // 補正後のテキストを親に渡す
+          onTranscriptUpdate(result.corrected);
+        } catch (error) {
+          console.error('[Voice] Correction failed, using original:', error);
+          // エラー時は元のテキストを使用
+          onTranscriptUpdate(transcript);
+        }
+        
+        // 親に渡したらリセット
+        resetTranscript();
+      };
+      
+      correctAndUpdate();
     }
   }, [transcript, onTranscriptUpdate, resetTranscript]);
 
