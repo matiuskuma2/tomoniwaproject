@@ -3,6 +3,8 @@
  * 3-column layout: Left (ThreadsList) + Center (ChatPane) + Right (CardsPane)
  * Desktop: 3 columns side-by-side
  * Mobile: Tabs for Threads/Chat/Cards
+ * 
+ * Phase Next-2: Manages per-thread conversation history
  */
 
 import { useState, useEffect } from 'react';
@@ -10,7 +12,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { threadsApi } from '../../core/api';
 import { clearAuth } from '../../core/auth';
 import { ThreadsList } from './ThreadsList';
-import { ChatPane } from './ChatPane';
+import { ChatPane, type ChatMessage } from './ChatPane';
 import { CardsPane } from './CardsPane';
 import { NotificationBell } from './NotificationBell';
 import type { ThreadStatus_API } from '../../core/models';
@@ -23,6 +25,9 @@ export function ChatLayout() {
   const [status, setStatus] = useState<ThreadStatus_API | null>(null);
   const [loading, setLoading] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('threads');
+  
+  // NEW: Per-thread message history
+  const [messagesByThreadId, setMessagesByThreadId] = useState<Record<string, ChatMessage[]>>({});
 
   useEffect(() => {
     if (threadId) {
@@ -52,6 +57,26 @@ export function ChatLayout() {
     }
   };
 
+  // NEW: Append message to specific thread
+  const appendMessage = (tid: string, msg: ChatMessage) => {
+    setMessagesByThreadId((prev) => {
+      const next = { ...prev };
+      const arr = next[tid] ? [...next[tid]] : [];
+      arr.push(msg);
+      next[tid] = arr;
+      return next;
+    });
+  };
+
+  // NEW: Seed template messages if thread is empty (once per thread)
+  const seedIfEmpty = (tid: string, seed: ChatMessage[]) => {
+    setMessagesByThreadId((prev) => {
+      // If thread already has messages, don't overwrite
+      if (prev[tid] && prev[tid].length > 0) return prev;
+      return { ...prev, [tid]: seed };
+    });
+  };
+
   const handleLogout = async () => {
     try {
       await fetch('/auth/logout', {
@@ -65,6 +90,9 @@ export function ChatLayout() {
       navigate('/');
     }
   };
+
+  // Get current thread's messages
+  const currentMessages = threadId ? (messagesByThreadId[threadId] || []) : [];
 
   return (
     <div className="h-screen flex flex-col">
@@ -125,7 +153,15 @@ export function ChatLayout() {
 
           {/* Center: ChatPane (flexible) */}
           <div className="flex-1">
-            <ChatPane status={status} loading={loading} onThreadUpdate={handleThreadUpdate} />
+            <ChatPane 
+              threadId={threadId || null}
+              status={status} 
+              loading={loading} 
+              messages={currentMessages}
+              onAppend={appendMessage}
+              onSeedIfEmpty={seedIfEmpty}
+              onThreadUpdate={handleThreadUpdate} 
+            />
           </div>
 
           {/* Right: CardsPane (~400px) */}
@@ -137,7 +173,17 @@ export function ChatLayout() {
         {/* Mobile Layout */}
         <div className="lg:hidden h-full">
           {mobileTab === 'threads' && <ThreadsList />}
-          {mobileTab === 'chat' && <ChatPane status={status} loading={loading} onThreadUpdate={handleThreadUpdate} />}
+          {mobileTab === 'chat' && (
+            <ChatPane 
+              threadId={threadId || null}
+              status={status} 
+              loading={loading} 
+              messages={currentMessages}
+              onAppend={appendMessage}
+              onSeedIfEmpty={seedIfEmpty}
+              onThreadUpdate={handleThreadUpdate} 
+            />
+          )}
           {mobileTab === 'cards' && <CardsPane status={status} loading={loading} />}
         </div>
       </div>

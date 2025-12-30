@@ -2,14 +2,16 @@
  * ChatPane
  * Center pane: displays chat-like conversation with intent execution
  * Phase Next-2: Text input → Intent classification → API execution
+ * Messages are now managed per-thread by ChatLayout
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
+import { useState } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent } from '../../core/chat/apiExecutor';
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -17,14 +19,33 @@ interface ChatMessage {
 }
 
 interface ChatPaneProps {
+  threadId: string | null;
   status: ThreadStatus_API | null;
   loading: boolean;
-  onThreadUpdate?: () => void; // Callback to refresh thread list
+  
+  // NEW: thread-specific messages passed from ChatLayout
+  messages: ChatMessage[];
+  
+  // NEW: append message to thread
+  onAppend: (threadId: string, msg: ChatMessage) => void;
+  
+  // NEW: seed template messages if empty
+  onSeedIfEmpty: (threadId: string, seed: ChatMessage[]) => void;
+  
+  // Existing: refresh thread status
+  onThreadUpdate?: () => void;
 }
 
-export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
+export function ChatPane({ 
+  threadId, 
+  status, 
+  loading, 
+  messages, 
+  onAppend, 
+  onSeedIfEmpty, 
+  onThreadUpdate 
+}: ChatPaneProps) {
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -33,23 +54,28 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Clear messages and add initial template when thread changes
+  // Seed template messages if thread is empty (once per thread)
   useEffect(() => {
-    if (status) {
-      const templateMessages = generateTemplateText();
-      setMessages(templateMessages.map((msg, idx) => ({
-        id: `template-${status.thread.id}-${idx}`,
+    if (!threadId) return;
+    if (!status) return;
+    if (loading) return;
+
+    // Only seed if this thread has no messages
+    if (messages.length === 0) {
+      const templateLines = generateTemplateText(status);
+      const seed: ChatMessage[] = templateLines.map((line, idx) => ({
+        id: `template-${threadId}-${idx}`,
         role: 'assistant',
-        content: msg,
+        content: line,
         timestamp: new Date(),
-      })));
-    } else {
-      setMessages([]);
+      }));
+      onSeedIfEmpty(threadId, seed);
     }
-  }, [status?.thread.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, status?.thread?.id, loading]);
 
   const handleSendClick = async () => {
-    if (!message.trim() || isProcessing) return;
+    if (!message.trim() || isProcessing || !threadId) return;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -58,14 +84,14 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    onAppend(threadId, userMessage);
     setMessage('');
     setIsProcessing(true);
 
     try {
       // Classify intent
       const intentResult = classifyIntent(message, {
-        selectedThreadId: status?.thread.id,
+        selectedThreadId: threadId,
       });
 
       // Execute intent
@@ -79,7 +105,7 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      onAppend(threadId, assistantMessage);
 
       // If successful, trigger refresh
       if (result.success && onThreadUpdate) {
@@ -94,7 +120,7 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
         content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      onAppend(threadId, errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -107,37 +133,33 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
     }
   };
 
-  const generateTemplateText = (): string[] => {
-    if (!status) {
-      return ['スレッドを選択してください'];
-    }
-
-    const messages: string[] = [];
+  const generateTemplateText = (s: ThreadStatus_API): string[] => {
+    const msgs: string[] = [];
 
     // Generate template text based on status
-    if (status.thread.status === 'draft') {
-      messages.push('調整を開始します。');
-    } else if (status.thread.status === 'active') {
-      messages.push('候補日時を送付済みです。');
+    if (s.thread.status === 'draft') {
+      msgs.push('調整を開始します。');
+    } else if (s.thread.status === 'active') {
+      msgs.push('候補日時を送付済みです。');
       
-      if (status.pending.count > 0) {
-        messages.push(`現在 ${status.pending.count} 名が未返信です。回答状況を確認できます。`);
+      if (s.pending.count > 0) {
+        msgs.push(`現在 ${s.pending.count} 名が未返信です。回答状況を確認できます。`);
       } else {
-        messages.push('全員が回答済みです。日程を確定できます。');
+        msgs.push('全員が回答済みです。日程を確定できます。');
       }
 
-      if (status.selections && status.selections.length > 0) {
-        messages.push(`${status.selections.length} 件の回答を受け取りました。`);
+      if (s.selections && s.selections.length > 0) {
+        msgs.push(`${s.selections.length} 件の回答を受け取りました。`);
       }
-    } else if (status.thread.status === 'confirmed' && status.evaluation.meeting) {
-      messages.push('日程が確定しました！');
-      messages.push(`Google Meet URL を確認できます: ${status.evaluation.meeting.url}`);
-      messages.push('カレンダーに予定を追加しました。');
-    } else if (status.thread.status === 'cancelled') {
-      messages.push('この調整はキャンセルされました。');
+    } else if (s.thread.status === 'confirmed' && s.evaluation.meeting) {
+      msgs.push('日程が確定しました！');
+      msgs.push(`Google Meet URL を確認できます: ${s.evaluation.meeting.url}`);
+      msgs.push('カレンダーに予定を追加しました。');
+    } else if (s.thread.status === 'cancelled') {
+      msgs.push('この調整はキャンセルされました。');
     }
 
-    return messages;
+    return msgs;
   };
 
   if (loading) {
