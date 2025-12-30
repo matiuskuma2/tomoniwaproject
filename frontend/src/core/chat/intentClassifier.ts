@@ -94,31 +94,28 @@ export function classifyIntent(input: string, context?: {
     /(候補.*出して|調整.*して|自動.*調整|提案)/.test(normalizedInput) &&
     !/(状況|進捗|確認)/.test(normalizedInput)
   ) {
-    // Extract names from input
-    const names = extractNames(input);
+    // Extract emails from input (Phase Next-5 Day1: メールのみで相手を特定)
+    const emails = extractEmails(input);
     
     // Extract duration if specified (default 30 minutes)
     const durationMatch = normalizedInput.match(/(\d+)分/);
     const duration = durationMatch ? parseInt(durationMatch[1], 10) : 30;
     
-    // Extract time range (default: next week)
-    let range: 'next_week' | 'this_week' = 'next_week';
-    if (/(今週|こんしゅう)/.test(normalizedInput)) {
-      range = 'this_week';
-    }
+    // Phase Next-5 Day1: 来週固定（busyは使わない）
+    const range = 'next_week';
     
     return {
       intent: 'schedule.auto_propose',
       confidence: 0.9,
       params: {
         rawInput: input,
-        names,
+        emails,
         duration,
         range,
       },
-      needsClarification: names.length === 0 ? {
-        field: 'names',
-        message: '誰との調整ですか？\n\n例: 田中さん、佐藤さん',
+      needsClarification: emails.length === 0 ? {
+        field: 'emails',
+        message: '送る相手のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
       } : undefined,
     };
   }

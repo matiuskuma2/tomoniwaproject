@@ -84,16 +84,15 @@ export async function executeIntent(
 /**
  * P2-1: schedule.auto_propose
  * Phase Next-5 Day1: 提案のみ（POST しない）
+ * Phase Next-5 Day1修正: メールのみで相手を特定、busyを使わない
  */
 async function executeAutoPropose(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { names, duration, range } = intentResult.params;
+  const { emails, duration } = intentResult.params;
   
   try {
-    // Step 1: Get freebusy data (来週 = week)
-    const freebusyResponse = await calendarApi.getFreeBusy('week');
-    
-    // Step 2: Generate proposals (30分刻み、最大5件)
-    const proposals = generateProposals(freebusyResponse, duration || 30);
+    // Phase Next-5 Day1: busyを使わない（来週候補、busy無し扱い）
+    // Step 1: Generate proposals (30分刻み、最大5件、busy無し）
+    const proposals = generateProposalsWithoutBusy(duration || 30);
     
     if (proposals.length === 0) {
       return {
@@ -102,20 +101,19 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
       };
     }
     
-    // Step 3: Build message with proposals
-    let message = `📅 候補日時を生成しました（${names.join(', ')}さんとの調整）\n\n`;
-    message += `⏱️ 所要時間: ${duration}分\n\n`;
+    // Step 2: Build message with proposals
+    let message = `📅 候補日時を生成しました\n\n`;
+    message += `📧 送信先: ${emails.join(', ')}\n`;
+    message += `⏱️ 所要時間: ${duration || 30}分\n\n`;
     message += '候補日時:\n';
     proposals.forEach((proposal, index) => {
       message += `${index + 1}. ${proposal.label}\n`;
     });
     message += '\n';
     
-    // Warning if freebusy has warning
-    if (freebusyResponse.warning) {
-      message += '⚠️ カレンダーの予定情報を取得できませんでした。\n';
-      message += '全時間帯が空いているものとして候補を生成しています。\n\n';
-    }
+    // Phase Next-5 Day1: busyを使わないことを明示
+    message += 'ℹ️ 来週の営業時間（9:00-18:00）から候補を生成しています。\n';
+    message += '（カレンダーの予定との重複チェックは Day2 以降で対応予定）\n\n';
     
     message += '💡 この内容でスレッドを作成しますか？\n';
     message += '（まだ作成していません。確認のみです）';
@@ -126,11 +124,10 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
       data: {
         kind: 'schedule.auto_propose' as any,
         payload: {
-          names,
-          duration,
-          range,
+          emails,
+          duration: duration || 30,
+          range: 'next_week',
           proposals,
-          freebusy: freebusyResponse,
         },
       },
     };
@@ -143,20 +140,16 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
 }
 
 /**
- * Generate time slot proposals
+ * Generate time slot proposals (Phase Next-5 Day1: busyなし版)
  * - 30分刻み（デフォルト）
  * - 来週の営業時間（9:00-18:00）
- * - busyと重複しない
+ * - busyとの重複チェックなし（Day2以降で対応）
  * - 最大5件
  */
-function generateProposals(
-  freebusyResponse: CalendarFreeBusyResponse,
+function generateProposalsWithoutBusy(
   duration: number = 30
 ): Array<{ start_at: string; end_at: string; label: string }> {
   const proposals: Array<{ start_at: string; end_at: string; label: string }> = [];
-  
-  // freebusy が warning の場合は空配列として扱う
-  const busySlots = freebusyResponse.warning ? [] : freebusyResponse.busy;
   
   // 来週の月曜日を取得
   const today = new Date();
@@ -164,7 +157,7 @@ function generateProposals(
   nextWeekMonday.setDate(today.getDate() + ((1 + 7 - today.getDay()) % 7) + 7);
   nextWeekMonday.setHours(0, 0, 0, 0);
   
-  // 月〜金の9:00-18:00でスロット生成
+  // 月〜金の9:00-18:00でスロット生成（busyチェックなし）
   for (let day = 0; day < 5; day++) {
     const currentDate = new Date(nextWeekMonday);
     currentDate.setDate(currentDate.getDate() + day);
@@ -182,27 +175,14 @@ function generateProposals(
           continue;
         }
         
-        // busyと重複していないかチェック
-        const isOverlapping = busySlots.some((busy) => {
-          const busyStart = new Date(busy.start);
-          const busyEnd = new Date(busy.end);
-          return (
-            (slotStart >= busyStart && slotStart < busyEnd) ||
-            (slotEnd > busyStart && slotEnd <= busyEnd) ||
-            (slotStart <= busyStart && slotEnd >= busyEnd)
-          );
+        proposals.push({
+          start_at: slotStart.toISOString(),
+          end_at: slotEnd.toISOString(),
+          label: formatProposalLabel(slotStart, slotEnd),
         });
         
-        if (!isOverlapping) {
-          proposals.push({
-            start_at: slotStart.toISOString(),
-            end_at: slotEnd.toISOString(),
-            label: formatProposalLabel(slotStart, slotEnd),
-          });
-          
-          // 最大5件で終了
-          if (proposals.length >= 5) return proposals;
-        }
+        // 最大5件で終了
+        if (proposals.length >= 5) return proposals;
       }
     }
   }
