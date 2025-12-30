@@ -194,8 +194,7 @@ app.get('/week', async (c) => {
 
 /**
  * GET /api/calendar/freebusy?range=today|week
- * Returns free/busy time slots
- * Phase Next-3: Stub for now (Day3 implementation)
+ * Returns busy time slots (Day3: busy-only implementation)
  */
 app.get('/freebusy', async (c) => {
   const { env } = c;
@@ -209,35 +208,64 @@ app.get('/freebusy', async (c) => {
   try {
     console.log('[Calendar] GET /freebusy - userId:', userId, 'range:', range);
 
-    // TODO: Day3 - Implement Google Calendar FreeBusy API
-    // For now, return stub data
-    const now = new Date();
+    // Get access token
+    const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
+    if (!accessToken) {
+      // No Google account linked - return empty with warning
+      return c.json({
+        range,
+        timezone: 'Asia/Tokyo',
+        busy: [],
+        warning: 'google_account_not_linked',
+      });
+    }
+
+    // Calculate time bounds based on range
+    let timeMin: string;
+    let timeMax: string;
+
+    if (range === 'week') {
+      const bounds = getWeekBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    } else {
+      // Default: today
+      const bounds = getTodayBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    }
+
+    // Fetch busy periods from Google Calendar
+    const calendarService = new GoogleCalendarService(accessToken, env);
+    const busy = await calendarService.getFreeBusy(timeMin, timeMax);
 
     return c.json({
       range,
       timezone: 'Asia/Tokyo',
-      free: [
-        // Stub data - free slots
-        {
-          start: new Date(now.setHours(9, 0, 0, 0)).toISOString(),
-          end: new Date(now.setHours(10, 0, 0, 0)).toISOString(),
-        },
-        {
-          start: new Date(now.setHours(15, 0, 0, 0)).toISOString(),
-          end: new Date(now.setHours(17, 0, 0, 0)).toISOString(),
-        },
-      ],
-      busy: [
-        // Stub data - busy slots (no details, just time ranges)
-        {
-          start: new Date(now.setHours(10, 0, 0, 0)).toISOString(),
-          end: new Date(now.setHours(11, 0, 0, 0)).toISOString(),
-        },
-      ],
+      busy,
+      warning: null,
     });
   } catch (error) {
     console.error('[Calendar] Error fetching freebusy:', error);
-    return c.json({ error: 'Failed to fetch free/busy information' }, 500);
+    
+    // Check if it's a permission error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('403') || errorMessage.includes('permission')) {
+      return c.json({
+        range,
+        timezone: 'Asia/Tokyo',
+        busy: [],
+        warning: 'google_calendar_permission_missing',
+      });
+    }
+
+    // Generic error
+    return c.json({
+      range,
+      timezone: 'Asia/Tokyo',
+      busy: [],
+      warning: 'fetch_error',
+    });
   }
 });
 

@@ -347,4 +347,52 @@ export class GoogleCalendarService {
       return null;
     }
   }
+
+  /**
+   * Get FreeBusy information (Day3: busy periods only)
+   * 
+   * @param timeMin Start time (ISO 8601)
+   * @param timeMax End time (ISO 8601)
+   * @returns Array of busy periods
+   */
+  async getFreeBusy(timeMin: string, timeMax: string): Promise<{ start: string; end: string }[]> {
+    try {
+      const requestBody = {
+        timeMin,
+        timeMax,
+        items: [{ id: 'primary' }],
+      };
+
+      const response = await fetch(
+        'https://www.googleapis.com/calendar/v3/freeBusy',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[GoogleCalendar] FreeBusy API error:', response.status, errorText);
+        throw new Error(`FreeBusy API error: ${response.status}`);
+      }
+
+      const data = await response.json() as {
+        calendars: {
+          primary: {
+            busy: Array<{ start: string; end: string }>;
+          };
+        };
+      };
+
+      return data.calendars?.primary?.busy || [];
+    } catch (error) {
+      console.error('[GoogleCalendar] getFreeBusy error:', error);
+      throw error;
+    }
+  }
 }
