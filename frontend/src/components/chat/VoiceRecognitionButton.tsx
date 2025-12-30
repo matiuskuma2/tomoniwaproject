@@ -2,25 +2,31 @@
  * VoiceRecognitionButton - 音声認識ボタンコンポーネント
  * Phase Next-4 Day1: 🎤ボタンで音声認識を開始/停止
  * Phase Next-4 Day1.5: Gemini補正機能の追加
+ * Phase Next-4 Day2.5: 置換方式・補正条件分岐・多重実行防止
  * エラー表示なし - サイレントエラーハンドリング
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { voiceApi } from '../../core/api';
 
 interface VoiceRecognitionButtonProps {
   onTranscriptUpdate: (transcript: string) => void;
   disabled?: boolean;
+  onProcessingChange?: (isProcessing: boolean) => void; // 補正中フラグを親に通知
 }
 
 /**
  * 音声認識ボタン
  * - 🎤ボタンをクリックして音声認識を開始/停止
  * - 認識結果はリアルタイムで親コンポーネントに通知
- * - エラー発生時はエラーメッセージを表示
+ * - エラー発生時はサイレントエラーハンドリング
  */
-export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }: VoiceRecognitionButtonProps) {
+export function VoiceRecognitionButton({ 
+  onTranscriptUpdate, 
+  disabled = false,
+  onProcessingChange 
+}: VoiceRecognitionButtonProps) {
   const {
     isListening,
     transcript,
@@ -30,37 +36,79 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
     resetTranscript,
   } = useSpeechRecognition();
 
+  // Phase Next-4 Day2.5: 補正中フラグ（多重実行防止）
+  const [isProcessing, setIsProcessing] = useState(false);
+
   // トランスクリプト更新時にGemini補正を実行してから親コンポーネントに通知
+  // Phase Next-4 Day2.5: 補正条件分岐（コスト最適化） + 多重実行防止
   useEffect(() => {
-    if (transcript) {
+    if (transcript && !isProcessing) {
       // Gemini補正を非同期で実行
       const correctAndUpdate = async () => {
+        setIsProcessing(true);
+        if (onProcessingChange) onProcessingChange(true);
+
         try {
           console.log('[Voice] Original transcript:', transcript);
           
-          // Gemini APIで補正
-          const result = await voiceApi.correct(transcript);
+          // 補正条件チェック（ひらがな比率が高い/短文のみ補正）
+          const shouldCorrect = needsCorrection(transcript);
           
-          console.log('[Voice] Corrected transcript:', result.corrected);
-          
-          // 補正後のテキストを親に渡す
-          onTranscriptUpdate(result.corrected);
+          if (shouldCorrect) {
+            console.log('[Voice] Running Gemini correction...');
+            // Gemini APIで補正
+            const result = await voiceApi.correct(transcript);
+            console.log('[Voice] Corrected transcript:', result.corrected);
+            onTranscriptUpdate(result.corrected);
+          } else {
+            console.log('[Voice] Skipping correction (already clean)');
+            // 補正不要 - 素通し
+            onTranscriptUpdate(transcript);
+          }
         } catch (error) {
           console.error('[Voice] Correction failed, using original:', error);
           // エラー時は元のテキストを使用
           onTranscriptUpdate(transcript);
+        } finally {
+          // 親に渡したらリセット
+          resetTranscript();
+          
+          // 1秒後にロック解除（多重実行防止）
+          setTimeout(() => {
+            setIsProcessing(false);
+            if (onProcessingChange) onProcessingChange(false);
+          }, 1000);
         }
-        
-        // 親に渡したらリセット
-        resetTranscript();
       };
       
       correctAndUpdate();
     }
-  }, [transcript, onTranscriptUpdate, resetTranscript]);
+  }, [transcript, isProcessing, onTranscriptUpdate, resetTranscript, onProcessingChange]);
 
-  // ボタンクリックハンドラ
+  /**
+   * 補正が必要かどうかを判定
+   * - ひらがな比率が50%以上
+   * - または5文字以下の短文
+   */
+  const needsCorrection = (text: string): boolean => {
+    // ひらがなの数をカウント
+    const hiraganaCount = (text.match(/[\u3040-\u309F]/g) || []).length;
+    const totalLength = text.length;
+    
+    // ひらがな比率
+    const hiraganaRatio = totalLength > 0 ? hiraganaCount / totalLength : 0;
+    
+    // 条件: ひらがな比率が50%以上、または5文字以下
+    return hiraganaRatio >= 0.5 || totalLength <= 5;
+  };
+
+  // ボタンクリックハンドラ（補正中はロック）
   const handleClick = () => {
+    if (isProcessing) {
+      console.log('[Voice] Processing in progress, ignoring click');
+      return;
+    }
+    
     if (isListening) {
       stopListening();
     } else {
@@ -78,7 +126,7 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
       {/* 音声認識ボタン - コンパクトなデザイン */}
       <button
         onClick={handleClick}
-        disabled={disabled}
+        disabled={disabled || isProcessing}
         className={`
           flex items-center justify-center flex-shrink-0
           w-10 h-10 rounded-full
@@ -87,11 +135,17 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
             ? 'bg-red-500 hover:bg-red-600 animate-pulse'
             : 'bg-gray-100 hover:bg-gray-200'
           }
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          ${disabled || isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
           ${isListening ? 'text-white' : 'text-gray-600'}
           border border-gray-300
         `}
-        title={isListening ? '音声認識を停止' : '音声認識を開始'}
+        title={
+          isProcessing 
+            ? '補正中...' 
+            : isListening 
+              ? '音声認識を停止' 
+              : '音声認識を開始'
+        }
       >
         {isListening ? (
           // 録音中アイコン（停止ボタン）

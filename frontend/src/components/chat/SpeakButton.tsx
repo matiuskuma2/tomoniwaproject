@@ -1,6 +1,7 @@
 /**
  * SpeakButton - テキスト読み上げボタンコンポーネント
  * Phase Next-4 Day2: 🔊ボタンでテキストを音声で読み上げ
+ * Phase Next-4 Day2.5: 全体停止機能（別メッセージ押下で前の読み上げ停止）
  */
 
 import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
@@ -8,15 +9,20 @@ import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis';
 interface SpeakButtonProps {
   text: string;
   disabled?: boolean;
+  messageId: string; // メッセージIDを追加
 }
+
+// グローバルな現在の読み上げメッセージID
+let currentSpeakingMessageId: string | null = null;
 
 /**
  * テキスト読み上げボタン
  * - 🔊ボタンをクリックしてテキストを読み上げ
  * - 読み上げ中は停止ボタンに変わる
+ * - 別のメッセージの読み上げを開始すると前の読み上げが停止
  * - エラーはサイレント処理（コンソールログのみ）
  */
-export function SpeakButton({ text, disabled = false }: SpeakButtonProps) {
+export function SpeakButton({ text, disabled = false, messageId }: SpeakButtonProps) {
   const { isSpeaking, isSupported, speak, stop } = useSpeechSynthesis();
 
   // サポート外の場合は非表示
@@ -24,12 +30,22 @@ export function SpeakButton({ text, disabled = false }: SpeakButtonProps) {
     return null;
   }
 
-  // ボタンクリックハンドラ
+  // このボタンが現在読み上げ中かどうか
+  const isThisSpeaking = isSpeaking && currentSpeakingMessageId === messageId;
+
+  // ボタンクリックハンドラ（全体停止機能付き）
   const handleClick = () => {
-    if (isSpeaking) {
+    if (isThisSpeaking) {
+      // 自分が読み上げ中なら停止
       stop();
+      currentSpeakingMessageId = null;
     } else {
+      // 別のメッセージが読み上げ中なら停止してから自分を開始
+      if (isSpeaking) {
+        stop();
+      }
       speak(text);
+      currentSpeakingMessageId = messageId;
     }
   };
 
@@ -41,17 +57,17 @@ export function SpeakButton({ text, disabled = false }: SpeakButtonProps) {
         flex items-center justify-center
         w-8 h-8 rounded-full
         transition-all duration-200
-        ${isSpeaking
+        ${isThisSpeaking
           ? 'bg-blue-500 hover:bg-blue-600'
           : 'bg-gray-100 hover:bg-gray-200'
         }
         ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-        ${isSpeaking ? 'text-white' : 'text-gray-600'}
+        ${isThisSpeaking ? 'text-white' : 'text-gray-600'}
         border border-gray-300
       `}
-      title={isSpeaking ? '読み上げ停止' : '読み上げ'}
+      title={isThisSpeaking ? '読み上げ停止' : '読み上げ'}
     >
-      {isSpeaking ? (
+      {isThisSpeaking ? (
         // 読み上げ中アイコン（停止ボタン）
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <rect x="6" y="6" width="8" height="8" rx="1" />

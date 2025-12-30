@@ -54,6 +54,7 @@ export function ChatPane({
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // Phase Next-4 Day2.5: 音声補正中フラグ
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom when messages change
@@ -214,7 +215,8 @@ export function ChatPane({
                     <p className="text-xs text-gray-400">
                       {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                     </p>
-                    <SpeakButton text={msg.content} />
+                    {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
+                    <SpeakButton text={msg.content} messageId={msg.id} />
                   </div>
                 </div>
               </>
@@ -254,20 +256,23 @@ export function ChatPane({
           />
           
           {/* Phase Next-4 Day1: Voice Recognition Button - 右側に配置 */}
+          {/* Phase Next-4 Day2.5: 置換方式に変更（追記 → 置換） + 補正中フラグ */}
           <VoiceRecognitionButton
             onTranscriptUpdate={(transcript) => {
-              setMessage(prev => prev + transcript);
+              setMessage(transcript);
             }}
             disabled={isProcessing}
+            onProcessingChange={setIsVoiceProcessing}
           />
           
           {/* Send button - 最も右側に配置 */}
+          {/* Phase Next-4 Day2.5: 音声補正中もロック */}
           <button
             onClick={handleSendClick}
-            disabled={isProcessing || !message.trim()}
+            disabled={isProcessing || isVoiceProcessing || !message.trim()}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {isProcessing ? '処理中...' : '送信'}
+            {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : '送信'}
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
