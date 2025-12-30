@@ -43,6 +43,9 @@ interface ChatPaneProps {
   
   // NEW (Phase Next-5 Day2): pending auto-propose
   pendingAutoPropose?: any;
+  
+  // NEW (Phase Next-5 Day3): additional propose execution count (max 2)
+  additionalProposeCount?: number;
 }
 
 export function ChatPane({ 
@@ -54,7 +57,8 @@ export function ChatPane({
   onSeedIfEmpty, 
   onThreadUpdate,
   onExecutionResult,
-  pendingAutoPropose
+  pendingAutoPropose,
+  additionalProposeCount = 0
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -108,8 +112,10 @@ export function ChatPane({
 
       // Execute intent
       // Phase Next-5 Day2: Pass pendingAutoPropose for confirm/cancel
+      // Phase Next-5 Day3: Pass additionalProposeCount for execution limit
       const result = await executeIntent(intentResult, {
         pendingAutoPropose,
+        additionalProposeCount,
       });
 
       // Add assistant response

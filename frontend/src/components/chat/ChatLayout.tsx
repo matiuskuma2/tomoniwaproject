@@ -55,6 +55,9 @@ export function ChatLayout() {
   
   // NEW (Phase Next-5 Day2): Pending auto-propose state
   const [pendingAutoPropose, setPendingAutoPropose] = useState<PendingAutoPropose | null>(null);
+  
+  // NEW (Phase Next-5 Day3): Additional propose execution count (max 2 per thread)
+  const [additionalProposeCountByThreadId, setAdditionalProposeCountByThreadId] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (threadId) {
@@ -122,6 +125,16 @@ export function ChatLayout() {
     // Handle auto-propose state updates
     else if (kind === 'auto_propose.generated') {
       setPendingAutoPropose(payload);
+      
+      // Phase Next-5 Day3: Increment additional propose count if threadId exists
+      // (Only count additional proposals, not initial proposals)
+      // We detect "additional" by checking if payload.emails is empty (Day3 pattern)
+      if (threadId && payload.emails && payload.emails.length === 0) {
+        setAdditionalProposeCountByThreadId(prev => ({
+          ...prev,
+          [threadId]: (prev[threadId] || 0) + 1,
+        }));
+      }
     } else if (kind === 'auto_propose.cancelled' || kind === 'auto_propose.created') {
       setPendingAutoPropose(null);
     }
@@ -213,6 +226,7 @@ export function ChatLayout() {
               onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
+              additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
             />
           </div>
 
@@ -240,6 +254,7 @@ export function ChatLayout() {
               onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
+              additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
             />
           )}
           {mobileTab === 'cards' && (

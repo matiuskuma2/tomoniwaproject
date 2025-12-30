@@ -38,6 +38,8 @@ export interface ExecutionContext {
     range: string;
     proposals: Array<{ start_at: string; end_at: string; label: string }>;
   } | null;
+  // Phase Next-5 Day3: additional propose execution count (max 2)
+  additionalProposeCount?: number;
 }
 
 /**
@@ -70,7 +72,7 @@ export async function executeIntent(
       return executeAutoProposeCancel();
     
     case 'schedule.additional_propose':
-      return executeAdditionalPropose(intentResult);
+      return executeAdditionalPropose(intentResult, context);
     
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
@@ -263,14 +265,16 @@ async function executeAutoProposeCancel(): Promise<ExecutionResult> {
  * Phase Next-5 Day3: 追加候補提案（提案のみ、POSTなし）
  * 
  * Flow:
- * 1. status を取得
- * 2. analyzeStatusForPropose で判定
- * 3. 条件を満たす場合: 追加候補を3本生成
- * 4. 「この候補を追加しますか？」を表示
- * 5. 「はい」で confirm フローに乗る（POST は confirm 時のみ）
+ * 1. 実行回数チェック（最大2回まで）
+ * 2. status を取得
+ * 3. analyzeStatusForPropose で判定
+ * 4. 条件を満たす場合: 追加候補を3本生成（既存スロットと重複回避）
+ * 5. 「この候補を追加しますか？」を表示
+ * 6. 「はい」で confirm フローに乗る（POST は confirm 時のみ）
  */
 async function executeAdditionalPropose(
-  intentResult: IntentResult
+  intentResult: IntentResult,
+  context?: ExecutionContext
 ): Promise<ExecutionResult> {
   const { threadId } = intentResult.params;
   
@@ -282,6 +286,15 @@ async function executeAdditionalPropose(
         field: 'threadId',
         message: 'どのスレッドに追加候補を提案しますか？\n左のスレッド一覧から選択してください。',
       },
+    };
+  }
+  
+  // Phase Next-5 Day3: 実行回数チェック（最大2回まで）
+  const executionCount = context?.additionalProposeCount || 0;
+  if (executionCount >= 2) {
+    return {
+      success: false,
+      message: '❌ 追加候補の提案は最大2回までです。\n\nこれ以上は手動で候補を追加してください。',
     };
   }
   
@@ -301,16 +314,28 @@ async function executeAdditionalPropose(
     
     // Generate 3 additional proposals (30 minutes, next week)
     const duration = 30; // Default 30 minutes
-    const additionalProposals = generateProposalsWithoutBusy(duration).slice(0, 3);
+    const allProposals = generateProposalsWithoutBusy(duration);
+    
+    // Phase Next-5 Day3: 既存スロットと重複回避（ラベルで判定）
+    const existingLabels = status.slots.map((slot) => slot.label || '').filter(Boolean);
+    const newProposals = allProposals.filter((p) => !existingLabels.includes(p.label)).slice(0, 3);
+    
+    if (newProposals.length === 0) {
+      return {
+        success: false,
+        message: '❌ 追加可能な候補がありません。\n\n既存の候補と重複しています。',
+      };
+    }
     
     // Build message with proposals
-    let message = '✅ 追加候補を3本生成しました:\n\n';
-    additionalProposals.forEach((proposal, index) => {
+    let message = `✅ 追加候補を${newProposals.length}本生成しました:\n\n`;
+    newProposals.forEach((proposal, index) => {
       message += `${index + 1}. ${proposal.label}\n`;
     });
     message += '\n📌 注意: この候補はまだスレッドに追加されていません。';
     message += '\n「はい」と入力すると、候補をスレッドに追加できます。';
     message += '\n「いいえ」でキャンセルします。';
+    message += `\n\n⚠️ 残り提案回数: ${2 - executionCount - 1}回`;
     
     // Return as auto_propose.generated (reuse Day2 confirm flow)
     return {
@@ -319,10 +344,10 @@ async function executeAdditionalPropose(
       data: {
         kind: 'auto_propose.generated',
         payload: {
-          emails: [], // No emails needed for additional proposals
+          emails: [], // No emails needed for additional proposals (Day3 pattern)
           duration,
           range: 'next_week',
-          proposals: additionalProposals,
+          proposals: newProposals,
         },
       },
     };
@@ -648,43 +673,17 @@ async function executeCreate(
  * Phase Next-5 Day3: Analyze status for additional proposal
  * Pure function: returns true if additional proposals are needed
  * 
- * Triggers:
- * 1. 未返信 >= 1
- * 2. 票が割れている（1位と2位が同票、または最大票が1）
+ * Day3 最小安全版:
+ * - Rule 1: 未返信 >= 1 のみ
+ * - 票割れ判定は Day3.5 で追加予定
  */
 function analyzeStatusForPropose(status: ThreadStatus_API): boolean {
-  const { invites, slots } = status;
+  const { invites } = status;
   
-  // Rule 1: 未返信が1以上
-  const pendingCount = invites.filter((i) => i.status === 'pending').length;
-  if (pendingCount >= 1) {
-    return true;
-  }
+  // Rule 1: 未返信が1以上（status が pending または null）
+  const pendingCount = invites.filter((i) => i.status === 'pending' || i.status === null).length;
   
-  // Rule 2: 票が割れている
-  if (slots.length === 0) return false;
-  
-  // 各スロットの投票数を集計
-  const slotVotes = slots.map((slot) => ({
-    slotId: slot.slot_id,
-    votes: getSlotVotes(slot.slot_id, status),
-  }));
-  
-  // 最大票数
-  const maxVotes = Math.max(...slotVotes.map((sv) => sv.votes));
-  
-  // Case 2-1: 最大票が1票以下
-  if (maxVotes <= 1) {
-    return true;
-  }
-  
-  // Case 2-2: 1位と2位が同票
-  const topSlots = slotVotes.filter((sv) => sv.votes === maxVotes);
-  if (topSlots.length >= 2) {
-    return true;
-  }
-  
-  return false;
+  return pendingCount >= 1;
 }
 
 /**
