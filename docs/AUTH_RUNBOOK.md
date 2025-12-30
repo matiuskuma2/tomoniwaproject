@@ -33,9 +33,10 @@ app.use('/api/threads*', requireAuth);
 app.route('/api/threads', threadsRoutes);
 ```
 
-### **統一ルール**
+### **統一ルール（徹底）**
 - すべての保護されたルートは **threads パターン** を使用
-- **ワイルドカード `*` は使わない**（Hono のマッチング問題を回避）
+- **ワイルドカード `*` は絶対に使わない**（Hono のマッチング問題を回避）
+- **適用済み:** calendar, inbox, rooms, contacts, lists, business-cards, work-items, voice
 
 ---
 
@@ -178,3 +179,4 @@ app.route('/api/ENDPOINT', endpointRoutes);
 | 2025-12-30 | System | AUTH_RUNBOOK.md 作成 | Day2 完了、再発防止 |
 | 2025-12-30 | System | calendar ミドルウェア修正 | Hono パターンマッチング問題 |
 | 2025-12-30 | System | AUTH_DEBUG 削除 | 技術的負債の削除 |
+| 2025-12-30 | System | 全保護ルートを threads パターンに統一 | ワイルドカード `*` 完全廃止 |
