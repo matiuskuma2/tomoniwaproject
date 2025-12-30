@@ -121,10 +121,20 @@ export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variabl
   const userId = await getUserId(c);
 
   if (!userId) {
+    // DEBUG: Add more details to error response
+    const authHeader = c.req.header('Authorization');
+    const hasBearerToken = authHeader?.startsWith('Bearer ') || false;
+    const tokenLength = hasBearerToken && authHeader ? authHeader.substring(7).trim().length : 0;
+    
     return c.json(
       { 
         error: 'Unauthorized',
-        message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).'
+        message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
+        debug: {
+          has_bearer_token: hasBearerToken,
+          token_length: tokenLength,
+          environment: c.env.ENVIRONMENT || 'unknown'
+        }
       },
       401
     );
