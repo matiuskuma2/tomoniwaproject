@@ -68,6 +68,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
   
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const SpeechRecognitionConstructor = useRef<ISpeechRecognitionConstructor | null>(null);
+  const permissionDeniedRef = useRef(false); // 権限拒否フラグ
 
   // SpeechRecognition インスタンスを初期化する関数
   const initializeRecognition = useCallback(() => {
@@ -112,13 +113,9 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       switch (event.error) {
         case 'not-allowed':
         case 'permission-denied':
-          // 権限拒否 - 新しいインスタンスを作成して再試行可能にする
-          console.log('[Voice Recognition] Permission denied. Reinitializing instance for retry.');
-          // 古いインスタンスを破棄して新しいものを作成
-          if (recognitionRef.current) {
-            recognitionRef.current.abort();
-          }
-          recognitionRef.current = initializeRecognition();
+          // 権限拒否フラグを立てる
+          console.log('[Voice Recognition] Permission denied. Will create new instance on next start.');
+          permissionDeniedRef.current = true;
           break;
         case 'no-speech':
           // 音声なし - 自動停止（正常動作）
@@ -184,21 +181,47 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
 
   // 音声認識開始
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || !isSupported) {
-      console.log('[Voice Recognition] Cannot start: not supported or no recognition instance.');
+    if (!isSupported) {
+      console.log('[Voice Recognition] Cannot start: not supported.');
+      return;
+    }
+    
+    // 権限拒否された後、または既存のインスタンスがない場合は新しいインスタンスを作成
+    if (permissionDeniedRef.current || !recognitionRef.current) {
+      console.log('[Voice Recognition] Creating new instance for retry or initialization.');
+      
+      // 古いインスタンスがあれば破棄
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          // abort が失敗しても無視
+        }
+      }
+      
+      // 新しいインスタンスを作成
+      recognitionRef.current = initializeRecognition();
+      permissionDeniedRef.current = false; // フラグをリセット
+    }
+    
+    if (!recognitionRef.current) {
+      console.log('[Voice Recognition] Failed to create recognition instance.');
       return;
     }
     
     try {
       recognitionRef.current.start();
+      console.log('[Voice Recognition] Started successfully.');
     } catch (err) {
       console.log('[Voice Recognition] Failed to start:', err);
       if (err instanceof Error && err.message.includes('already started')) {
         // すでに起動中の場合は無視（正常動作）
         return;
       }
+      // 他のエラーの場合は次回再試行のためフラグを立てる
+      permissionDeniedRef.current = true;
     }
-  }, [isSupported]);
+  }, [isSupported, initializeRecognition]);
 
   // 音声認識停止
   const stopListening = useCallback(() => {
