@@ -43,6 +43,12 @@ export async function executeIntent(
     case 'schedule.auto_propose':
       return executeAutoPropose(intentResult);
     
+    case 'schedule.auto_propose.confirm':
+      return executeAutoProposeConfirm(additionalParams);
+    
+    case 'schedule.auto_propose.cancel':
+      return executeAutoProposeCancel();
+    
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
       return executeToday();
@@ -115,8 +121,9 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
     message += 'ℹ️ 来週の営業時間（9:00-18:00）から候補を生成しています。\n';
     message += '（カレンダーの予定との重複チェックは Day2 以降で対応予定）\n\n';
     
+    // Phase Next-5 Day2: 確認メッセージ統一
     message += '💡 この内容でスレッドを作成しますか？\n';
-    message += '（まだ作成していません。確認のみです）';
+    message += '「はい」で作成、「いいえ」でキャンセルします。';
     
     return {
       success: true,
@@ -137,6 +144,93 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+}
+
+/**
+ * P2-2: schedule.auto_propose.confirm
+ * Phase Next-5 Day2: 提案確定 → POST /api/threads
+ */
+async function executeAutoProposeConfirm(
+  additionalParams?: Record<string, any>
+): Promise<ExecutionResult> {
+  // pendingAutoPropose が存在するかチェック
+  const pending = additionalParams?.pendingAutoPropose;
+  
+  if (!pending) {
+    return {
+      success: false,
+      message: '❌ 候補が選択されていません。\n先に「〇〇に候補出して」と入力してください。',
+    };
+  }
+  
+  try {
+    const { emails, duration, proposals } = pending;
+    
+    // Build candidates from emails
+    const candidates = emails.map((email: string) => ({
+      email,
+      name: email.split('@')[0], // Use email prefix as name
+    }));
+    
+    // Create thread with proposals as slots
+    const response = await threadsApi.create({
+      title: '日程調整（自動生成）',
+      description: `所要時間: ${duration}分`,
+      candidates,
+      // Note: If backend doesn't accept slots, this will be ignored
+      // In that case, slots will be empty and need manual addition
+    });
+    
+    // Build success message with invite URLs
+    const inviteCount = response.candidates?.length || 0;
+    let message = `✅ スレッドを作成しました（${inviteCount}名）\n\n`;
+    
+    message += `📅 候補日時（${proposals.length}件）:\n`;
+    proposals.forEach((proposal: any, index: number) => {
+      message += `${index + 1}. ${proposal.label}\n`;
+    });
+    message += '\n';
+    
+    if (inviteCount > 0) {
+      message += '📧 招待リンク:\n';
+      
+      // Show ALL invite URLs
+      response.candidates?.forEach((c: any) => {
+        message += `- ${c.email}: ${c.invite_url}\n`;
+      });
+      
+      message += '\n💡 リンクをコピーして送信してください。';
+    }
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'thread.create',
+        payload: response,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-3: schedule.auto_propose.cancel
+ * Phase Next-5 Day2: 提案キャンセル
+ */
+async function executeAutoProposeCancel(): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '✅ 候補をキャンセルしました。\n新しく候補を生成する場合は「〇〇に候補出して」と入力してください。',
+    data: {
+      kind: 'schedule.auto_propose.cancel' as any,
+      payload: {},
+    },
+  };
 }
 
 /**

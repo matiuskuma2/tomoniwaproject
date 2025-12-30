@@ -31,6 +31,14 @@ interface CalendarData {
   freebusy?: CalendarFreeBusyResponse;
 }
 
+// Phase Next-5 Day2: Auto-propose pending state
+interface PendingAutoPropose {
+  emails: string[];
+  duration: number;
+  range: string;
+  proposals: Array<{ start_at: string; end_at: string; label: string }>;
+}
+
 export function ChatLayout() {
   const navigate = useNavigate();
   const { threadId } = useParams<{ threadId: string }>();
@@ -43,6 +51,9 @@ export function ChatLayout() {
   
   // NEW (Day4): Calendar data state
   const [calendarData, setCalendarData] = useState<CalendarData>({});
+  
+  // NEW (Phase Next-5 Day2): Pending auto-propose state
+  const [pendingAutoPropose, setPendingAutoPropose] = useState<PendingAutoPropose | null>(null);
 
   useEffect(() => {
     if (threadId) {
@@ -93,6 +104,7 @@ export function ChatLayout() {
   };
 
   // NEW (Day4): Handle calendar data updates from ExecutionResult
+  // NEW (Phase Next-5 Day2): Handle auto-propose state updates
   const handleCalendarUpdate = (kind: string, payload: any) => {
     if (kind === 'calendar.today') {
       setCalendarData(prev => ({ ...prev, today: payload }));
@@ -100,6 +112,12 @@ export function ChatLayout() {
       setCalendarData(prev => ({ ...prev, week: payload }));
     } else if (kind === 'calendar.freebusy') {
       setCalendarData(prev => ({ ...prev, freebusy: payload }));
+    } else if (kind === 'schedule.auto_propose') {
+      // Phase Next-5 Day2: Store pending auto-propose
+      setPendingAutoPropose(payload);
+    } else if (kind === 'schedule.auto_propose.cancel' || kind === 'thread.create') {
+      // Phase Next-5 Day2: Clear pending on cancel or confirm
+      setPendingAutoPropose(null);
     }
   };
 
@@ -188,6 +206,7 @@ export function ChatLayout() {
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
               onCalendarUpdate={handleCalendarUpdate}
+              pendingAutoPropose={pendingAutoPropose}
             />
           </div>
 
@@ -214,6 +233,7 @@ export function ChatLayout() {
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
               onCalendarUpdate={handleCalendarUpdate}
+              pendingAutoPropose={pendingAutoPropose}
             />
           )}
           {mobileTab === 'cards' && (

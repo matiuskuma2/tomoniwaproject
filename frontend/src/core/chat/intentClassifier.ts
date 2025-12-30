@@ -11,6 +11,8 @@ export type IntentType =
   | 'schedule.week'       // Phase Next-3 (P1)
   | 'schedule.freebusy'   // Phase Next-3 (P1)
   | 'schedule.auto_propose' // Phase Next-5 (P2) - 自動調整提案
+  | 'schedule.auto_propose.confirm' // Phase Next-5 Day2 - 提案確定
+  | 'schedule.auto_propose.cancel'  // Phase Next-5 Day2 - 提案キャンセル
   | 'unknown';
 
 export interface IntentResult {
@@ -86,6 +88,26 @@ export function classifyIntent(input: string, context?: {
   // ============================================================
   // Phase Next-5 (P2): Auto-propose (自動調整)
   // ============================================================
+
+  // P2-2: schedule.auto_propose.confirm
+  // Keywords: はい、yes、作成して、OK
+  if (/(はい|yes|作成|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
+    return {
+      intent: 'schedule.auto_propose.confirm',
+      confidence: 0.9,
+      params: {},
+    };
+  }
+
+  // P2-3: schedule.auto_propose.cancel
+  // Keywords: いいえ、no、キャンセル、やめる
+  if (/(いいえ|no|キャンセル|やめ)/i.test(normalizedInput) && normalizedInput.length < 10) {
+    return {
+      intent: 'schedule.auto_propose.cancel',
+      confidence: 0.9,
+      params: {},
+    };
+  }
 
   // P2-1: schedule.auto_propose
   // Keywords: 候補出して、調整して、自動、提案

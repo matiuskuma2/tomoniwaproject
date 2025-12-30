@@ -40,6 +40,9 @@ interface ChatPaneProps {
   
   // NEW (Day4): calendar data update callback
   onCalendarUpdate?: (kind: string, payload: any) => void;
+  
+  // NEW (Phase Next-5 Day2): pending auto-propose
+  pendingAutoPropose?: any;
 }
 
 export function ChatPane({ 
@@ -50,7 +53,8 @@ export function ChatPane({
   onAppend, 
   onSeedIfEmpty, 
   onThreadUpdate,
-  onCalendarUpdate
+  onCalendarUpdate,
+  pendingAutoPropose
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -103,7 +107,10 @@ export function ChatPane({
       });
 
       // Execute intent
-      const result = await executeIntent(intentResult);
+      // Phase Next-5 Day2: Pass pendingAutoPropose for confirm/cancel
+      const result = await executeIntent(intentResult, {
+        pendingAutoPropose,
+      });
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
