@@ -8,26 +8,46 @@ import { calendarApi } from '../api/calendar';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 
+// Phase Next-5 Day2.1: Type-safe ExecutionResult
+export type ExecutionResultData =
+  | { kind: 'calendar.today'; payload: CalendarTodayResponse }
+  | { kind: 'calendar.week'; payload: CalendarWeekResponse }
+  | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
+  | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
+  | { kind: 'thread.create'; payload: any }
+  | { kind: 'thread.finalize'; payload: any }
+  | { kind: 'auto_propose.generated'; payload: { emails: string[]; duration: number; range: string; proposals: any[] } }
+  | { kind: 'auto_propose.cancelled'; payload: {} }
+  | { kind: 'auto_propose.created'; payload: any };
+
 export interface ExecutionResult {
   success: boolean;
   message: string;
-  data?: {
-    kind?: 'calendar.today' | 'calendar.week' | 'calendar.freebusy' | 'thread.status' | 'thread.create' | 'thread.finalize';
-    payload?: any;
-  };
+  data?: ExecutionResultData;
   needsClarification?: {
     field: string;
     message: string;
   };
 }
 
+// Phase Next-5 Day2.1: Type-safe ExecutionContext
+export interface ExecutionContext {
+  pendingAutoPropose?: {
+    emails: string[];
+    duration: number;
+    range: string;
+    proposals: Array<{ start_at: string; end_at: string; label: string }>;
+  } | null;
+}
+
 /**
  * Execute API call based on intent
  * Phase Next-2: P0 intents only
+ * Phase Next-5 Day2.1: Type-safe ExecutionContext
  */
 export async function executeIntent(
   intentResult: IntentResult,
-  additionalParams?: Record<string, any>
+  context?: ExecutionContext
 ): Promise<ExecutionResult> {
   // If intent needs clarification, return immediately
   if (intentResult.needsClarification) {
@@ -44,7 +64,7 @@ export async function executeIntent(
       return executeAutoPropose(intentResult);
     
     case 'schedule.auto_propose.confirm':
-      return executeAutoProposeConfirm(additionalParams);
+      return executeAutoProposeConfirm(context);
     
     case 'schedule.auto_propose.cancel':
       return executeAutoProposeCancel();
@@ -61,13 +81,13 @@ export async function executeIntent(
     
     // Phase Next-2 (P0): Scheduling
     case 'schedule.external.create':
-      return executeCreate(intentResult, additionalParams);
+      return executeCreate(intentResult);
     
     case 'schedule.status.check':
       return executeStatusCheck(intentResult);
     
     case 'schedule.finalize':
-      return executeFinalize(intentResult, additionalParams);
+      return executeFinalize(intentResult);
     
     case 'unknown':
       return {
@@ -129,7 +149,7 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
       success: true,
       message,
       data: {
-        kind: 'schedule.auto_propose' as any,
+        kind: 'auto_propose.generated',
         payload: {
           emails,
           duration: duration || 30,
@@ -149,12 +169,13 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
 /**
  * P2-2: schedule.auto_propose.confirm
  * Phase Next-5 Day2: 提案確定 → POST /api/threads
+ * Phase Next-5 Day2.1: Type-safe ExecutionContext
  */
 async function executeAutoProposeConfirm(
-  additionalParams?: Record<string, any>
+  context?: ExecutionContext
 ): Promise<ExecutionResult> {
   // pendingAutoPropose が存在するかチェック
-  const pending = additionalParams?.pendingAutoPropose;
+  const pending = context?.pendingAutoPropose;
   
   if (!pending) {
     return {
@@ -206,7 +227,7 @@ async function executeAutoProposeConfirm(
       success: true,
       message,
       data: {
-        kind: 'thread.create',
+        kind: 'auto_propose.created',
         payload: response,
       },
     };
@@ -221,13 +242,14 @@ async function executeAutoProposeConfirm(
 /**
  * P2-3: schedule.auto_propose.cancel
  * Phase Next-5 Day2: 提案キャンセル
+ * Phase Next-5 Day2.1: Type-safe result
  */
 async function executeAutoProposeCancel(): Promise<ExecutionResult> {
   return {
     success: true,
     message: '✅ 候補をキャンセルしました。\n新しく候補を生成する場合は「〇〇に候補出して」と入力してください。',
     data: {
-      kind: 'schedule.auto_propose.cancel' as any,
+      kind: 'auto_propose.cancelled',
       payload: {},
     },
   };
@@ -484,8 +506,7 @@ async function executeFreeBusy(intentResult: IntentResult): Promise<ExecutionRes
  * Phase Next-2: Fixed title/description, email-based candidates
  */
 async function executeCreate(
-  intentResult: IntentResult,
-  _additionalParams?: Record<string, any>
+  intentResult: IntentResult
 ): Promise<ExecutionResult> {
   // Extract emails from intent params
   const emails = intentResult.params.emails as string[] | undefined;
@@ -624,8 +645,7 @@ async function executeStatusCheck(
  * P0-3: schedule.finalize
  */
 async function executeFinalize(
-  intentResult: IntentResult,
-  additionalParams?: Record<string, any>
+  intentResult: IntentResult
 ): Promise<ExecutionResult> {
   const { threadId, slotNumber } = intentResult.params;
 
@@ -652,9 +672,9 @@ async function executeFinalize(
     }
 
     // Determine selected_slot_id
-    let selectedSlotId: string | undefined = additionalParams?.selected_slot_id;
+    let selectedSlotId: string | undefined;
 
-    if (!selectedSlotId && slotNumber) {
+    if (slotNumber) {
       // Use slot number (1-indexed)
       const slotIndex = slotNumber - 1;
       if (slotIndex >= 0 && slotIndex < status.slots.length) {
@@ -684,7 +704,6 @@ async function executeFinalize(
     // Execute finalize
     const response = await threadsApi.finalize(threadId, {
       selected_slot_id: selectedSlotId,
-      reason: additionalParams?.reason,
     });
 
     // Build success message

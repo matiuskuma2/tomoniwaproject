@@ -103,20 +103,25 @@ export function ChatLayout() {
     });
   };
 
-  // NEW (Day4): Handle calendar data updates from ExecutionResult
-  // NEW (Phase Next-5 Day2): Handle auto-propose state updates
-  const handleCalendarUpdate = (kind: string, payload: any) => {
+  // Phase Next-5 Day2.1: Unified execution result handler
+  const handleExecutionResult = (result: any) => {
+    if (!result.data) return;
+    
+    const { kind, payload } = result.data;
+    
+    // Handle calendar data updates
     if (kind === 'calendar.today') {
       setCalendarData(prev => ({ ...prev, today: payload }));
     } else if (kind === 'calendar.week') {
       setCalendarData(prev => ({ ...prev, week: payload }));
     } else if (kind === 'calendar.freebusy') {
       setCalendarData(prev => ({ ...prev, freebusy: payload }));
-    } else if (kind === 'schedule.auto_propose') {
-      // Phase Next-5 Day2: Store pending auto-propose
+    }
+    
+    // Handle auto-propose state updates
+    else if (kind === 'auto_propose.generated') {
       setPendingAutoPropose(payload);
-    } else if (kind === 'schedule.auto_propose.cancel' || kind === 'thread.create') {
-      // Phase Next-5 Day2: Clear pending on cancel or confirm
+    } else if (kind === 'auto_propose.cancelled' || kind === 'auto_propose.created') {
       setPendingAutoPropose(null);
     }
   };
@@ -205,7 +210,7 @@ export function ChatLayout() {
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
-              onCalendarUpdate={handleCalendarUpdate}
+              onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
             />
           </div>
@@ -232,7 +237,7 @@ export function ChatLayout() {
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
-              onCalendarUpdate={handleCalendarUpdate}
+              onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
             />
           )}

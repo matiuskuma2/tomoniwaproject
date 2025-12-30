@@ -38,8 +38,8 @@ interface ChatPaneProps {
   // Existing: refresh thread status
   onThreadUpdate?: () => void;
   
-  // NEW (Day4): calendar data update callback
-  onCalendarUpdate?: (kind: string, payload: any) => void;
+  // NEW (Phase Next-5 Day2.1): unified execution result handler
+  onExecutionResult?: (result: any) => void;
   
   // NEW (Phase Next-5 Day2): pending auto-propose
   pendingAutoPropose?: any;
@@ -53,7 +53,7 @@ export function ChatPane({
   onAppend, 
   onSeedIfEmpty, 
   onThreadUpdate,
-  onCalendarUpdate,
+  onExecutionResult,
   pendingAutoPropose
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
@@ -122,9 +122,9 @@ export function ChatPane({
 
       onAppend(threadId, assistantMessage);
 
-      // NEW (Day4): Update calendar data if result contains calendar payload
-      if (result.data?.kind && result.data.payload && onCalendarUpdate) {
-        onCalendarUpdate(result.data.kind, result.data.payload);
+      // Phase Next-5 Day2.1: Unified execution result handler
+      if (result.data && onExecutionResult) {
+        onExecutionResult(result);
       }
 
       // If successful, trigger refresh
