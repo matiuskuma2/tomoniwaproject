@@ -18,6 +18,8 @@
     "db:console:prod": "wrangler d1 execute webapp-production",
     "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local && npm run db:seed:local",
     "test:migrations": "tsx scripts/test-migrations.ts",
+    "test:auth": "bash scripts/test-auth.sh production",
+    "test:auth:local": "bash scripts/test-auth.sh local",
     "clean-port": "fuser -k 3000/tcp 2>/dev/null || true",
     "git:init": "git init && git add . && git commit -m 'Initial commit'",
     "git:commit": "git add . && git commit -m",
