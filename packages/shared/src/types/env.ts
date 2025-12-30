@@ -23,7 +23,6 @@ export interface Env {
   LOG_LEVEL: string;
   CORS_ORIGINS: string;
   AI_FALLBACK_ENABLED?: string;
-  AUTH_DEBUG?: string;  // 🔍 Temporary: Enable detailed authentication debugging
   
   // Secrets (set via wrangler secret put)
   JWT_SECRET?: string;

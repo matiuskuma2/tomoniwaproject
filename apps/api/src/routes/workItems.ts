@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import { WorkItemsRepository } from '../repositories/workItemsRepository';
-import { getUserIdLegacy } from '../middleware/auth';
+import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -30,7 +30,7 @@ app.get('/', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   
   const scope = c.req.query('scope') || 'my';
   const roomId = c.req.query('room_id');
@@ -80,7 +80,7 @@ app.get('/:id', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
   try {
@@ -126,7 +126,7 @@ app.post('/', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const body = await c.req.json();
@@ -195,7 +195,7 @@ app.patch('/:id', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
   try {
@@ -260,7 +260,7 @@ app.post('/share-bulk', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const body = await c.req.json();
@@ -349,7 +349,7 @@ app.post('/:id/share', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
   try {
@@ -418,7 +418,7 @@ app.delete('/:id', async (c) => {
   const repo = new WorkItemsRepository(env.DB);
 
   // Get user_id (dev: x-user-id, prod: Bearer token)
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
   try {

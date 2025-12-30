@@ -12,7 +12,6 @@ import type { Env } from '../../../packages/shared/src/types/env';
 import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import adminDashboardRoutes from './routes/adminDashboard';
-import adminDebugRoutes from './routes/adminDebug';
 import testRateLimitRoutes from './routes/testRateLimit';
 import authRoutes from './routes/auth';
 import otpRoutes from './routes/otp';
@@ -103,10 +102,6 @@ app.route('/admin/ai', adminAiRoutes);
 // Admin Dashboard (admin only - monitoring and management)
 app.use('/admin/dashboard/*', requireAuth, requireAdmin);
 app.route('/admin/dashboard', adminDashboardRoutes);
-
-// Admin Debug (admin only - production troubleshooting)
-app.use('/admin/debug/*', requireAuth, requireAdmin);
-app.route('/admin/debug', adminDebugRoutes);
 
 // Test Routes (only in development environment)
 app.use('/test/*', async (c, next) => {

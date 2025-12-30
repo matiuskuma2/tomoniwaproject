@@ -1,7 +1,7 @@
 /**
  * Authentication Middleware
  * 
- * Production: Bearer token required
+ * Production: Cookie or Bearer token required
  * Development: x-user-id header allowed (for testing)
  */
 
@@ -36,22 +36,15 @@ function getCookieValue(cookieHeader: string | undefined, name: string): string 
  * Extract user ID from request
  * 
  * Priority:
- * 1. Authorization: Bearer <token>
- * 2. Cookie: session=<token>
+ * 1. Cookie: session=<token> (same-origin, most reliable)
+ * 2. Authorization: Bearer <token> (cross-origin)
  * 3. x-user-id header (development only)
  */
-export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables }>, debugInfo?: any): Promise<string | null> {
+export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<string | null> {
   const env = c.env as Env;
-  // Check for development mode (ENVIRONMENT not set or explicitly 'development')
   const isDevelopment = !env.ENVIRONMENT || env.ENVIRONMENT === 'development';
-  const authDebug = env.AUTH_DEBUG === '1' || env.AUTH_DEBUG === 'true';
 
-  if (debugInfo && authDebug) {
-    debugInfo.environment = env.ENVIRONMENT || 'unknown';
-    debugInfo.auth_debug_enabled = true;
-  }
-
-  // Try x-user-id header (development only) - highest priority for dev
+  // Development mode: x-user-id header
   if (isDevelopment) {
     const userId = c.req.header('x-user-id');
     if (userId) {
@@ -60,35 +53,25 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
   }
 
   // Try to get session token from:
-  // 1) Authorization: Bearer <token>
-  // 2) Cookie: session=<token>
+  // 1) Cookie: session=<token> (priority for same-origin)
+  // 2) Authorization: Bearer <token> (fallback)
   let sessionToken: string | null = null;
 
-  // 1) Bearer token
-  const authHeader = c.req.header('Authorization');
-  if (debugInfo && authDebug) {
-    debugInfo.has_auth_header = !!authHeader;
-    debugInfo.auth_scheme = authHeader?.split(' ')[0] || null;
-  }
-  if (authHeader?.startsWith('Bearer ')) {
-    sessionToken = authHeader.substring(7).trim();
-  }
+  // 1) Cookie (priority)
+  const cookieHeader = c.req.header('Cookie');
+  sessionToken = getCookieValue(cookieHeader, 'session');
 
-  // 2) Cookie fallback
+  // 2) Bearer token fallback
   if (!sessionToken) {
-    const cookieHeader = c.req.header('Cookie');
-    sessionToken = getCookieValue(cookieHeader, 'session');
+    const authHeader = c.req.header('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      sessionToken = authHeader.substring(7).trim();
+    }
   }
 
   // Verify session token if present
   if (sessionToken && sessionToken.length > 0) {
     try {
-      console.error('[Auth] Verifying session token, length:', sessionToken.length);
-      
-      if (debugInfo && authDebug) {
-        debugInfo.token_length = sessionToken.length;
-      }
-      
       // Import dynamically to avoid circular dependency
       const { SessionRepository } = await import('../repositories/sessionRepository');
       
@@ -99,64 +82,18 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
       
-      console.error('[Auth] Token hash:', tokenHash.substring(0, 16) + '...');
-      
-      if (debugInfo && authDebug) {
-        debugInfo.token_hash_prefix = tokenHash.substring(0, 12);
-      }
-      
       // Verify session
       const sessionRepo = new SessionRepository(env.DB);
       const session = await sessionRepo.findByTokenHash(tokenHash);
       
-      console.error('[Auth] Session found:', !!session);
-      
-      if (debugInfo && authDebug) {
-        debugInfo.session_found_by_repo = !!session;
-        
-        // Also try raw SQL to compare
-        try {
-          const rawResult = await env.DB.prepare(
-            'SELECT id, user_id, expires_at, datetime(expires_at) as expires_dt, datetime(\'now\') as now_dt FROM sessions WHERE token_hash = ?'
-          ).bind(tokenHash).first();
-          debugInfo.session_found_by_raw_sql = !!rawResult;
-          if (rawResult) {
-            debugInfo.raw_sql_result = {
-              id: rawResult.id,
-              user_id: rawResult.user_id,
-              expires_at: rawResult.expires_at,
-              expires_dt: rawResult.expires_dt,
-              now_dt: rawResult.now_dt
-            };
-          }
-        } catch (sqlError) {
-          debugInfo.raw_sql_error = sqlError instanceof Error ? sqlError.message : String(sqlError);
-        }
-      }
-      
       if (session) {
-        if (debugInfo && authDebug) {
-          debugInfo.session = {
-            id: session.id,
-            user_id: session.user_id,
-            expires_at: session.expires_at
-          };
-        }
         // Update last_seen_at
         await sessionRepo.updateLastSeen(session.id);
-        console.error('[Auth] Session valid, userId:', session.user_id);
         return session.user_id;
-      } else {
-        console.warn('[Auth] Session not found in DB for token hash:', tokenHash.substring(0, 16) + '...');
       }
     } catch (error) {
-      console.error('Session verification error:', error);
-      if (debugInfo && authDebug) {
-        debugInfo.verification_error = error instanceof Error ? error.message : String(error);
-      }
+      console.error('[Auth] Session verification error:', error);
     }
-  } else {
-    console.error('[Auth] No session token provided');
   }
 
   return null;
@@ -169,59 +106,22 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
  * app.use('/api/protected/*', requireAuth)
  */
 export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
-  let errorDetails: any = null;
-  const authDebug = c.env.AUTH_DEBUG === '1' || c.env.AUTH_DEBUG === 'true';
-  const debugInfo: any = authDebug ? {} : null;
-  
-  try {
-    const userId = await getUserId(c, debugInfo);
+  const userId = await getUserId(c);
 
-    if (!userId) {
-      if (authDebug && debugInfo) {
-        // Return detailed debug info
-        return c.json(
-          {
-            error: 'Unauthorized',
-            message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
-            debug: debugInfo
-          },
-          401
-        );
-      } else {
-        // Normal response without debug info
-        return c.json(
-          {
-            error: 'Unauthorized'
-          },
-          401
-        );
-      }
-    }
-
-    // Store userId in context for downstream handlers
-    c.set('userId', userId);
-    
-    await next();
-  } catch (error) {
-    console.error('[Auth] requireAuth middleware error:', error);
-    errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
-    
-    if (authDebug) {
-      return c.json(
-        {
-          error: 'Unauthorized',
-          message: 'Authentication middleware error',
-          debug: {
-            error_details: errorDetails,
-            environment: c.env.ENVIRONMENT || 'unknown'
-          }
-        },
-        401
-      );
-    } else {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
+  if (!userId) {
+    return c.json(
+      {
+        error: 'Unauthorized',
+        message: 'Authentication required'
+      },
+      401
+    );
   }
+
+  // Store userId in context for downstream handlers
+  c.set('userId', userId);
+  
+  await next();
 }
 
 /**
@@ -279,7 +179,7 @@ export async function requireAdmin(c: Context<{ Bindings: Env; Variables: Variab
     
     await next();
   } catch (error) {
-    console.error('Role check error:', error);
+    console.error('[Auth] Role check error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 }
@@ -295,28 +195,4 @@ export function getUserIdFromContext(c: Context): string {
   }
   
   return userId;
-}
-
-/**
- * Get user ID with fallback to x-user-id (for backward compatibility)
- * 
- * DEPRECATED: Use getUserId() instead
- * This is a temporary helper for migration period
- */
-export async function getUserIdLegacy(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<string> {
-  const userId = await getUserId(c);
-  
-  if (userId) {
-    return userId;
-  }
-  
-  // Fallback for tests (dev only)
-  const env = c.env as Env;
-  const isDevelopment = !env.ENVIRONMENT || env.ENVIRONMENT === 'development';
-  
-  if (isDevelopment) {
-    return 'test-user-id';
-  }
-  
-  throw new Error('Authentication required');
 }

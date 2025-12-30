@@ -12,7 +12,7 @@ import { Hono } from 'hono';
 import { ThreadsRepository } from '../repositories/threadsRepository';
 import { InboxRepository } from '../repositories/inboxRepository';
 import { evaluateRule, finalizeThread } from '../services/attendanceEngine';
-import { getUserIdLegacy } from '../middleware/auth';
+import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -141,7 +141,7 @@ app.post('/i/:token/respond', async (c) => {
  */
 app.get('/:id/status', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
   try {
@@ -252,7 +252,7 @@ app.get('/:id/status', async (c) => {
  */
 app.post('/:id/remind', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
   try {
@@ -364,7 +364,7 @@ app.post('/:id/remind', async (c) => {
  */
 app.post('/:id/finalize', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
   try {
@@ -485,7 +485,7 @@ app.post('/:id/finalize', async (c) => {
  */
 app.put('/:id/rule', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
   try {

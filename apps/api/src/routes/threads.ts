@@ -13,7 +13,7 @@ import { AIRouterService } from '../services/aiRouter';
 import { CandidateGeneratorService } from '../services/candidateGenerator';
 import { ContactsRepository } from '../repositories/contactsRepository';
 import { ListsRepository } from '../repositories/listsRepository';
-import { getUserIdLegacy } from '../middleware/auth';
+import { getUserIdFromContext } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { EmailJob } from '../services/emailQueue';
@@ -34,7 +34,7 @@ const DEFAULT_WORKSPACE = 'ws-default';
  */
 app.get('/', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const status = c.req.query('status');
@@ -122,7 +122,7 @@ app.get('/', async (c) => {
  */
 app.get('/:id', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
   try {
@@ -191,7 +191,7 @@ app.post(
   }),
   async (c) => {
     const { env } = c;
-    const userId = await getUserIdLegacy(c as any);
+    const userId = await getUserIdFromContext(c as any);
 
     try {
       const body = await c.req.json();

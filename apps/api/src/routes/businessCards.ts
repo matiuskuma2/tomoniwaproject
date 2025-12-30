@@ -11,7 +11,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import { BusinessCardsRepository } from '../repositories/businessCardsRepository';
 import { ContactsRepository } from '../repositories/contactsRepository';
 import { ListsRepository } from '../repositories/listsRepository';
-import { getUserIdLegacy } from '../middleware/auth';
+import { getUserIdFromContext } from '../middleware/auth';
 
 const DEFAULT_WORKSPACE = 'ws-default';
 const BUSINESS_CARD_LIST_NAME = '名刺登録';
@@ -45,7 +45,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     // Parse multipart form
@@ -249,7 +249,7 @@ app.post('/', async (c) => {
  */
 app.get('/:id/image', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
   try {
@@ -285,7 +285,7 @@ app.get('/:id/image', async (c) => {
  */
 app.get('/', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const query = c.req.query();

@@ -5,7 +5,7 @@
 
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
-import { getUserIdLegacy } from '../middleware/auth';
+import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -18,7 +18,7 @@ const app = new Hono<{ Bindings: Env }>();
  */
 app.post('/', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const body = await c.req.json();
@@ -64,7 +64,7 @@ app.post('/', async (c) => {
  */
 app.get('/', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
 
   try {
     const limit = parseInt(c.req.query('limit') || '50', 10);
@@ -121,7 +121,7 @@ app.get('/', async (c) => {
  */
 app.get('/:id', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const roomId = c.req.param('id');
 
   try {
@@ -173,7 +173,7 @@ app.get('/:id', async (c) => {
  */
 app.post('/:id/invite', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const roomId = c.req.param('id');
 
   try {
@@ -228,7 +228,7 @@ app.post('/:id/invite', async (c) => {
  */
 app.delete('/:id/leave', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = await getUserIdFromContext(c as any);
   const roomId = c.req.param('id');
 
   try {
