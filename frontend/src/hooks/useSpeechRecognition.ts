@@ -67,6 +67,98 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
   const [isSupported, setIsSupported] = useState(false);
   
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  const SpeechRecognitionConstructor = useRef<ISpeechRecognitionConstructor | null>(null);
+
+  // SpeechRecognition インスタンスを初期化する関数
+  const initializeRecognition = useCallback(() => {
+    if (!SpeechRecognitionConstructor.current) {
+      return null;
+    }
+
+    const recognition = new SpeechRecognitionConstructor.current();
+    recognition.continuous = true; // 連続認識
+    recognition.interimResults = true; // 途中結果を取得
+    recognition.lang = 'ja-JP'; // 日本語
+    
+    // 認識結果イベント
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = '';
+      let final = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcriptPart = result[0].transcript;
+        
+        if (result.isFinal) {
+          final += transcriptPart;
+        } else {
+          interim += transcriptPart;
+        }
+      }
+      
+      if (final) {
+        setTranscript(prev => prev + final);
+      }
+      setInterimTranscript(interim);
+      setError(null);
+    };
+    
+    // エラーイベント - サイレント処理（UI上にエラーを表示しない）
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      // コンソールにログだけ残す（デバッグ用）
+      console.log('[Voice Recognition]', event.error);
+      
+      // エラー種別によって処理を分ける
+      switch (event.error) {
+        case 'not-allowed':
+        case 'permission-denied':
+          // 権限拒否 - 新しいインスタンスを作成して再試行可能にする
+          console.log('[Voice Recognition] Permission denied. Reinitializing instance for retry.');
+          // 古いインスタンスを破棄して新しいものを作成
+          if (recognitionRef.current) {
+            recognitionRef.current.abort();
+          }
+          recognitionRef.current = initializeRecognition();
+          break;
+        case 'no-speech':
+          // 音声なし - 自動停止（正常動作）
+          console.log('[Voice Recognition] No speech detected.');
+          break;
+        case 'aborted':
+          // 中断 - ユーザーが停止ボタンを押した場合など
+          console.log('[Voice Recognition] Aborted.');
+          break;
+        case 'audio-capture':
+          // マイクが見つからない
+          console.log('[Voice Recognition] No microphone found.');
+          break;
+        case 'network':
+          // ネットワークエラー
+          console.log('[Voice Recognition] Network error.');
+          break;
+        default:
+          console.log('[Voice Recognition] Unknown error:', event.error);
+      }
+      
+      // エラー表示はせず、リスニング状態だけ解除
+      setIsListening(false);
+      setError(null); // エラー状態をクリア（常にnull）
+    };
+    
+    // 認識終了イベント
+    recognition.onend = () => {
+      setIsListening(false);
+      setInterimTranscript('');
+    };
+    
+    // 認識開始イベント
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError(null);
+    };
+
+    return recognition;
+  }, []);
 
   // ブラウザ対応チェック
   useEffect(() => {
@@ -74,84 +166,8 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     
     if (SpeechRecognition) {
       setIsSupported(true);
-      recognitionRef.current = new SpeechRecognition();
-      
-      const recognition = recognitionRef.current;
-      recognition.continuous = true; // 連続認識
-      recognition.interimResults = true; // 途中結果を取得
-      recognition.lang = 'ja-JP'; // 日本語
-      
-      // 認識結果イベント
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let interim = '';
-        let final = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcriptPart = result[0].transcript;
-          
-          if (result.isFinal) {
-            final += transcriptPart;
-          } else {
-            interim += transcriptPart;
-          }
-        }
-        
-        if (final) {
-          setTranscript(prev => prev + final);
-        }
-        setInterimTranscript(interim);
-        setError(null);
-      };
-      
-      // エラーイベント - サイレント処理（UI上にエラーを表示しない）
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        // コンソールにログだけ残す（デバッグ用）
-        console.log('[Voice Recognition]', event.error);
-        
-        // エラー種別によって処理を分ける
-        switch (event.error) {
-          case 'not-allowed':
-          case 'permission-denied':
-            // 権限拒否 - 再度🎤ボタンを押せば再試行可能
-            console.log('[Voice Recognition] Permission denied. User can retry by clicking mic button again.');
-            break;
-          case 'no-speech':
-            // 音声なし - 自動停止（正常動作）
-            console.log('[Voice Recognition] No speech detected.');
-            break;
-          case 'aborted':
-            // 中断 - ユーザーが停止ボタンを押した場合など
-            console.log('[Voice Recognition] Aborted.');
-            break;
-          case 'audio-capture':
-            // マイクが見つからない
-            console.log('[Voice Recognition] No microphone found.');
-            break;
-          case 'network':
-            // ネットワークエラー
-            console.log('[Voice Recognition] Network error.');
-            break;
-          default:
-            console.log('[Voice Recognition] Unknown error:', event.error);
-        }
-        
-        // エラー表示はせず、リスニング状態だけ解除
-        setIsListening(false);
-        setError(null); // エラー状態をクリア（常にnull）
-      };
-      
-      // 認識終了イベント
-      recognition.onend = () => {
-        setIsListening(false);
-        setInterimTranscript('');
-      };
-      
-      // 認識開始イベント
-      recognition.onstart = () => {
-        setIsListening(true);
-        setError(null);
-      };
+      SpeechRecognitionConstructor.current = SpeechRecognition;
+      recognitionRef.current = initializeRecognition();
     } else {
       setIsSupported(false);
       // エラー表示はしない（コンソールログのみ）
@@ -164,7 +180,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
         recognitionRef.current.abort();
       }
     };
-  }, []);
+  }, [initializeRecognition]);
 
   // 音声認識開始
   const startListening = useCallback(() => {
