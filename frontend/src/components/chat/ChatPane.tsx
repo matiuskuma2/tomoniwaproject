@@ -33,18 +33,20 @@ export function ChatPane({ status, loading, onThreadUpdate }: ChatPaneProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Add initial template message when status changes
+  // Clear messages and add initial template when thread changes
   useEffect(() => {
-    if (status && messages.length === 0) {
+    if (status) {
       const templateMessages = generateTemplateText();
       setMessages(templateMessages.map((msg, idx) => ({
-        id: `template-${idx}`,
+        id: `template-${status.thread.id}-${idx}`,
         role: 'assistant',
         content: msg,
         timestamp: new Date(),
       })));
+    } else {
+      setMessages([]);
     }
-  }, [status]);
+  }, [status?.thread.id]);
 
   const handleSendClick = async () => {
     if (!message.trim() || isProcessing) return;
