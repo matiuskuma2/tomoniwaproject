@@ -21,6 +21,7 @@ import type {
   CalendarWeekResponse, 
   CalendarFreeBusyResponse 
 } from '../../core/models';
+import type { ExecutionResult } from '../../core/chat/apiExecutor';
 
 type MobileTab = 'threads' | 'chat' | 'cards';
 
@@ -103,8 +104,8 @@ export function ChatLayout() {
     });
   };
 
-  // Phase Next-5 Day2.1: Unified execution result handler
-  const handleExecutionResult = (result: any) => {
+  // Phase Next-5 Day2.1: Unified execution result handler (type-safe)
+  const handleExecutionResult = (result: ExecutionResult) => {
     if (!result.data) return;
     
     const { kind, payload } = result.data;

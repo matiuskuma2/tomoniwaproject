@@ -10,7 +10,7 @@ import { useRef, useEffect } from 'react';
 import { useState } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
-import { executeIntent } from '../../core/chat/apiExecutor';
+import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 import { SpeakButton } from './SpeakButton';
 
@@ -38,8 +38,8 @@ interface ChatPaneProps {
   // Existing: refresh thread status
   onThreadUpdate?: () => void;
   
-  // NEW (Phase Next-5 Day2.1): unified execution result handler
-  onExecutionResult?: (result: any) => void;
+  // NEW (Phase Next-5 Day2.1): unified execution result handler (type-safe)
+  onExecutionResult?: (result: ExecutionResult) => void;
   
   // NEW (Phase Next-5 Day2): pending auto-propose
   pendingAutoPropose?: any;
