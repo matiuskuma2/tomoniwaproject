@@ -197,6 +197,65 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Fetch calendar events from Google Calendar API (events.list)
+   * 
+   * Phase Next-3 Day2: Read-only calendar integration
+   */
+  async fetchEvents(
+    timeMin: string, // ISO 8601
+    timeMax: string, // ISO 8601
+    timezone: string = 'Asia/Tokyo'
+  ): Promise<{ events: any[]; error?: string }> {
+    try {
+      const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+      url.searchParams.set('timeMin', timeMin);
+      url.searchParams.set('timeMax', timeMax);
+      url.searchParams.set('timeZone', timezone);
+      url.searchParams.set('singleEvents', 'true');
+      url.searchParams.set('orderBy', 'startTime');
+      url.searchParams.set('maxResults', '50');
+
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 401) {
+        console.error('[GoogleCalendar] Unauthorized (401)');
+        return { events: [], error: 'Unauthorized' };
+      }
+
+      if (response.status === 403) {
+        console.warn('[GoogleCalendar] Forbidden (403) - Permission missing');
+        return { events: [], error: 'google_calendar_permission_missing' };
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[GoogleCalendar] Fetch events failed:', response.status, errorText);
+        return { events: [], error: 'fetch_failed' };
+      }
+
+      const data = await response.json() as any;
+      const events = (data.items || []).map((item: any) => ({
+        id: item.id,
+        summary: item.summary || 'No Title',
+        start: item.start?.dateTime || item.start?.date,
+        end: item.end?.dateTime || item.end?.date,
+        meet_url: item.hangoutLink || null,
+      }));
+
+      return { events };
+    } catch (error) {
+      console.error('[GoogleCalendar] Fetch events error:', error);
+      return { events: [], error: 'exception' };
+    }
+  }
+
+  /**
    * Get user's Google account access token with auto-refresh
    * 
    * Phase 0B: Token refresh implementation
