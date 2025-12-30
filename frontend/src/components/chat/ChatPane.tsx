@@ -2,6 +2,7 @@
  * ChatPane
  * Center pane: displays chat-like conversation with intent execution
  * Phase Next-2: Text input → Intent classification → API execution
+ * Phase Next-4 Day1: Voice input → Speech recognition → Text input
  * Messages are now managed per-thread by ChatLayout
  */
 
@@ -10,6 +11,7 @@ import { useState } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent } from '../../core/chat/apiExecutor';
+import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 
 export interface ChatMessage {
   id: string;
@@ -233,15 +235,23 @@ export function ChatPane({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area (Phase Next-2: Enabled) */}
+      {/* Input Area (Phase Next-2: Enabled, Phase Next-4 Day1: Voice input added) */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
         <div className="flex items-center space-x-2">
+          {/* Phase Next-4 Day1: Voice Recognition Button */}
+          <VoiceRecognitionButton
+            onTranscriptUpdate={(transcript) => {
+              setMessage(prev => prev + transcript);
+            }}
+            disabled={isProcessing}
+          />
+          
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="メッセージを入力..."
+            placeholder="メッセージを入力... または 🎤 で音声入力"
             disabled={isProcessing}
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
           />

@@ -1,13 +1,15 @@
 /**
- * Voice Command API Routes (Ticket 08)
+ * Voice Command API Routes (Ticket 08 + Phase Next-4)
  * 
  * /voice/execute: Execute voice commands
+ * /voice/correct: Correct voice input text (Phase Next-4 Day1)
  * Actions: create, modify, undo work items
  */
 
 import { Hono } from 'hono';
 import { IntentParserService } from '../services/intentParser';
 import { WorkItemsRepository } from '../repositories/workItemsRepository';
+import { GeminiService } from '../services/geminiService';
 import { rateLimitPresets } from '../middleware/rateLimit';
 import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
@@ -223,5 +225,62 @@ async function handleQuery(
     message: `Found ${items.length} pending items`,
   };
 }
+
+/**
+ * Correct voice input text using Gemini API
+ * Phase Next-4 Day1: Voice input text correction
+ * 
+ * @route POST /voice/correct
+ * @body { text: string }
+ * @ratelimit 20 per minute by user
+ */
+app.post(
+  '/correct',
+  rateLimitPresets.voiceExecuteByUser(),
+  async (c) => {
+    const { env } = c;
+
+    // Get user_id (authenticated)
+    const userId = await getUserIdFromContext(c as any);
+
+    try {
+      const body = await c.req.json();
+      const { text } = body;
+
+      if (!text || typeof text !== 'string') {
+        return c.json({ error: 'Missing or invalid field: text' }, 400);
+      }
+
+      // Check if Gemini API key is available
+      if (!env.GEMINI_API_KEY) {
+        // Fallback: return original text if no API key
+        return c.json({
+          original: text,
+          corrected: text,
+          warning: 'Gemini API key not configured',
+        });
+      }
+
+      // Correct text using Gemini
+      const gemini = new GeminiService(env.GEMINI_API_KEY);
+      const corrected = await gemini.correctVoiceInput(text);
+
+      return c.json({
+        original: text,
+        corrected: corrected,
+      });
+    } catch (error) {
+      console.error('[Voice] Correction error:', error);
+      
+      // Fallback: return original text on error
+      const body = await c.req.json();
+      return c.json({
+        original: body.text,
+        corrected: body.text,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
 
 export default app;
