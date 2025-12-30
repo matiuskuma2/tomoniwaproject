@@ -129,11 +129,13 @@ app.route('/i', inviteRoutes);
 // ============================================================
 
 // WorkItems API (Ticket 07)
-app.use('/api/work-items*', requireAuth);
+app.use('/api/work-items', requireAuth);
+app.use('/api/work-items/*', requireAuth);
 app.route('/api/work-items', workItemsRoutes);
 
 // Voice Commands API (Ticket 08)
-app.use('/api/voice*', requireAuth);
+app.use('/api/voice', requireAuth);
+app.use('/api/voice/*', requireAuth);
 app.route('/api/voice', voiceRoutes);
 
 // Threads API (Ticket 10 + Phase B)
@@ -145,23 +147,28 @@ app.route('/api/threads', threadsRemindRoutes);   // POST /:id/remind
 app.route('/api/threads', threadsFinalizeRoutes); // POST /:id/finalize
 
 // Inbox API (User notifications)
-app.use('/api/inbox*', requireAuth);
+app.use('/api/inbox', requireAuth);
+app.use('/api/inbox/*', requireAuth);
 app.route('/api/inbox', inboxRoutes);
 
 // Rooms API (Team collaboration)
-app.use('/api/rooms*', requireAuth);
+app.use('/api/rooms', requireAuth);
+app.use('/api/rooms/*', requireAuth);
 app.route('/api/rooms', roomsRoutes);
 
 // Contacts API (台帳管理)
-app.use('/api/contacts*', requireAuth);
+app.use('/api/contacts', requireAuth);
+app.use('/api/contacts/*', requireAuth);
 app.route('/api/contacts', contactsRoutes);
 
 // Lists API (送信セグメント)
-app.use('/api/lists*', requireAuth);
+app.use('/api/lists', requireAuth);
+app.use('/api/lists/*', requireAuth);
 app.route('/api/lists', listsRoutes);
 
 // Business Cards API (名刺登録)
-app.use('/api/business-cards*', requireAuth);
+app.use('/api/business-cards', requireAuth);
+app.use('/api/business-cards/*', requireAuth);
 app.route('/api/business-cards', businessCardsRoutes);
 
 // Calendar API (Phase Next-3 - Read-only calendar access)
