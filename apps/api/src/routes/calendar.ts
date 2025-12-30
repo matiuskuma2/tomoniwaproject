@@ -8,11 +8,15 @@
  */
 
 import { Hono } from 'hono';
-import { getUserIdLegacy } from '../middleware/auth';
 import { GoogleCalendarService } from '../services/googleCalendar';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
-const app = new Hono<{ Bindings: Env }>();
+type Variables = {
+  userId?: string;
+  userRole?: string;
+};
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * Helper: Get today's time bounds (JST)
@@ -77,7 +81,7 @@ function getWeekBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; time
  */
 app.get('/today', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = c.get('userId');
 
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -136,7 +140,7 @@ app.get('/today', async (c) => {
  */
 app.get('/week', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = c.get('userId');
 
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -195,7 +199,7 @@ app.get('/week', async (c) => {
  */
 app.get('/freebusy', async (c) => {
   const { env } = c;
-  const userId = await getUserIdLegacy(c as any);
+  const userId = c.get('userId');
   const range = c.req.query('range') || 'today'; // today | week
 
   if (!userId) {
