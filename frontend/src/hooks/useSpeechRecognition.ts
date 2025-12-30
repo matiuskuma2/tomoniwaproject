@@ -104,35 +104,41 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
         setError(null);
       };
       
-      // エラーイベント
+      // エラーイベント - サイレント処理（UI上にエラーを表示しない）
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error:', event.error);
+        // コンソールにログだけ残す（デバッグ用）
+        console.log('[Voice Recognition]', event.error);
         
-        let errorMessage = '音声認識でエラーが発生しました。';
-        
+        // エラー種別によって処理を分ける
         switch (event.error) {
           case 'not-allowed':
           case 'permission-denied':
-            errorMessage = '🎤 マイクへのアクセスが拒否されました。ブラウザの設定でマイクの使用を許可してください。';
+            // 権限拒否 - 再度🎤ボタンを押せば再試行可能
+            console.log('[Voice Recognition] Permission denied. User can retry by clicking mic button again.');
             break;
           case 'no-speech':
-            errorMessage = '音声が検出されませんでした。もう一度お試しください。';
+            // 音声なし - 自動停止（正常動作）
+            console.log('[Voice Recognition] No speech detected.');
             break;
           case 'aborted':
-            errorMessage = '音声認識が中断されました。';
+            // 中断 - ユーザーが停止ボタンを押した場合など
+            console.log('[Voice Recognition] Aborted.');
             break;
           case 'audio-capture':
-            errorMessage = 'マイクが見つかりませんでした。マイクが接続されているか確認してください。';
+            // マイクが見つからない
+            console.log('[Voice Recognition] No microphone found.');
             break;
           case 'network':
-            errorMessage = 'ネットワークエラーが発生しました。接続を確認してください。';
+            // ネットワークエラー
+            console.log('[Voice Recognition] Network error.');
             break;
           default:
-            errorMessage = `音声認識エラー: ${event.error}`;
+            console.log('[Voice Recognition] Unknown error:', event.error);
         }
         
-        setError(errorMessage);
+        // エラー表示はせず、リスニング状態だけ解除
         setIsListening(false);
+        setError(null); // エラー状態をクリア（常にnull）
       };
       
       // 認識終了イベント
@@ -148,7 +154,8 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       };
     } else {
       setIsSupported(false);
-      setError('⚠️ お使いのブラウザは音声認識に対応していません。Chrome、Edge、Safari などの最新ブラウザをお使いください。');
+      // エラー表示はしない（コンソールログのみ）
+      console.log('[Voice Recognition] Browser not supported. SpeechRecognition API is not available.');
     }
     
     // クリーンアップ
@@ -162,20 +169,18 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
   // 音声認識開始
   const startListening = useCallback(() => {
     if (!recognitionRef.current || !isSupported) {
-      setError('音声認識がサポートされていません。');
+      console.log('[Voice Recognition] Cannot start: not supported or no recognition instance.');
       return;
     }
     
     try {
-      setError(null);
       recognitionRef.current.start();
     } catch (err) {
-      console.error('Failed to start recognition:', err);
+      console.log('[Voice Recognition] Failed to start:', err);
       if (err instanceof Error && err.message.includes('already started')) {
-        // すでに起動中の場合は無視
+        // すでに起動中の場合は無視（正常動作）
         return;
       }
-      setError('音声認識の開始に失敗しました。');
     }
   }, [isSupported]);
 

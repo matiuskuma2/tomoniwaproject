@@ -1,9 +1,10 @@
 /**
  * VoiceRecognitionButton - 音声認識ボタンコンポーネント
  * Phase Next-4 Day1: 🎤ボタンで音声認識を開始/停止
+ * エラー表示なし - サイレントエラーハンドリング
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 interface VoiceRecognitionButtonProps {
@@ -21,15 +22,11 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
   const {
     isListening,
     transcript,
-    error,
     isSupported,
     startListening,
     stopListening,
     resetTranscript,
   } = useSpeechRecognition();
-
-  // エラー表示状態を管理（ユーザーが閉じられるように）
-  const [showError, setShowError] = useState(false);
 
   // トランスクリプト更新時に親コンポーネントに通知
   useEffect(() => {
@@ -38,13 +35,6 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
       resetTranscript(); // 親に渡したらリセット
     }
   }, [transcript, onTranscriptUpdate, resetTranscript]);
-
-  // エラー発生時にエラー表示をONにする
-  useEffect(() => {
-    if (error) {
-      setShowError(true);
-    }
-  }, [error]);
 
   // ボタンクリックハンドラ
   const handleClick = () => {
@@ -55,13 +45,9 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
     }
   };
 
-  // サポート外の場合は非表示
+  // サポート外の場合は非表示（エラー表示なし）
   if (!isSupported) {
-    return (
-      <div className="text-xs text-red-600 p-2 bg-red-50 rounded border border-red-200">
-        ⚠️ お使いのブラウザは音声認識に対応していません
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -107,27 +93,7 @@ export function VoiceRecognitionButton({ onTranscriptUpdate, disabled = false }:
         </div>
       )}
 
-      {/* エラーメッセージ - ボタン上部に表示（×ボタンで閉じられる） */}
-      {showError && error && (
-        <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 w-72 z-50">
-          <div className="relative text-xs text-red-600 p-3 bg-red-50 rounded-lg border border-red-200 shadow-lg">
-            {/* 閉じるボタン */}
-            <button
-              onClick={() => setShowError(false)}
-              className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-100 rounded-full transition-colors"
-              title="閉じる"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-            {/* エラーメッセージ */}
-            <div className="pr-4">
-              {error}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* エラー表示は不要 - サイレントに処理 */}
     </div>
   );
 }
