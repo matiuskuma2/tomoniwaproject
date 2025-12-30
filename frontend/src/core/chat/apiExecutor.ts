@@ -39,6 +39,10 @@ export async function executeIntent(
   }
 
   switch (intentResult.intent) {
+    // Phase Next-5 (P2): Auto-propose
+    case 'schedule.auto_propose':
+      return executeAutoPropose(intentResult);
+    
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
       return executeToday();
@@ -71,6 +75,155 @@ export async function executeIntent(
         message: 'この機能はまだ実装されていません。',
       };
   }
+}
+
+// ============================================================
+// Phase Next-5 (P2): Auto-propose (自動調整)
+// ============================================================
+
+/**
+ * P2-1: schedule.auto_propose
+ * Phase Next-5 Day1: 提案のみ（POST しない）
+ */
+async function executeAutoPropose(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { names, duration, range } = intentResult.params;
+  
+  try {
+    // Step 1: Get freebusy data (来週 = week)
+    const freebusyResponse = await calendarApi.getFreeBusy('week');
+    
+    // Step 2: Generate proposals (30分刻み、最大5件)
+    const proposals = generateProposals(freebusyResponse, duration || 30);
+    
+    if (proposals.length === 0) {
+      return {
+        success: false,
+        message: '❌ 来週の候補日時が見つかりませんでした。\n別の期間で再度お試しください。',
+      };
+    }
+    
+    // Step 3: Build message with proposals
+    let message = `📅 候補日時を生成しました（${names.join(', ')}さんとの調整）\n\n`;
+    message += `⏱️ 所要時間: ${duration}分\n\n`;
+    message += '候補日時:\n';
+    proposals.forEach((proposal, index) => {
+      message += `${index + 1}. ${proposal.label}\n`;
+    });
+    message += '\n';
+    
+    // Warning if freebusy has warning
+    if (freebusyResponse.warning) {
+      message += '⚠️ カレンダーの予定情報を取得できませんでした。\n';
+      message += '全時間帯が空いているものとして候補を生成しています。\n\n';
+    }
+    
+    message += '💡 この内容でスレッドを作成しますか？\n';
+    message += '（まだ作成していません。確認のみです）';
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'schedule.auto_propose' as any,
+        payload: {
+          names,
+          duration,
+          range,
+          proposals,
+          freebusy: freebusyResponse,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Generate time slot proposals
+ * - 30分刻み（デフォルト）
+ * - 来週の営業時間（9:00-18:00）
+ * - busyと重複しない
+ * - 最大5件
+ */
+function generateProposals(
+  freebusyResponse: CalendarFreeBusyResponse,
+  duration: number = 30
+): Array<{ start_at: string; end_at: string; label: string }> {
+  const proposals: Array<{ start_at: string; end_at: string; label: string }> = [];
+  
+  // freebusy が warning の場合は空配列として扱う
+  const busySlots = freebusyResponse.warning ? [] : freebusyResponse.busy;
+  
+  // 来週の月曜日を取得
+  const today = new Date();
+  const nextWeekMonday = new Date(today);
+  nextWeekMonday.setDate(today.getDate() + ((1 + 7 - today.getDay()) % 7) + 7);
+  nextWeekMonday.setHours(0, 0, 0, 0);
+  
+  // 月〜金の9:00-18:00でスロット生成
+  for (let day = 0; day < 5; day++) {
+    const currentDate = new Date(nextWeekMonday);
+    currentDate.setDate(currentDate.getDate() + day);
+    
+    for (let hour = 9; hour < 18; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const slotStart = new Date(currentDate);
+        slotStart.setHours(hour, minute, 0, 0);
+        
+        const slotEnd = new Date(slotStart);
+        slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+        
+        // 18:00を超える場合はスキップ
+        if (slotEnd.getHours() >= 18 && slotEnd.getMinutes() > 0) {
+          continue;
+        }
+        
+        // busyと重複していないかチェック
+        const isOverlapping = busySlots.some((busy) => {
+          const busyStart = new Date(busy.start);
+          const busyEnd = new Date(busy.end);
+          return (
+            (slotStart >= busyStart && slotStart < busyEnd) ||
+            (slotEnd > busyStart && slotEnd <= busyEnd) ||
+            (slotStart <= busyStart && slotEnd >= busyEnd)
+          );
+        });
+        
+        if (!isOverlapping) {
+          proposals.push({
+            start_at: slotStart.toISOString(),
+            end_at: slotEnd.toISOString(),
+            label: formatProposalLabel(slotStart, slotEnd),
+          });
+          
+          // 最大5件で終了
+          if (proposals.length >= 5) return proposals;
+        }
+      }
+    }
+  }
+  
+  return proposals;
+}
+
+/**
+ * Format proposal label
+ * Example: "12/30 (月) 10:00-10:30"
+ */
+function formatProposalLabel(start: Date, end: Date): string {
+  const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+  const month = start.getMonth() + 1;
+  const day = start.getDate();
+  const dayOfWeek = dayLabels[start.getDay()];
+  
+  const startTime = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+  const endTime = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+  
+  return `${month}/${day} (${dayOfWeek}) ${startTime}-${endTime}`;
 }
 
 // ============================================================

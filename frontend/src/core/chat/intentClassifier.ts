@@ -10,6 +10,7 @@ export type IntentType =
   | 'schedule.today'      // Phase Next-3 (P1)
   | 'schedule.week'       // Phase Next-3 (P1)
   | 'schedule.freebusy'   // Phase Next-3 (P1)
+  | 'schedule.auto_propose' // Phase Next-5 (P2) - 自動調整提案
   | 'unknown';
 
 export interface IntentResult {
@@ -83,6 +84,46 @@ export function classifyIntent(input: string, context?: {
   }
 
   // ============================================================
+  // Phase Next-5 (P2): Auto-propose (自動調整)
+  // ============================================================
+
+  // P2-1: schedule.auto_propose
+  // Keywords: 候補出して、調整して、自動、提案
+  // NOTE: This should be checked BEFORE schedule.external.create
+  if (
+    /(候補.*出して|調整.*して|自動.*調整|提案)/.test(normalizedInput) &&
+    !/(状況|進捗|確認)/.test(normalizedInput)
+  ) {
+    // Extract names from input
+    const names = extractNames(input);
+    
+    // Extract duration if specified (default 30 minutes)
+    const durationMatch = normalizedInput.match(/(\d+)分/);
+    const duration = durationMatch ? parseInt(durationMatch[1], 10) : 30;
+    
+    // Extract time range (default: next week)
+    let range: 'next_week' | 'this_week' = 'next_week';
+    if (/(今週|こんしゅう)/.test(normalizedInput)) {
+      range = 'this_week';
+    }
+    
+    return {
+      intent: 'schedule.auto_propose',
+      confidence: 0.9,
+      params: {
+        rawInput: input,
+        names,
+        duration,
+        range,
+      },
+      needsClarification: names.length === 0 ? {
+        field: 'names',
+        message: '誰との調整ですか？\n\n例: 田中さん、佐藤さん',
+      } : undefined,
+    };
+  }
+
+  // ============================================================
   // Phase Next-2 (P0): Scheduling
   // ============================================================
 
@@ -92,7 +133,7 @@ export function classifyIntent(input: string, context?: {
   
   if (
     /送(って|る)|調整|案内|招待/.test(normalizedInput) &&
-    !/(状況|進捗|確認|教えて)/.test(normalizedInput)
+    !/(状況|進捗|確認|教えて|候補.*出して)/.test(normalizedInput)
   ) {
     // Check if emails are provided
     if (emails.length === 0) {
