@@ -73,6 +73,8 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
   // Verify session token if present
   if (sessionToken && sessionToken.length > 0) {
     try {
+      console.log('[Auth] Verifying session token, length:', sessionToken.length);
+      
       // Import dynamically to avoid circular dependency
       const { SessionRepository } = await import('../repositories/sessionRepository');
       
@@ -83,18 +85,27 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
       
+      console.log('[Auth] Token hash:', tokenHash.substring(0, 16) + '...');
+      
       // Verify session
       const sessionRepo = new SessionRepository(env.DB);
       const session = await sessionRepo.findByTokenHash(tokenHash);
       
+      console.log('[Auth] Session found:', !!session);
+      
       if (session) {
         // Update last_seen_at
         await sessionRepo.updateLastSeen(session.id);
+        console.log('[Auth] Session valid, userId:', session.user_id);
         return session.user_id;
+      } else {
+        console.warn('[Auth] Session not found in DB for token hash:', tokenHash.substring(0, 16) + '...');
       }
     } catch (error) {
       console.error('Session verification error:', error);
     }
+  } else {
+    console.warn('[Auth] No session token provided');
   }
 
   return null;
