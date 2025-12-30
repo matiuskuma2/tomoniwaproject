@@ -40,10 +40,16 @@ function getCookieValue(cookieHeader: string | undefined, name: string): string 
  * 2. Cookie: session=<token>
  * 3. x-user-id header (development only)
  */
-export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables }>): Promise<string | null> {
+export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables }>, debugInfo?: any): Promise<string | null> {
   const env = c.env as Env;
   // Check for development mode (ENVIRONMENT not set or explicitly 'development')
   const isDevelopment = !env.ENVIRONMENT || env.ENVIRONMENT === 'development';
+  const authDebug = env.AUTH_DEBUG === '1' || env.AUTH_DEBUG === 'true';
+
+  if (debugInfo && authDebug) {
+    debugInfo.environment = env.ENVIRONMENT || 'unknown';
+    debugInfo.auth_debug_enabled = true;
+  }
 
   // Try x-user-id header (development only) - highest priority for dev
   if (isDevelopment) {
@@ -60,6 +66,10 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
 
   // 1) Bearer token
   const authHeader = c.req.header('Authorization');
+  if (debugInfo && authDebug) {
+    debugInfo.has_auth_header = !!authHeader;
+    debugInfo.auth_scheme = authHeader?.split(' ')[0] || null;
+  }
   if (authHeader?.startsWith('Bearer ')) {
     sessionToken = authHeader.substring(7).trim();
   }
@@ -75,6 +85,10 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
     try {
       console.log('[Auth] Verifying session token, length:', sessionToken.length);
       
+      if (debugInfo && authDebug) {
+        debugInfo.token_length = sessionToken.length;
+      }
+      
       // Import dynamically to avoid circular dependency
       const { SessionRepository } = await import('../repositories/sessionRepository');
       
@@ -87,13 +101,47 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       
       console.log('[Auth] Token hash:', tokenHash.substring(0, 16) + '...');
       
+      if (debugInfo && authDebug) {
+        debugInfo.token_hash_prefix = tokenHash.substring(0, 12);
+      }
+      
       // Verify session
       const sessionRepo = new SessionRepository(env.DB);
       const session = await sessionRepo.findByTokenHash(tokenHash);
       
       console.log('[Auth] Session found:', !!session);
       
+      if (debugInfo && authDebug) {
+        debugInfo.session_found_by_repo = !!session;
+        
+        // Also try raw SQL to compare
+        try {
+          const rawResult = await env.DB.prepare(
+            'SELECT id, user_id, expires_at, datetime(expires_at) as expires_dt, datetime(\'now\') as now_dt FROM sessions WHERE token_hash = ?'
+          ).bind(tokenHash).first();
+          debugInfo.session_found_by_raw_sql = !!rawResult;
+          if (rawResult) {
+            debugInfo.raw_sql_result = {
+              id: rawResult.id,
+              user_id: rawResult.user_id,
+              expires_at: rawResult.expires_at,
+              expires_dt: rawResult.expires_dt,
+              now_dt: rawResult.now_dt
+            };
+          }
+        } catch (sqlError) {
+          debugInfo.raw_sql_error = sqlError instanceof Error ? sqlError.message : String(sqlError);
+        }
+      }
+      
       if (session) {
+        if (debugInfo && authDebug) {
+          debugInfo.session = {
+            id: session.id,
+            user_id: session.user_id,
+            expires_at: session.expires_at
+          };
+        }
         // Update last_seen_at
         await sessionRepo.updateLastSeen(session.id);
         console.log('[Auth] Session valid, userId:', session.user_id);
@@ -103,6 +151,9 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
       }
     } catch (error) {
       console.error('Session verification error:', error);
+      if (debugInfo && authDebug) {
+        debugInfo.verification_error = error instanceof Error ? error.message : String(error);
+      }
     }
   } else {
     console.warn('[Auth] No session token provided');
@@ -119,29 +170,32 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
  */
 export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variables }>, next: Next) {
   let errorDetails: any = null;
+  const authDebug = c.env.AUTH_DEBUG === '1' || c.env.AUTH_DEBUG === 'true';
+  const debugInfo: any = authDebug ? {} : null;
   
   try {
-    const userId = await getUserId(c);
+    const userId = await getUserId(c, debugInfo);
 
     if (!userId) {
-      // DEBUG: Add more details to error response
-      const authHeader = c.req.header('Authorization');
-      const hasBearerToken = authHeader?.startsWith('Bearer ') || false;
-      const tokenLength = hasBearerToken && authHeader ? authHeader.substring(7).trim().length : 0;
-      
-      return c.json(
-        { 
-          error: 'Unauthorized',
-          message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
-          debug: {
-            has_bearer_token: hasBearerToken,
-            token_length: tokenLength,
-            environment: c.env.ENVIRONMENT || 'unknown',
-            error_details: errorDetails
-          }
-        },
-        401
-      );
+      if (authDebug && debugInfo) {
+        // Return detailed debug info
+        return c.json(
+          {
+            error: 'Unauthorized',
+            message: 'Authentication required. Provide Bearer token, session cookie, or x-user-id header (dev only).',
+            debug: debugInfo
+          },
+          401
+        );
+      } else {
+        // Normal response without debug info
+        return c.json(
+          {
+            error: 'Unauthorized'
+          },
+          401
+        );
+      }
     }
 
     // Store userId in context for downstream handlers
@@ -152,17 +206,21 @@ export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variabl
     console.error('[Auth] requireAuth middleware error:', error);
     errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : String(error);
     
-    return c.json(
-      {
-        error: 'Unauthorized',
-        message: 'Authentication middleware error',
-        debug: {
-          error_details: errorDetails,
-          environment: c.env.ENVIRONMENT || 'unknown'
-        }
-      },
-      401
-    );
+    if (authDebug) {
+      return c.json(
+        {
+          error: 'Unauthorized',
+          message: 'Authentication middleware error',
+          debug: {
+            error_details: errorDetails,
+            environment: c.env.ENVIRONMENT || 'unknown'
+          }
+        },
+        401
+      );
+    } else {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
   }
 }
 

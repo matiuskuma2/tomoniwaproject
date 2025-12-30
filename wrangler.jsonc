@@ -87,7 +87,8 @@
     "ENVIRONMENT": "production",  // Production mode: Requires Bearer token authentication
     "LOG_LEVEL": "info",
     "CORS_ORIGINS": "*",
-    "AI_FALLBACK_ENABLED": "false"  // Default: Gemini-only (cost control for free tier)
+    "AI_FALLBACK_ENABLED": "false",  // Default: Gemini-only (cost control for free tier)
+    "AUTH_DEBUG": "1"  // 🔍 TEMPORARY: Enable authentication debugging
   },
 
   // ============================================================
