@@ -28,6 +28,7 @@ import schedulingApiRoutes from './routes/schedulingApi';
 import contactsRoutes from './routes/contacts';
 import listsRoutes from './routes/lists';
 import businessCardsRoutes from './routes/businessCards';
+import calendarRoutes from './routes/calendar';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -160,6 +161,10 @@ app.route('/api/lists', listsRoutes);
 // Business Cards API (名刺登録)
 app.use('/api/business-cards*', requireAuth);
 app.route('/api/business-cards', businessCardsRoutes);
+
+// Calendar API (Phase Next-3 - Read-only calendar access)
+app.use('/api/calendar*', requireAuth);
+app.route('/api/calendar', calendarRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);
