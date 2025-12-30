@@ -16,7 +16,14 @@ export type ExecutionResultData =
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
   | { kind: 'thread.create'; payload: any }
   | { kind: 'thread.finalize'; payload: any }
-  | { kind: 'auto_propose.generated'; payload: { emails: string[]; duration: number; range: string; proposals: any[] } }
+  | { kind: 'auto_propose.generated'; payload: { 
+      source: 'initial' | 'additional'; // Phase Next-5 Day3: 明示フラグ
+      threadId?: string; // Phase Next-5 Day3: 提案生成時のスレッドID
+      emails: string[]; 
+      duration: number; 
+      range: string; 
+      proposals: any[] 
+    } }
   | { kind: 'auto_propose.cancelled'; payload: {} }
   | { kind: 'auto_propose.created'; payload: any };
 
@@ -156,6 +163,8 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
       data: {
         kind: 'auto_propose.generated',
         payload: {
+          source: 'initial', // Phase Next-5 Day3: 明示フラグ
+          threadId: undefined, // Phase Next-5 Day3: Day1 は threadId なし
           emails,
           duration: duration || 30,
           range: 'next_week',
@@ -344,7 +353,9 @@ async function executeAdditionalPropose(
       data: {
         kind: 'auto_propose.generated',
         payload: {
-          emails: [], // No emails needed for additional proposals (Day3 pattern)
+          source: 'additional', // Phase Next-5 Day3: 明示フラグ（追加提案）
+          threadId, // Phase Next-5 Day3: 提案生成時のスレッドID
+          emails: [], // No emails needed for additional proposals
           duration,
           range: 'next_week',
           proposals: newProposals,

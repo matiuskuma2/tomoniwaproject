@@ -126,13 +126,14 @@ export function ChatLayout() {
     else if (kind === 'auto_propose.generated') {
       setPendingAutoPropose(payload);
       
-      // Phase Next-5 Day3: Increment additional propose count if threadId exists
-      // (Only count additional proposals, not initial proposals)
-      // We detect "additional" by checking if payload.emails is empty (Day3 pattern)
-      if (threadId && payload.emails && payload.emails.length === 0) {
+      // Phase Next-5 Day3: Increment additional propose count
+      // 明示フラグ source === 'additional' で判定（事故防止）
+      // threadId は payload から取得（今見てるスレッドではなく提案生成時のスレッド）
+      if (payload.source === 'additional' && payload.threadId) {
+        const targetThreadId = payload.threadId; // 型安全のため一度変数に入れる
         setAdditionalProposeCountByThreadId(prev => ({
           ...prev,
-          [threadId]: (prev[threadId] || 0) + 1,
+          [targetThreadId]: (prev[targetThreadId] || 0) + 1,
         }));
       }
     } else if (kind === 'auto_propose.cancelled' || kind === 'auto_propose.created') {
