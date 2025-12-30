@@ -140,4 +140,89 @@ app.get('/db', async (c) => {
   }
 });
 
+/**
+ * GET /admin/debug/auth-bypass
+ * Emergency debug endpoint WITHOUT authentication
+ * ONLY for production troubleshooting
+ * Query params: token=<session_token>
+ */
+app.get('/auth-bypass', async (c) => {
+  const env = c.env;
+  const debugInfo: any = {
+    timestamp: new Date().toISOString(),
+    environment: env.ENVIRONMENT || 'unknown',
+    db_binding_exists: !!env.DB,
+    warning: 'This endpoint bypasses authentication for debugging only',
+  };
+
+  try {
+    // Get token from query param
+    const sessionToken = c.req.query('token');
+    
+    if (!sessionToken) {
+      debugInfo.error = 'Missing token query parameter. Usage: /admin/debug/auth-bypass?token=<your_token>';
+      return c.json(debugInfo, 400);
+    }
+
+    debugInfo.token_length = sessionToken.length;
+    debugInfo.token_preview = sessionToken.substring(0, 20) + '...';
+
+    // Hash token
+    const encoder = new TextEncoder();
+    const data = encoder.encode(sessionToken);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    debugInfo.token_hash = tokenHash;
+    debugInfo.token_hash_preview = tokenHash.substring(0, 20) + '...';
+
+    // Try SessionRepository first
+    const sessionRepo = new SessionRepository(env.DB);
+    const session = await sessionRepo.findByTokenHash(tokenHash);
+    
+    debugInfo.session_found_via_repo = !!session;
+
+    if (session) {
+      debugInfo.session = {
+        id: session.id,
+        user_id: session.user_id,
+        expires_at: session.expires_at,
+        created_at: session.created_at,
+        last_seen_at: session.last_seen_at,
+      };
+    }
+
+    // Try raw SQL query
+    debugInfo.raw_sql_query = 'SELECT * FROM sessions WHERE token_hash = ?';
+    
+    const rawResult = await env.DB.prepare(
+      'SELECT id, user_id, token_hash, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = ?'
+    ).bind(tokenHash).first();
+    
+    debugInfo.raw_sql_found = !!rawResult;
+    
+    if (rawResult) {
+      debugInfo.raw_sql_result = rawResult;
+    }
+
+    // Check with datetime comparison
+    const withDatetimeResult = await env.DB.prepare(
+      'SELECT id, user_id, expires_at, datetime(expires_at) as expires_datetime, datetime(\'now\') as now_datetime, datetime(expires_at) > datetime(\'now\') as is_valid FROM sessions WHERE token_hash = ?'
+    ).bind(tokenHash).first();
+    
+    debugInfo.with_datetime_check = withDatetimeResult;
+
+    // Count all sessions
+    const sessionCount = await env.DB.prepare('SELECT COUNT(*) as count FROM sessions').first();
+    debugInfo.total_sessions_count = sessionCount?.count || 0;
+
+    return c.json(debugInfo);
+  } catch (error) {
+    debugInfo.error = error instanceof Error ? error.message : String(error);
+    debugInfo.error_stack = error instanceof Error ? error.stack : undefined;
+    return c.json(debugInfo, 500);
+  }
+});
+
 export default app;
