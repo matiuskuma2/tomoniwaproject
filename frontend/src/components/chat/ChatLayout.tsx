@@ -112,6 +112,9 @@ export function ChatLayout() {
 
   // Phase P0-3: Persist messages to localStorage
   useEffect(() => {
+    // Skip localStorage on mobile if it causes issues
+    if (typeof window === 'undefined') return;
+    
     try {
       const serialized = JSON.stringify(messagesByThreadId);
       
@@ -131,13 +134,19 @@ export function ChatLayout() {
         }
       }
       
-      localStorage.setItem('tomoniwao_messages', serialized);
+      // Try to save to localStorage
+      try {
+        localStorage.setItem('tomoniwao_messages', serialized);
+      } catch (storageError) {
+        console.error('[ChatLayout] localStorage.setItem failed:', storageError);
+        // If storage fails completely, just continue without persistence
+      }
     } catch (error) {
-      console.error('[ChatLayout] Failed to save messages to localStorage:', error);
-      // If quota exceeded, clear and retry
-      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-        console.warn('[ChatLayout] Quota exceeded, clearing localStorage');
-        localStorage.removeItem('tomoniwao_messages');
+      console.error('[ChatLayout] Failed to serialize messages:', error);
+      // If serialization fails, clear the problematic data
+      if (error instanceof TypeError) {
+        console.warn('[ChatLayout] Clearing messagesByThreadId due to serialization error');
+        setMessagesByThreadId({});
       }
     }
   }, [messagesByThreadId]);
