@@ -69,6 +69,15 @@ export function ChatLayout() {
   
   // NEW (Phase Next-6 Day1): Remind execution count (max 2 per thread)
   const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string, number>>({});
+  
+  // NEW (Phase Next-6 Day3): Pending notify state (per thread)
+  type PendingNotify = {
+    threadId: string;
+    invites: Array<{ email: string; name?: string }>;
+    finalSlot: { start_at: string; end_at: string; label?: string };
+    meetingUrl?: string;
+  }
+  const [pendingNotifyByThreadId, setPendingNotifyByThreadId] = useState<Record<string, PendingNotify | null>>({});
 
   useEffect(() => {
     if (threadId) {
@@ -179,6 +188,30 @@ export function ChatLayout() {
         }));
       }
     }
+    
+    // Phase Next-6 Day3: Handle notify state updates
+    else if (kind === 'notify.confirmed.generated') {
+      // Set pending notify for this thread
+      if (payload.threadId) {
+        setPendingNotifyByThreadId(prev => ({
+          ...prev,
+          [payload.threadId]: {
+            threadId: payload.threadId,
+            invites: payload.invites,
+            finalSlot: payload.finalSlot,
+            meetingUrl: payload.meetingUrl,
+          },
+        }));
+      }
+    } else if (kind === 'notify.confirmed.cancelled' || kind === 'notify.confirmed.sent') {
+      // Clear pending notify for current thread
+      if (threadId) {
+        setPendingNotifyByThreadId(prev => ({
+          ...prev,
+          [threadId]: null,
+        }));
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -270,6 +303,7 @@ export function ChatLayout() {
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
               pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
+              pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
             />
           </div>
 
@@ -300,6 +334,7 @@ export function ChatLayout() {
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
               pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
+              pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
             />
           )}
           {mobileTab === 'cards' && (

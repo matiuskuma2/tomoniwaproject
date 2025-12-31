@@ -33,7 +33,16 @@ export type ExecutionResultData =
       count: number;
     } }
   | { kind: 'remind.pending.cancelled'; payload: {} }
-  | { kind: 'remind.pending.sent'; payload: any };
+  | { kind: 'remind.pending.sent'; payload: any }
+  | { kind: 'notify.confirmed.generated'; payload: {
+      source: 'notify'; // Phase Next-6 Day3: 明示フラグ
+      threadId: string; // Phase Next-6 Day3: 提案生成時のスレッドID
+      invites: Array<{ email: string; name?: string }>;
+      finalSlot: { start_at: string; end_at: string; label?: string };
+      meetingUrl?: string;
+    } }
+  | { kind: 'notify.confirmed.cancelled'; payload: {} }
+  | { kind: 'notify.confirmed.sent'; payload: any };
 
 export interface ExecutionResult {
   success: boolean;
@@ -63,6 +72,13 @@ export interface ExecutionContext {
   } | null;
   // Phase Next-6 Day1: remind execution count (max 2 per thread)
   remindCount?: number;
+  // Phase Next-6 Day3: pending notify state
+  pendingNotify?: {
+    threadId: string;
+    invites: Array<{ email: string; name?: string }>;
+    finalSlot: { start_at: string; end_at: string; label?: string };
+    meetingUrl?: string;
+  } | null;
 }
 
 /**
@@ -97,7 +113,7 @@ export async function executeIntent(
     case 'schedule.additional_propose':
       return executeAdditionalPropose(intentResult, context);
     
-    // Phase Next-6: Reminder
+    // Phase Next-6: Reminder & Notification
     case 'schedule.remind.pending':
       return executeRemindPending(intentResult, context);
     
@@ -106,6 +122,15 @@ export async function executeIntent(
     
     case 'schedule.remind.pending.cancel':
       return executeRemindPendingCancel();
+    
+    case 'schedule.notify.confirmed':
+      return executeNotifyConfirmed(intentResult);
+    
+    case 'schedule.notify.confirmed.confirm':
+      return executeNotifyConfirmedConfirm(context);
+    
+    case 'schedule.notify.confirmed.cancel':
+      return executeNotifyConfirmedCancel();
     
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
@@ -462,6 +487,206 @@ async function executeRemindPendingCancel(): Promise<ExecutionResult> {
     message: '✅ リマインドをキャンセルしました。',
     data: {
       kind: 'remind.pending.cancelled',
+      payload: {},
+    },
+  };
+}
+
+// ============================================================
+// Phase Next-6 Day3: Confirmed Notification (確定通知)
+// ============================================================
+
+/**
+ * P3-4: schedule.notify.confirmed
+ * Phase Next-6 Day3: 確定通知提案（提案のみ、POSTなし）
+ * 
+ * Flow:
+ * 1. status を取得
+ * 2. status が confirmed かチェック
+ * 3. confirmed でない場合: 「まだ確定していません」
+ * 4. confirmed の場合: 確定通知提案を表示（まだPOSTしない）
+ * 5. 「はい」で confirm フロー → POST（Day3.5）
+ */
+async function executeNotifyConfirmed(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが選択されていません。',
+      needsClarification: {
+        field: 'threadId',
+        message: 'どのスレッドの確定通知を送りますか？\n左のスレッド一覧から選択してください。',
+      },
+    };
+  }
+  
+  try {
+    // Get thread status
+    const status = await threadsApi.getStatus(threadId);
+    
+    // Check if thread is confirmed
+    if (status.thread.status !== 'confirmed') {
+      return {
+        success: false,
+        message: `❌ このスレッドはまだ確定していません。\n\n現在の状態: ${status.thread.status}\n先に日程を確定してください。`,
+      };
+    }
+    
+    // Check if evaluation has finalized data
+    if (!status.evaluation.finalized || !status.evaluation.final_slot_id) {
+      return {
+        success: false,
+        message: '❌ 確定情報が見つかりません。\n先に日程を確定してください。',
+      };
+    }
+    
+    // Get final slot
+    const finalSlot = status.slots.find(slot => slot.slot_id === status.evaluation.final_slot_id);
+    if (!finalSlot) {
+      return {
+        success: false,
+        message: '❌ 確定日時が見つかりません。',
+      };
+    }
+    
+    // Get all invites (accepted or pending)
+    const allInvites = status.invites.map((invite) => ({
+      email: invite.email,
+      name: invite.candidate_name,
+    }));
+    
+    if (allInvites.length === 0) {
+      return {
+        success: true,
+        message: '✅ 招待者がいません。\n\n通知は不要です。',
+      };
+    }
+    
+    // Build notification message
+    let message = `💡 日程が確定しました！\n\n`;
+    message += `📅 確定日時: ${formatDateTime(finalSlot.start_at)}${finalSlot.label ? ` (${finalSlot.label})` : ''}\n`;
+    
+    if (status.evaluation.meeting?.url) {
+      message += `🎥 Meet URL: ${status.evaluation.meeting.url}\n`;
+    }
+    
+    message += `\n参加者（${allInvites.length}名）:\n`;
+    allInvites.forEach((invite) => {
+      message += `- ${invite.email}`;
+      if (invite.name) {
+        message += ` (${invite.name})`;
+      }
+      message += '\n';
+    });
+    
+    message += '\n全員に確定通知を送りますか？\n\n';
+    message += '「はい」で通知送信\n';
+    message += '「いいえ」でキャンセル';
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'notify.confirmed.generated',
+        payload: {
+          source: 'notify', // Phase Next-6 Day3: 明示フラグ
+          threadId, // Phase Next-6 Day3: 提案生成時のスレッドID
+          invites: allInvites,
+          finalSlot: {
+            start_at: finalSlot.start_at,
+            end_at: finalSlot.end_at,
+            label: finalSlot.label || undefined,
+          },
+          meetingUrl: status.evaluation.meeting?.url,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P3-5: schedule.notify.confirmed.confirm
+ * Phase Next-6 Day3: 確定通知確定 → POST（Day3.5で実装）
+ */
+async function executeNotifyConfirmedConfirm(
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pending = context?.pendingNotify;
+  
+  if (!pending) {
+    return {
+      success: false,
+      message: '❌ 通知対象が選択されていません。\n先に「確定通知送って」と入力してください。',
+    };
+  }
+  
+  try {
+    // Phase Next-6 Day3: A案（送信用セット返すだけ、メール送信しない）
+    const { threadId, invites, finalSlot, meetingUrl } = pending;
+    
+    // Build template message
+    const templateMessage = `
+こんにちは、
+
+日程調整が完了しましたのでお知らせします。
+
+📅 確定日時: ${formatDateTime(finalSlot.start_at)}${finalSlot.label ? ` (${finalSlot.label})` : ''}
+${meetingUrl ? `🎥 Meet URL: ${meetingUrl}` : ''}
+
+ご参加をお待ちしております。
+よろしくお願いいたします。
+    `.trim();
+    
+    // A案: 送信用セットを表示（コピー用）
+    let message = `✅ 確定通知用の文面を生成しました（${invites.length}名）\n\n`;
+    message += '📋 以下をコピーして各自にメールで送信してください:\n\n';
+    message += '────────────────────────────\n\n';
+    
+    invites.forEach((invite, index) => {
+      message += `【${index + 1}. ${invite.email}${invite.name ? ` (${invite.name})` : ''}】\n\n`;
+      message += `件名: 日程調整完了のお知らせ\n\n`;
+      message += templateMessage;
+      message += '\n\n────────────────────────────\n\n';
+    });
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'notify.confirmed.sent',
+        payload: {
+          threadId,
+          invites,
+          count: invites.length,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P3-6: schedule.notify.confirmed.cancel
+ * Phase Next-6 Day3: 確定通知キャンセル
+ */
+async function executeNotifyConfirmedCancel(): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '✅ 確定通知をキャンセルしました。',
+    data: {
+      kind: 'notify.confirmed.cancelled',
       payload: {},
     },
   };
