@@ -64,6 +64,11 @@ interface ChatPaneProps {
     finalSlot: { start_at: string; end_at: string; label?: string };
     meetingUrl?: string;
   } | null;
+  
+  // NEW (Phase Next-6 Day2): pending split
+  pendingSplit?: {
+    threadId: string;
+  } | null;
 }
 
 export function ChatPane({ 
@@ -79,7 +84,8 @@ export function ChatPane({
   additionalProposeCount = 0,
   pendingRemind = null,
   remindCount = 0,
-  pendingNotify = null
+  pendingNotify = null,
+  pendingSplit = null
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -129,10 +135,12 @@ export function ChatPane({
       // Classify intent
       // Phase Next-6 Day1: Pass pendingRemind for confirm/cancel
       // Phase Next-6 Day3: Pass pendingNotify for confirm/cancel
+      // Phase Next-6 Day2: Pass pendingSplit for confirm/cancel
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId,
         pendingRemind,
         pendingNotify,
+        pendingSplit,
       });
 
       // Execute intent
@@ -140,12 +148,14 @@ export function ChatPane({
       // Phase Next-5 Day3: Pass additionalProposeCount for execution limit
       // Phase Next-6 Day1: Pass pendingRemind and remindCount
       // Phase Next-6 Day3: Pass pendingNotify
+      // Phase Next-6 Day2: Pass pendingSplit
       const result = await executeIntent(intentResult, {
         pendingAutoPropose,
         additionalProposeCount,
         pendingRemind,
         remindCount,
         pendingNotify,
+        pendingSplit,
       });
 
       // Add assistant response

@@ -20,6 +20,9 @@ export type IntentType =
   | 'schedule.notify.confirmed'       // Phase Next-6 Day3 - 確定通知提案
   | 'schedule.notify.confirmed.confirm' // Phase Next-6 Day3 - 確定通知確定
   | 'schedule.notify.confirmed.cancel'  // Phase Next-6 Day3 - 確定通知キャンセル
+  | 'schedule.propose_for_split'        // Phase Next-6 Day2 - 票割れ通知提案
+  | 'schedule.propose_for_split.confirm' // Phase Next-6 Day2 - 票割れ提案確定
+  | 'schedule.propose_for_split.cancel'  // Phase Next-6 Day2 - 票割れ提案キャンセル
   | 'unknown';
 
 export interface IntentResult {
@@ -36,6 +39,7 @@ export interface IntentResult {
  * Intent context for classification
  * Phase Next-6 Day1: Added pendingRemind
  * Phase Next-6 Day3: Added pendingNotify
+ * Phase Next-6 Day2: Added pendingSplit
  */
 export interface IntentContext {
   selectedThreadId?: string;
@@ -50,6 +54,9 @@ export interface IntentContext {
     invites: Array<{ email: string; name?: string }>;
     finalSlot: { start_at: string; end_at: string; label?: string };
     meetingUrl?: string;
+  } | null;
+  pendingSplit?: {
+    threadId: string;
   } | null;
 }
 
@@ -115,11 +122,19 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   // Phase Next-5 (P2): Auto-propose (自動調整)
   // ============================================================
 
-  // P2-2 & P3-2 & P3-5: Confirm (提案確定)
-  // Phase Next-6 Day3: Support auto_propose, remind, and notify flows
+  // P2-2 & P3-2 & P3-5 & P3-7: Confirm (提案確定)
+  // Phase Next-6 Day2: Support split, notify, remind, and auto_propose flows
   // Keywords: はい、yes、作成して、OK
   if (/(はい|yes|作成|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
-    // Check context to determine which flow (優先順位: notify > remind > auto_propose)
+    // Check context to determine which flow (優先順位: split > notify > remind > auto_propose)
+    if (context?.pendingSplit) {
+      return {
+        intent: 'schedule.propose_for_split.confirm',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
     if (context?.pendingNotify) {
       return {
         intent: 'schedule.notify.confirmed.confirm',
@@ -144,11 +159,19 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
 
-  // P2-3 & P3-3 & P3-6: Cancel (提案キャンセル)
-  // Phase Next-6 Day3: Support auto_propose, remind, and notify flows
+  // P2-3 & P3-3 & P3-6 & P3-8: Cancel (提案キャンセル)
+  // Phase Next-6 Day2: Support split, notify, remind, and auto_propose flows
   // Keywords: いいえ、no、キャンセル、やめる
   if (/(いいえ|no|キャンセル|やめ)/i.test(normalizedInput) && normalizedInput.length < 10) {
-    // Check context to determine which flow (優先順位: notify > remind > auto_propose)
+    // Check context to determine which flow (優先順位: split > notify > remind > auto_propose)
+    if (context?.pendingSplit) {
+      return {
+        intent: 'schedule.propose_for_split.cancel',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
     if (context?.pendingNotify) {
       return {
         intent: 'schedule.notify.confirmed.cancel',

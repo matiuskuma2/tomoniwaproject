@@ -78,6 +78,12 @@ export function ChatLayout() {
     meetingUrl?: string;
   }
   const [pendingNotifyByThreadId, setPendingNotifyByThreadId] = useState<Record<string, PendingNotify | null>>({});
+  
+  // NEW (Phase Next-6 Day2): Pending split state (per thread)
+  type PendingSplit = {
+    threadId: string;
+  }
+  const [pendingSplitByThreadId, setPendingSplitByThreadId] = useState<Record<string, PendingSplit | null>>({});
 
   useEffect(() => {
     if (threadId) {
@@ -212,6 +218,35 @@ export function ChatLayout() {
         }));
       }
     }
+    
+    // Phase Next-6 Day2: Handle split state updates
+    else if (kind === 'split.propose.generated') {
+      // Set pending split for this thread
+      if (payload.threadId) {
+        setPendingSplitByThreadId(prev => ({
+          ...prev,
+          [payload.threadId]: {
+            threadId: payload.threadId,
+          },
+        }));
+      }
+    } else if (kind === 'split.propose.cancelled') {
+      // Clear pending split for current thread
+      if (threadId) {
+        setPendingSplitByThreadId(prev => ({
+          ...prev,
+          [threadId]: null,
+        }));
+      }
+    }
+    
+    // Phase Next-6 Day2: Clear split when moving to additional propose
+    if (kind === 'auto_propose.generated' && threadId) {
+      setPendingSplitByThreadId(prev => ({
+        ...prev,
+        [threadId]: null,
+      }));
+    }
   };
 
   const handleLogout = async () => {
@@ -304,6 +339,7 @@ export function ChatLayout() {
               pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
+              pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
             />
           </div>
 
@@ -335,6 +371,7 @@ export function ChatLayout() {
               pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
+              pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
             />
           )}
           {mobileTab === 'cards' && (

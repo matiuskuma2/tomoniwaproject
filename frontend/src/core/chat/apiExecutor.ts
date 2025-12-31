@@ -42,7 +42,13 @@ export type ExecutionResultData =
       meetingUrl?: string;
     } }
   | { kind: 'notify.confirmed.cancelled'; payload: {} }
-  | { kind: 'notify.confirmed.sent'; payload: any };
+  | { kind: 'notify.confirmed.sent'; payload: any }
+  | { kind: 'split.propose.generated'; payload: {
+      source: 'split'; // Phase Next-6 Day2: 明示フラグ
+      threadId: string; // Phase Next-6 Day2: 提案生成時のスレッドID
+      voteSummary: Array<{ label: string; votes: number }>;
+    } }
+  | { kind: 'split.propose.cancelled'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;
@@ -78,6 +84,10 @@ export interface ExecutionContext {
     invites: Array<{ email: string; name?: string }>;
     finalSlot: { start_at: string; end_at: string; label?: string };
     meetingUrl?: string;
+  } | null;
+  // Phase Next-6 Day2: pending split state
+  pendingSplit?: {
+    threadId: string;
   } | null;
 }
 
@@ -131,6 +141,13 @@ export async function executeIntent(
     
     case 'schedule.notify.confirmed.cancel':
       return executeNotifyConfirmedCancel();
+    
+    // Phase Next-6 Day2: Split Vote Detection
+    case 'schedule.propose_for_split.confirm':
+      return executeProposeForSplitConfirm(context);
+    
+    case 'schedule.propose_for_split.cancel':
+      return executeProposeForSplitCancel();
     
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
@@ -692,6 +709,65 @@ async function executeNotifyConfirmedCancel(): Promise<ExecutionResult> {
   };
 }
 
+// ============================================================
+// Phase Next-6 Day2: Split Vote Detection (票割れ通知)
+// ============================================================
+
+/**
+ * Analyze if votes are split (Phase Next-6 Day2)
+ * Trigger conditions:
+ * 1. maxVotes <= 1 (no one gathered)
+ * 2. topSlots.length >= 2 (tied votes)
+ */
+function analyzeSplitVotes(status: ThreadStatus_API): {
+  shouldPropose: boolean;
+  summary: Array<{ label: string; votes: number }>;
+} {
+  if (status.slots.length === 0) {
+    return { shouldPropose: false, summary: [] };
+  }
+  
+  const slotVotes = status.slots.map((slot) => {
+    const votes = getSlotVotes(slot.slot_id, status);
+    return { 
+      label: slot.label ?? formatDateTime(slot.start_at), 
+      votes 
+    };
+  });
+  
+  const maxVotes = Math.max(...slotVotes.map(s => s.votes));
+  const topSlots = slotVotes.filter(s => s.votes === maxVotes);
+  
+  // Trigger 1: 誰も集まってない
+  const noGathering = maxVotes <= 1;
+  
+  // Trigger 2: 同票で割れてる
+  const tiedVotes = topSlots.length >= 2;
+  
+  const shouldPropose = noGathering || tiedVotes;
+  
+  return { shouldPropose, summary: slotVotes };
+}
+
+/**
+ * Wrapper for executeAdditionalPropose (Phase Next-6 Day2)
+ * This allows calling from split.confirm without IntentResult dependency
+ */
+async function executeAdditionalProposeByThreadId(
+  threadId: string,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  // Call executeAdditionalPropose with a synthetic IntentResult
+  return executeAdditionalPropose(
+    {
+      intent: 'schedule.additional_propose',
+      confidence: 1.0,
+      params: { threadId },
+    },
+    context
+  );
+}
+
 /**
  * P2-4: schedule.additional_propose
  * Phase Next-5 Day3: 追加候補提案（提案のみ、POSTなし）
@@ -791,6 +867,41 @@ async function executeAdditionalPropose(
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+}
+
+/**
+ * P3-7: schedule.propose_for_split.confirm
+ * Phase Next-6 Day2: 票割れ提案確定 → Day3 に誘導
+ */
+async function executeProposeForSplitConfirm(
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pending = context?.pendingSplit;
+  
+  if (!pending?.threadId) {
+    return {
+      success: false,
+      message: '❌ 票割れの提案がありません。\n先に状況を確認してください。',
+    };
+  }
+  
+  // A案: 内部的に Day3 の追加候補提案を呼ぶ（提案のみ、POSTなし）
+  return executeAdditionalProposeByThreadId(pending.threadId, context);
+}
+
+/**
+ * P3-8: schedule.propose_for_split.cancel
+ * Phase Next-6 Day2: 票割れ提案キャンセル
+ */
+async function executeProposeForSplitCancel(): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '✅ 票割れの追加提案をキャンセルしました。',
+    data: {
+      kind: 'split.propose.cancelled',
+      payload: {},
+    },
+  };
 }
 
 /**
@@ -1180,7 +1291,34 @@ async function executeStatusCheck(
       });
     }
     
-    // Phase Next-5 Day3: 追加提案の判定
+    // Phase Next-6 Day2: 票割れ検知（優先）
+    const split = analyzeSplitVotes(status);
+    
+    if (split.shouldPropose) {
+      message += '\n\n💡 票が割れています。追加候補を出しますか？';
+      message += '\n\n現在の投票状況:\n';
+      split.summary.forEach((item) => {
+        message += `- ${item.label}: ${item.votes}票\n`;
+      });
+      message += '\n「はい」で追加候補を3本提案します。';
+      message += '\n「いいえ」でキャンセルします。';
+      
+      // Return with split.propose.generated to trigger pending state
+      return {
+        success: true,
+        message,
+        data: {
+          kind: 'split.propose.generated',
+          payload: {
+            source: 'split',
+            threadId: status.thread.id,
+            voteSummary: split.summary,
+          },
+        },
+      };
+    }
+    
+    // Phase Next-5 Day3: 追加提案の判定（票割れがない場合）
     const needsMoreProposals = analyzeStatusForPropose(status);
     
     if (needsMoreProposals) {
