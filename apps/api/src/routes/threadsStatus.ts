@@ -105,6 +105,28 @@ app.get('/:id/status', async (c) => {
     
     const slots = slotsResult.results || [];
     
+    // ====== (3.5) Load Vote Counts ======
+    // Count votes per slot (selected_slot_id)
+    const votesResult = await env.DB.prepare(`
+      SELECT 
+        selected_slot_id as slot_id, 
+        COUNT(*) as votes
+      FROM thread_selections
+      WHERE thread_id = ?
+        AND selected_slot_id IS NOT NULL
+      GROUP BY selected_slot_id
+    `).bind(threadId).all();
+    
+    const votesBySlotId = new Map(
+      (votesResult.results || []).map((r: any) => [r.slot_id, r.votes])
+    );
+    
+    // Merge votes into slots
+    const slotsWithVotes = slots.map((s: any) => ({
+      ...s,
+      votes: votesBySlotId.get(s.slot_id) ?? 0,
+    }));
+    
     // ====== (4) Load Invites ======
     const invitesResult = await env.DB.prepare(`
       SELECT 
@@ -217,7 +239,7 @@ app.get('/:id/status', async (c) => {
         finalize_policy: ruleRow.finalize_policy,
         details: ruleObj
       },
-      slots: slots,
+      slots: slotsWithVotes,
       invites: invites.map((inv: any) => ({
         invite_id: inv.id,
         email: inv.email,

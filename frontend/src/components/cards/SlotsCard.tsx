@@ -14,15 +14,8 @@ export function SlotsCard({ status }: SlotsCardProps) {
     return null;
   }
 
-  // Calculate vote counts for each slot
-  const getVoteCount = (slotId: string): number => {
-    if (!status.selections || status.selections.length === 0) {
-      return 0;
-    }
-    return status.selections.filter(
-      (sel: any) => sel.slot_id === slotId && sel.status === 'selected'
-    ).length;
-  };
+  // Phase Next-6 Day2: Vote counts are now server-side (負債ゼロ)
+  // No need to calculate - use slot.votes directly
 
   const formatDateTime = (dateStr: string) => {
     try {
@@ -43,7 +36,7 @@ export function SlotsCard({ status }: SlotsCardProps) {
       
       <div className="space-y-2">
         {status.slots.map((slot: Slot) => {
-          const voteCount = getVoteCount(slot.slot_id);
+          const voteCount = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
           
           return (
             <div key={slot.slot_id} className="p-3 bg-gray-50 rounded-lg">

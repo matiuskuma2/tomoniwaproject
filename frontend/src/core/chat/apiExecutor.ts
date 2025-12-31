@@ -727,13 +727,11 @@ function analyzeSplitVotes(status: ThreadStatus_API): {
     return { shouldPropose: false, summary: [] };
   }
   
-  const slotVotes = status.slots.map((slot) => {
-    const votes = getSlotVotes(slot.slot_id, status);
-    return { 
-      label: slot.label ?? formatDateTime(slot.start_at), 
-      votes 
-    };
-  });
+  // Phase Next-6 Day2: Use server-side vote counts (負債ゼロ)
+  const slotVotes = status.slots.map((slot) => ({
+    label: slot.label ?? formatDateTime(slot.start_at), 
+    votes: slot.votes ?? 0
+  }));
   
   const maxVotes = Math.max(...slotVotes.map(s => s.votes));
   const topSlots = slotVotes.filter(s => s.votes === maxVotes);
@@ -1286,7 +1284,7 @@ async function executeStatusCheck(
     if (status.slots && status.slots.length > 0) {
       message += '📅 候補日時:\n';
       status.slots.forEach((slot, index) => {
-        const votes = getSlotVotes(slot.slot_id, status);
+        const votes = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
         message += `${index + 1}. ${formatDateTime(slot.start_at)} (${votes}票)\n`;
       });
     }
@@ -1387,7 +1385,7 @@ async function executeFinalize(
       // Show slot options
       let message = 'どの候補日時で確定しますか？\n\n';
       status.slots.forEach((slot, index) => {
-        const votes = getSlotVotes(slot.slot_id, status);
+        const votes = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
         message += `${index + 1}. ${formatDateTime(slot.start_at)} (${votes}票)\n`;
       });
       message += '\n番号を入力してください（例: 1番で確定）';
@@ -1491,14 +1489,10 @@ function getStatusLabel(status: string): string {
   return labels[status] || status;
 }
 
-function getSlotVotes(slotId: string, status: ThreadStatus_API): number {
-  if (!status.selections) return 0;
-  
-  // Count selections for this slot
-  return Object.values(status.selections).filter((selection: any) => 
-    selection.slot_id === slotId
-  ).length;
-}
+// Phase Next-6 Day2: getSlotVotes() removed - votes are now server-side
+// function getSlotVotes(slotId: string, status: ThreadStatus_API): number {
+//   // Moved to backend: threadsStatus.ts returns slots[].votes
+// }
 
 function formatDateTime(dateStr: string): string {
   const date = new Date(dateStr);

@@ -40,6 +40,7 @@ export interface Slot {
   end_at: string;
   timezone: string;
   label?: string;
+  votes?: number; // Phase Next-6 Day2: Server-side vote count
   created_at: string;
 }
 
