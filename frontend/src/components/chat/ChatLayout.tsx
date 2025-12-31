@@ -110,46 +110,76 @@ export function ChatLayout() {
   // Phase P0-3: Track seeded threads to prevent double-seeding
   const [seededThreads, setSeededThreads] = useState<Set<string>>(new Set());
 
-  // Phase P0-3: Persist messages to localStorage
+  // Phase P1: localStorage save fail counter (auto-disable on repeated failures)
+  const [saveFailCount, setSaveFailCount] = useState(0);
+  const [persistEnabled, setPersistEnabled] = useState(true);
+  const MAX_FAIL_COUNT = 3;
+
+  // Phase P1: Persist messages to localStorage with debounce (500ms)
   useEffect(() => {
+    // Skip if persistence is disabled (after repeated failures)
+    if (!persistEnabled) {
+      console.warn('[ChatLayout] localStorage persistence disabled due to repeated failures');
+      return;
+    }
+
     // Skip localStorage on mobile if it causes issues
     if (typeof window === 'undefined') return;
     
-    try {
-      const serialized = JSON.stringify(messagesByThreadId);
-      
-      // Check size (localStorage limit is typically 5-10MB)
-      if (serialized.length > 5 * 1024 * 1024) {
-        console.warn('[ChatLayout] Messages too large for localStorage, clearing old threads');
-        // Keep only recent threads (last 10)
-        const threadIds = Object.keys(messagesByThreadId);
-        if (threadIds.length > 10) {
-          const recentThreads = threadIds.slice(-10);
-          const trimmed: Record<string, ChatMessage[]> = {};
-          recentThreads.forEach(tid => {
-            trimmed[tid] = messagesByThreadId[tid];
-          });
-          setMessagesByThreadId(trimmed);
-          return; // Will retry on next effect
+    // Debounce: wait 500ms before saving
+    const timer = setTimeout(() => {
+      try {
+        const serialized = JSON.stringify(messagesByThreadId);
+        
+        // Check size (localStorage limit is typically 5-10MB)
+        if (serialized.length > 5 * 1024 * 1024) {
+          console.warn('[ChatLayout] Messages too large for localStorage, clearing old threads');
+          // Keep only recent threads (last 10)
+          const threadIds = Object.keys(messagesByThreadId);
+          if (threadIds.length > 10) {
+            const recentThreads = threadIds.slice(-10);
+            const trimmed: Record<string, ChatMessage[]> = {};
+            recentThreads.forEach(tid => {
+              trimmed[tid] = messagesByThreadId[tid];
+            });
+            setMessagesByThreadId(trimmed);
+            return; // Will retry on next effect
+          }
+        }
+        
+        // Try to save to localStorage
+        try {
+          localStorage.setItem('tomoniwao_messages', serialized);
+          // Reset fail count on success
+          if (saveFailCount > 0) {
+            setSaveFailCount(0);
+          }
+        } catch (storageError) {
+          console.error('[ChatLayout] localStorage.setItem failed:', storageError);
+          
+          // Increment fail count
+          const newFailCount = saveFailCount + 1;
+          setSaveFailCount(newFailCount);
+          
+          // Disable persistence after MAX_FAIL_COUNT failures
+          if (newFailCount >= MAX_FAIL_COUNT) {
+            console.error(`[ChatLayout] localStorage failed ${MAX_FAIL_COUNT} times, disabling persistence`);
+            setPersistEnabled(false);
+          }
+        }
+      } catch (error) {
+        console.error('[ChatLayout] Failed to serialize messages:', error);
+        // If serialization fails, clear the problematic data
+        if (error instanceof TypeError) {
+          console.warn('[ChatLayout] Clearing messagesByThreadId due to serialization error');
+          setMessagesByThreadId({});
         }
       }
-      
-      // Try to save to localStorage
-      try {
-        localStorage.setItem('tomoniwao_messages', serialized);
-      } catch (storageError) {
-        console.error('[ChatLayout] localStorage.setItem failed:', storageError);
-        // If storage fails completely, just continue without persistence
-      }
-    } catch (error) {
-      console.error('[ChatLayout] Failed to serialize messages:', error);
-      // If serialization fails, clear the problematic data
-      if (error instanceof TypeError) {
-        console.warn('[ChatLayout] Clearing messagesByThreadId due to serialization error');
-        setMessagesByThreadId({});
-      }
-    }
-  }, [messagesByThreadId]);
+    }, 500); // 500ms debounce
+
+    // Cleanup timer on unmount or before next effect
+    return () => clearTimeout(timer);
+  }, [messagesByThreadId, saveFailCount, persistEnabled]);
 
   useEffect(() => {
     if (threadId) {
