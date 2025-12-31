@@ -52,9 +52,22 @@ export function ChatLayout() {
     // Load from localStorage on mount
     try {
       const saved = localStorage.getItem('tomoniwao_messages');
-      return saved ? JSON.parse(saved) : {};
+      if (!saved) return {};
+      
+      const parsed = JSON.parse(saved);
+      
+      // Validate parsed data
+      if (typeof parsed !== 'object' || parsed === null) {
+        console.warn('[ChatLayout] Invalid messages format in localStorage, clearing');
+        localStorage.removeItem('tomoniwao_messages');
+        return {};
+      }
+      
+      return parsed;
     } catch (error) {
       console.error('[ChatLayout] Failed to load messages from localStorage:', error);
+      // Clear corrupted data
+      localStorage.removeItem('tomoniwao_messages');
       return {};
     }
   });
@@ -100,9 +113,32 @@ export function ChatLayout() {
   // Phase P0-3: Persist messages to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('tomoniwao_messages', JSON.stringify(messagesByThreadId));
+      const serialized = JSON.stringify(messagesByThreadId);
+      
+      // Check size (localStorage limit is typically 5-10MB)
+      if (serialized.length > 5 * 1024 * 1024) {
+        console.warn('[ChatLayout] Messages too large for localStorage, clearing old threads');
+        // Keep only recent threads (last 10)
+        const threadIds = Object.keys(messagesByThreadId);
+        if (threadIds.length > 10) {
+          const recentThreads = threadIds.slice(-10);
+          const trimmed: Record<string, ChatMessage[]> = {};
+          recentThreads.forEach(tid => {
+            trimmed[tid] = messagesByThreadId[tid];
+          });
+          setMessagesByThreadId(trimmed);
+          return; // Will retry on next effect
+        }
+      }
+      
+      localStorage.setItem('tomoniwao_messages', serialized);
     } catch (error) {
       console.error('[ChatLayout] Failed to save messages to localStorage:', error);
+      // If quota exceeded, clear and retry
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('[ChatLayout] Quota exceeded, clearing localStorage');
+        localStorage.removeItem('tomoniwao_messages');
+      }
     }
   }, [messagesByThreadId]);
 
