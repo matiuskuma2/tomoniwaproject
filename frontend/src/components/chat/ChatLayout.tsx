@@ -47,8 +47,17 @@ export function ChatLayout() {
   const [loading, setLoading] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('threads');
   
-  // NEW: Per-thread message history
-  const [messagesByThreadId, setMessagesByThreadId] = useState<Record<string, ChatMessage[]>>({});
+  // NEW: Per-thread message history (Phase P0-3: localStorage persistence)
+  const [messagesByThreadId, setMessagesByThreadId] = useState<Record<string, ChatMessage[]>>(() => {
+    // Load from localStorage on mount
+    try {
+      const saved = localStorage.getItem('tomoniwao_messages');
+      return saved ? JSON.parse(saved) : {};
+    } catch (error) {
+      console.error('[ChatLayout] Failed to load messages from localStorage:', error);
+      return {};
+    }
+  });
   
   // NEW (Day4): Calendar data state
   const [calendarData, setCalendarData] = useState<CalendarData>({});
@@ -84,6 +93,18 @@ export function ChatLayout() {
     threadId: string;
   }
   const [pendingSplitByThreadId, setPendingSplitByThreadId] = useState<Record<string, PendingSplit | null>>({});
+
+  // Phase P0-3: Track seeded threads to prevent double-seeding
+  const [seededThreads, setSeededThreads] = useState<Set<string>>(new Set());
+
+  // Phase P0-3: Persist messages to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('tomoniwao_messages', JSON.stringify(messagesByThreadId));
+    } catch (error) {
+      console.error('[ChatLayout] Failed to save messages to localStorage:', error);
+    }
+  }, [messagesByThreadId]);
 
   useEffect(() => {
     if (threadId) {
@@ -126,9 +147,18 @@ export function ChatLayout() {
 
   // NEW: Seed template messages if thread is empty (once per thread)
   const seedIfEmpty = (tid: string, seed: ChatMessage[]) => {
+    // Phase P0-3: Prevent double-seeding
+    if (seededThreads.has(tid)) {
+      return; // Already seeded, skip
+    }
+
     setMessagesByThreadId((prev) => {
       // If thread already has messages, don't overwrite
       if (prev[tid] && prev[tid].length > 0) return prev;
+      
+      // Mark as seeded
+      setSeededThreads(prevSeeded => new Set(prevSeeded).add(tid));
+      
       return { ...prev, [tid]: seed };
     });
   };
