@@ -54,13 +54,21 @@ export const threadsApi = {
   },
 
   /**
-   * Send reminder to pending invites
+   * Send reminder to pending invites (Phase Next-6 Day1.5: A案)
+   * A案: メール送信しない、送信用セットを返す
    */
   async sendReminder(threadId: string): Promise<{
     success: boolean;
     reminded_count: number;
+    reminded_invites: Array<{
+      email: string;
+      name?: string;
+      invite_url: string;
+      template_message: string;
+    }>;
+    message?: string;
   }> {
-    return api.post(`/api/threads/${threadId}/remind`);
+    return api.post(`/api/threads/${threadId}/remind`, {});
   },
 
   /**

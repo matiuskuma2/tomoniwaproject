@@ -408,21 +408,29 @@ async function executeRemindPendingConfirm(
   }
   
   try {
-    // Phase Next-6 Day1.5: POST /api/threads/:id/remind
-    // TODO: Implement backend endpoint
-    // For now, return success message
+    // Phase Next-6 Day1.5: POST /api/threads/:id/remind (A案: 送信用セット返す)
+    const { threadId } = pending;
     
-    const { threadId, pendingInvites, count } = pending;
+    const response = await threadsApi.sendReminder(threadId);
     
-    let message = `✅ リマインドを送信しました（${count}名）\n\n`;
-    pendingInvites.forEach((invite) => {
-      message += `- ${invite.email}`;
-      if (invite.name) {
-        message += ` (${invite.name})`;
-      }
-      message += '\n';
+    if (!response.success || response.reminded_count === 0) {
+      return {
+        success: true,
+        message: '✅ 未返信者がいません。\n\nリマインドは不要です。',
+      };
+    }
+    
+    // A案: 送信用セットを表示（コピー用）
+    let message = `✅ リマインド用の文面を生成しました（${response.reminded_count}名）\n\n`;
+    message += '📋 以下をコピーして各自にメールで送信してください:\n\n';
+    message += '────────────────────────────\n\n';
+    
+    response.reminded_invites.forEach((invite, index) => {
+      message += `【${index + 1}. ${invite.email}${invite.name ? ` (${invite.name})` : ''}】\n\n`;
+      message += `件名: 日程調整のリマインド\n\n`;
+      message += invite.template_message;
+      message += '\n\n────────────────────────────\n\n';
     });
-    message += '\n📧 招待URLを再送信しました。';
     
     return {
       success: true,
@@ -431,8 +439,8 @@ async function executeRemindPendingConfirm(
         kind: 'remind.pending.sent',
         payload: {
           threadId,
-          pendingInvites,
-          count,
+          remindedInvites: response.reminded_invites,
+          count: response.reminded_count,
         },
       },
     };

@@ -655,4 +655,133 @@ app.post('/i/:token/accept', async (c) => {
   }
 });
 
+/**
+ * POST /threads/:id/remind
+ * Phase Next-6 Day1.5: Send reminder to pending invites
+ * 
+ * A案（事故ゼロ）: メール送信しない、送信用セットを返す
+ * 
+ * @route POST /threads/:id/remind
+ * @body invitee_keys?: string[] (optional, if empty: remind all pending)
+ * @returns {
+ *   success: true,
+ *   reminded_count: number,
+ *   reminded_invites: Array<{
+ *     email: string,
+ *     name?: string,
+ *     invite_url: string,
+ *     template_message: string
+ *   }>
+ * }
+ */
+app.post('/:id/remind', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+  const threadId = c.req.param('id');
+
+  try {
+    // ====== (1) Authorization ======
+    const thread = await env.DB.prepare(`
+      SELECT 
+        id,
+        organizer_user_id,
+        title,
+        description,
+        status
+      FROM scheduling_threads
+      WHERE id = ?
+    `).bind(threadId).first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    if (thread.organizer_user_id !== userId) {
+      return c.json({ 
+        error: 'Access denied',
+        message: 'Only organizer can send reminders'
+      }, 403);
+    }
+
+    // ====== (2) Get pending invites ======
+    const body = await c.req.json<{ invitee_keys?: string[] }>();
+    const targetKeys = body.invitee_keys;
+
+    let query = `
+      SELECT 
+        ti.id,
+        ti.invitee_key,
+        ti.email,
+        ti.status,
+        ti.token,
+        c.display_name as candidate_name
+      FROM thread_invites ti
+      LEFT JOIN contacts c ON c.invitee_key = ti.invitee_key
+      WHERE ti.thread_id = ?
+        AND (ti.status = 'pending' OR ti.status IS NULL)
+    `;
+    
+    const params: any[] = [threadId];
+    
+    if (targetKeys && targetKeys.length > 0) {
+      const placeholders = targetKeys.map(() => '?').join(',');
+      query += ` AND ti.invitee_key IN (${placeholders})`;
+      params.push(...targetKeys);
+    }
+
+    const { results: pendingInvites } = await env.DB.prepare(query).bind(...params).all();
+
+    if (!pendingInvites || pendingInvites.length === 0) {
+      return c.json({
+        success: true,
+        reminded_count: 0,
+        reminded_invites: [],
+        message: '未返信者がいません。'
+      });
+    }
+
+    // ====== (3) Build reminder data (A案: メール送信しない) ======
+    const remindedInvites = pendingInvites.map((invite: any) => {
+      const baseUrl = 'https://app.tomoniwao.jp'; // Phase Next-6 Day1.5: 固定URL
+      const inviteUrl = `${baseUrl}/i/${invite.token}`;
+      const templateMessage = `
+こんにちは${invite.candidate_name ? ` ${invite.candidate_name}さん` : ''}、
+
+「${thread.title}」の日程調整にご協力ください。
+まだ回答をいただいていないようです。
+
+以下のリンクから希望日時を選択してください：
+${inviteUrl}
+
+よろしくお願いいたします。
+      `.trim();
+
+      return {
+        email: invite.email,
+        name: invite.candidate_name || undefined,
+        invite_url: inviteUrl,
+        template_message: templateMessage
+      };
+    });
+
+    // ====== (4) Return reminder set (A案: 人が送る) ======
+    return c.json({
+      success: true,
+      reminded_count: remindedInvites.length,
+      reminded_invites: remindedInvites,
+      message: `${remindedInvites.length}名の未返信者に送信する準備ができました。\n\n以下の内容をコピーしてメールで送信してください。`
+    });
+
+  } catch (error) {
+    console.error('[Threads] Error sending reminder:', error);
+    return c.json(
+      {
+        error: 'Failed to send reminder',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
 export default app;
