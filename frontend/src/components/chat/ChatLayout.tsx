@@ -58,6 +58,17 @@ export function ChatLayout() {
   
   // NEW (Phase Next-5 Day3): Additional propose execution count (max 2 per thread)
   const [additionalProposeCountByThreadId, setAdditionalProposeCountByThreadId] = useState<Record<string, number>>({});
+  
+  // NEW (Phase Next-6 Day1): Pending remind state
+  interface PendingRemind {
+    threadId: string;
+    pendingInvites: Array<{ email: string; name?: string }>;
+    count: number;
+  }
+  const [pendingRemindByThreadId, setPendingRemindByThreadId] = useState<Record<string, PendingRemind | null>>({});
+  
+  // NEW (Phase Next-6 Day1): Remind execution count (max 2 per thread)
+  const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (threadId) {
@@ -138,6 +149,35 @@ export function ChatLayout() {
       }
     } else if (kind === 'auto_propose.cancelled' || kind === 'auto_propose.created') {
       setPendingAutoPropose(null);
+    }
+    
+    // Phase Next-6 Day1: Handle remind state updates
+    else if (kind === 'remind.pending.generated') {
+      // Set pending remind for this thread
+      if (payload.threadId) {
+        setPendingRemindByThreadId(prev => ({
+          ...prev,
+          [payload.threadId]: {
+            threadId: payload.threadId,
+            pendingInvites: payload.pendingInvites,
+            count: payload.count,
+          },
+        }));
+        
+        // Increment remind count
+        setRemindCountByThreadId(prev => ({
+          ...prev,
+          [payload.threadId]: (prev[payload.threadId] || 0) + 1,
+        }));
+      }
+    } else if (kind === 'remind.pending.cancelled' || kind === 'remind.pending.sent') {
+      // Clear pending remind for current thread
+      if (threadId) {
+        setPendingRemindByThreadId(prev => ({
+          ...prev,
+          [threadId]: null,
+        }));
+      }
     }
   };
 
@@ -228,6 +268,8 @@ export function ChatLayout() {
               onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
+              pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
+              remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
             />
           </div>
 
@@ -256,6 +298,8 @@ export function ChatLayout() {
               onExecutionResult={handleExecutionResult}
               pendingAutoPropose={pendingAutoPropose}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
+              pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
+              remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
             />
           )}
           {mobileTab === 'cards' && (

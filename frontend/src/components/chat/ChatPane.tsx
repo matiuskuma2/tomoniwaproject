@@ -46,6 +46,16 @@ interface ChatPaneProps {
   
   // NEW (Phase Next-5 Day3): additional propose execution count (max 2)
   additionalProposeCount?: number;
+  
+  // NEW (Phase Next-6 Day1): pending remind
+  pendingRemind?: {
+    threadId: string;
+    pendingInvites: Array<{ email: string; name?: string }>;
+    count: number;
+  } | null;
+  
+  // NEW (Phase Next-6 Day1): remind execution count (max 2)
+  remindCount?: number;
 }
 
 export function ChatPane({ 
@@ -58,7 +68,9 @@ export function ChatPane({
   onThreadUpdate,
   onExecutionResult,
   pendingAutoPropose,
-  additionalProposeCount = 0
+  additionalProposeCount = 0,
+  pendingRemind = null,
+  remindCount = 0
 }: ChatPaneProps) {
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -106,16 +118,21 @@ export function ChatPane({
 
     try {
       // Classify intent
+      // Phase Next-6 Day1: Pass pendingRemind for confirm/cancel
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId,
+        pendingRemind,
       });
 
       // Execute intent
       // Phase Next-5 Day2: Pass pendingAutoPropose for confirm/cancel
       // Phase Next-5 Day3: Pass additionalProposeCount for execution limit
+      // Phase Next-6 Day1: Pass pendingRemind and remindCount
       const result = await executeIntent(intentResult, {
         pendingAutoPropose,
         additionalProposeCount,
+        pendingRemind,
+        remindCount,
       });
 
       // Add assistant response

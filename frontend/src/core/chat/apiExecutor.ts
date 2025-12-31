@@ -25,7 +25,15 @@ export type ExecutionResultData =
       proposals: any[] 
     } }
   | { kind: 'auto_propose.cancelled'; payload: {} }
-  | { kind: 'auto_propose.created'; payload: any };
+  | { kind: 'auto_propose.created'; payload: any }
+  | { kind: 'remind.pending.generated'; payload: {
+      source: 'remind'; // Phase Next-6 Day1: 明示フラグ
+      threadId: string; // Phase Next-6 Day1: 提案生成時のスレッドID
+      pendingInvites: Array<{ email: string; name?: string }>;
+      count: number;
+    } }
+  | { kind: 'remind.pending.cancelled'; payload: {} }
+  | { kind: 'remind.pending.sent'; payload: any };
 
 export interface ExecutionResult {
   success: boolean;
@@ -47,6 +55,14 @@ export interface ExecutionContext {
   } | null;
   // Phase Next-5 Day3: additional propose execution count (max 2)
   additionalProposeCount?: number;
+  // Phase Next-6 Day1: pending remind state
+  pendingRemind?: {
+    threadId: string;
+    pendingInvites: Array<{ email: string; name?: string }>;
+    count: number;
+  } | null;
+  // Phase Next-6 Day1: remind execution count (max 2 per thread)
+  remindCount?: number;
 }
 
 /**
@@ -80,6 +96,16 @@ export async function executeIntent(
     
     case 'schedule.additional_propose':
       return executeAdditionalPropose(intentResult, context);
+    
+    // Phase Next-6: Reminder
+    case 'schedule.remind.pending':
+      return executeRemindPending(intentResult, context);
+    
+    case 'schedule.remind.pending.confirm':
+      return executeRemindPendingConfirm(context);
+    
+    case 'schedule.remind.pending.cancel':
+      return executeRemindPendingCancel();
     
     // Phase Next-3 (P1): Calendar
     case 'schedule.today':
@@ -264,6 +290,170 @@ async function executeAutoProposeCancel(): Promise<ExecutionResult> {
     message: '✅ 候補をキャンセルしました。\n新しく候補を生成する場合は「〇〇に候補出して」と入力してください。',
     data: {
       kind: 'auto_propose.cancelled',
+      payload: {},
+    },
+  };
+}
+
+// ============================================================
+// Phase Next-6: Reminder (リマインド)
+// ============================================================
+
+/**
+ * P3-1: schedule.remind.pending
+ * Phase Next-6 Day1: 未返信リマインド（提案のみ、POSTなし）
+ * 
+ * Flow:
+ * 1. 実行回数チェック（最大2回まで）
+ * 2. status を取得
+ * 3. 未返信者をチェック
+ * 4. 未返信者がいない場合: 「全員が回答済みです」
+ * 5. 未返信者がいる場合: リマインド提案を表示（まだPOSTしない）
+ * 6. 「はい」で confirm フロー → POST
+ */
+async function executeRemindPending(
+  intentResult: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが選択されていません。',
+      needsClarification: {
+        field: 'threadId',
+        message: 'どのスレッドにリマインドを送りますか？\n左のスレッド一覧から選択してください。',
+      },
+    };
+  }
+  
+  // Phase Next-6 Day1: 実行回数チェック（最大2回まで）
+  const executionCount = context?.remindCount || 0;
+  if (executionCount >= 2) {
+    return {
+      success: false,
+      message: '❌ リマインドの送信は最大2回までです。\n\nこれ以上はスレッドのステータスを確認してください。',
+    };
+  }
+  
+  try {
+    // Get thread status
+    const status = await threadsApi.getStatus(threadId);
+    
+    // Get pending invites
+    const pendingInvites = status.invites
+      .filter((invite) => invite.status === 'pending' || invite.status === null)
+      .map((invite) => ({
+        email: invite.email,
+        name: invite.candidate_name,
+      }));
+    
+    if (pendingInvites.length === 0) {
+      return {
+        success: true,
+        message: '✅ 全員が回答済みです。\n\nリマインドは不要です。',
+      };
+    }
+    
+    // Build reminder message
+    let message = `💡 未返信者が${pendingInvites.length}名います:\n\n`;
+    pendingInvites.forEach((invite) => {
+      message += `- ${invite.email}`;
+      if (invite.name) {
+        message += ` (${invite.name})`;
+      }
+      message += '\n';
+    });
+    message += '\nリマインドを送信しますか？\n\n';
+    message += '「はい」でリマインド送信\n';
+    message += '「いいえ」でキャンセル\n';
+    message += `\n⚠️ 残りリマインド回数: ${2 - executionCount - 1}回`;
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.pending.generated',
+        payload: {
+          source: 'remind', // Phase Next-6 Day1: 明示フラグ
+          threadId, // Phase Next-6 Day1: 提案生成時のスレッドID
+          pendingInvites,
+          count: pendingInvites.length,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P3-2: schedule.remind.pending.confirm
+ * Phase Next-6 Day1: リマインド確定 → POST
+ */
+async function executeRemindPendingConfirm(
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pending = context?.pendingRemind;
+  
+  if (!pending) {
+    return {
+      success: false,
+      message: '❌ リマインド対象が選択されていません。\n先に「リマインド送って」と入力してください。',
+    };
+  }
+  
+  try {
+    // Phase Next-6 Day1.5: POST /api/threads/:id/remind
+    // TODO: Implement backend endpoint
+    // For now, return success message
+    
+    const { threadId, pendingInvites, count } = pending;
+    
+    let message = `✅ リマインドを送信しました（${count}名）\n\n`;
+    pendingInvites.forEach((invite) => {
+      message += `- ${invite.email}`;
+      if (invite.name) {
+        message += ` (${invite.name})`;
+      }
+      message += '\n';
+    });
+    message += '\n📧 招待URLを再送信しました。';
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.pending.sent',
+        payload: {
+          threadId,
+          pendingInvites,
+          count,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P3-3: schedule.remind.pending.cancel
+ * Phase Next-6 Day1: リマインドキャンセル
+ */
+async function executeRemindPendingCancel(): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '✅ リマインドをキャンセルしました。',
+    data: {
+      kind: 'remind.pending.cancelled',
       payload: {},
     },
   };

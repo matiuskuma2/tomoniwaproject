@@ -14,6 +14,9 @@ export type IntentType =
   | 'schedule.auto_propose.confirm' // Phase Next-5 Day2 - 提案確定
   | 'schedule.auto_propose.cancel'  // Phase Next-5 Day2 - 提案キャンセル
   | 'schedule.additional_propose'   // Phase Next-5 Day3 - 追加候補提案
+  | 'schedule.remind.pending'       // Phase Next-6 Day1 - 未返信リマインド提案
+  | 'schedule.remind.pending.confirm' // Phase Next-6 Day1 - リマインド確定
+  | 'schedule.remind.pending.cancel'  // Phase Next-6 Day1 - リマインドキャンセル
   | 'unknown';
 
 export interface IntentResult {
@@ -27,13 +30,25 @@ export interface IntentResult {
 }
 
 /**
- * Classify user input into one of the P0 intents
- * Phase Next-2: Rule-based only (no LLM)
+ * Intent context for classification
+ * Phase Next-6 Day1: Added pendingRemind
  */
-export function classifyIntent(input: string, context?: {
+export interface IntentContext {
   selectedThreadId?: string;
   selectedSlotId?: string;
-}): IntentResult {
+  pendingRemind?: {
+    threadId: string;
+    pendingInvites: Array<{ email: string; name?: string }>;
+    count: number;
+  } | null;
+}
+
+/**
+ * Classify user input into one of the P0 intents
+ * Phase Next-2: Rule-based only (no LLM)
+ * Phase Next-6 Day1: Added pendingRemind support
+ */
+export function classifyIntent(input: string, context?: IntentContext): IntentResult {
   const normalizedInput = input.toLowerCase().trim();
 
   // ============================================================
@@ -90,9 +105,20 @@ export function classifyIntent(input: string, context?: {
   // Phase Next-5 (P2): Auto-propose (自動調整)
   // ============================================================
 
-  // P2-2: schedule.auto_propose.confirm
+  // P2-2 & P3-2: Confirm (提案確定)
+  // Phase Next-6: Support both auto_propose and remind flows
   // Keywords: はい、yes、作成して、OK
   if (/(はい|yes|作成|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
+    // Check context to determine which flow
+    if (context?.pendingRemind) {
+      return {
+        intent: 'schedule.remind.pending.confirm',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
+    // Default to auto_propose flow
     return {
       intent: 'schedule.auto_propose.confirm',
       confidence: 0.9,
@@ -100,9 +126,20 @@ export function classifyIntent(input: string, context?: {
     };
   }
 
-  // P2-3: schedule.auto_propose.cancel
+  // P2-3 & P3-3: Cancel (提案キャンセル)
+  // Phase Next-6: Support both auto_propose and remind flows
   // Keywords: いいえ、no、キャンセル、やめる
   if (/(いいえ|no|キャンセル|やめ)/i.test(normalizedInput) && normalizedInput.length < 10) {
+    // Check context to determine which flow
+    if (context?.pendingRemind) {
+      return {
+        intent: 'schedule.remind.pending.cancel',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
+    // Default to auto_propose flow
     return {
       intent: 'schedule.auto_propose.cancel',
       confidence: 0.9,
@@ -128,6 +165,35 @@ export function classifyIntent(input: string, context?: {
     
     return {
       intent: 'schedule.additional_propose',
+      confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+      },
+    };
+  }
+  
+  // ============================================================
+  // Phase Next-6: Reminder (リマインド)
+  // ============================================================
+  
+  // P3-1: schedule.remind.pending (Phase Next-6 Day1)
+  // Keywords: リマインド、催促、未返信
+  if (/(リマインド|催促|未返信.*連絡|未返信.*送)/.test(normalizedInput)) {
+    // Require threadId context
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.remind.pending',
+        confidence: 0.9,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message: 'どのスレッドにリマインドを送りますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+    
+    return {
+      intent: 'schedule.remind.pending',
       confidence: 0.9,
       params: {
         threadId: context.selectedThreadId,
