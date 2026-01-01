@@ -136,6 +136,10 @@
 - ✅ `CHAT_DATA_CONTRACT.md` - チャットデータ契約（v1.0）
 - ✅ `LOGGING_AND_RETENTION.md` - ログ分離とRetention（v1.0）
 
+### 課金連携（Phase Next-11）
+- ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.0）
+- ✅ `MYASP_ADMIN_SETUP.md` - MyASP管理画面 設定手順書（v1.0）
+
 ### 技術仕様
 - `DATABASE_SCHEMA.md` - DBスキーマ
 - `API_SPECIFICATION.md` - API仕様
@@ -279,6 +283,8 @@ cd apps/api && npm run deploy
 | **誘われた側** | `INVITEE_UX_SPEC.md` | 破綻しないUX |
 | **管理者** | `SUPERADMIN_SPEC.md` | 運営の土台 |
 | **制限** | `BILLING_AND_LIMITS.md` | プラン別entitlements |
+| **課金連携** | `MYASP_INTEGRATION_SPEC.md` | MyASP連携実装 |
+| **MyASP設定** | `MYASP_ADMIN_SETUP.md` | MyASP管理画面設定 |
 
 ---
 
