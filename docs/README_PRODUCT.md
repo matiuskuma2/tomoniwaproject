@@ -155,6 +155,7 @@
 - ✅ `MYASP_IMPLEMENTATION_CHECKLIST.md` - 実装チェックリスト（Jira/Backlog用）（v1.0）
 - ✅ `SPRINT_WEEK1_MYASP_INTEGRATION.md` - 今週のスプリント（5営業日・Jira起票用）（v1.0）
 - ✅ `JIRA_WEEK1_TICKETS.md` - Jira起票用チケット（Epic/Story/DoD/curlテスト）（v1.0）
+- ✅ `OPERATIONAL_INCIDENT_PREVENTION.md` - 運用事故防止チェックリスト（毎日見る・Runbook）（v1.0）
 
 ### 技術仕様
 - `DATABASE_SCHEMA.md` - DBスキーマ
