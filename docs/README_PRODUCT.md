@@ -4,6 +4,14 @@
 
 ---
 
+## ⚡ 今週の作業入口
+
+📌 **今週やること**: [docs/SPRINT_WEEK1_MYASP_INTEGRATION.md](./SPRINT_WEEK1_MYASP_INTEGRATION.md)  
+**期間**: 5営業日（Day1〜Day5）  
+**目的**: MyASP課金同期＋実行Gate（confirmだけ止める）の土台を作る
+
+---
+
 ## 📋 このドキュメントの目的
 
 - **開発チームが迷わず開発を進めるための"唯一の入口"**
@@ -145,6 +153,7 @@
 - ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.1）
 - ✅ `MYASP_ADMIN_SETUP.md` - MyASP管理画面 設定手順書（v1.0）
 - ✅ `MYASP_IMPLEMENTATION_CHECKLIST.md` - 実装チェックリスト（Jira/Backlog用）（v1.0）
+- ✅ `SPRINT_WEEK1_MYASP_INTEGRATION.md` - 今週のスプリント（5営業日・Jira起票用）（v1.0）
 
 ### 技術仕様
 - `DATABASE_SCHEMA.md` - DBスキーマ
