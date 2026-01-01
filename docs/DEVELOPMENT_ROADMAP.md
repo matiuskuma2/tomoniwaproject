@@ -660,6 +660,94 @@ POST /api/threads/:id/confirm
 
 ---
 
+## 6.5. P0非機能要件（DOM事故・埋め込み・CI）
+
+### 目的
+**DOM構造事故・外部サービス埋め込み事故・ビルド事故を「起こせなくする」** ための仕組み化。
+
+後から直すのではなく、**最初から事故を防ぐガードレール**を入れる。
+
+---
+
+### Epic 6.5-1: UI DOM Rules（固定ルール）
+
+**優先度**: P0（最優先）  
+**工数**: 0.5日（ドキュメント確認 + ルール適用）
+
+#### タスク
+- [ ] `UI_DOM_RULES.md` を全員で確認
+- [ ] 固定ルール6項目の適用
+  1. タブの責務は「表示切替のみ」
+  2. レイアウトの境界を固定（3カラムDOM）
+  3. `dangerouslySetInnerHTML` は原則禁止
+  4. 外部スクリプトは iframe で隔離
+  5. カードの表示条件を固定
+  6. Fragment多用の禁止（最大3階層）
+
+#### DoD
+- [ ] UI_DOM_RULES.md を全員が読了
+- [ ] レビュー観点をPRテンプレートに追加
+- [ ] 既存コードで違反箇所がないか確認
+
+---
+
+### Epic 6.5-2: Embed Integration Policy（外部サービス埋め込み隔離）
+
+**優先度**: P0（最優先）  
+**工数**: 1-2日（MyASP埋め込み実装時）
+
+#### タスク
+- [ ] `EMBED_INTEGRATION_POLICY.md` を確認
+- [ ] MyASP埋め込み方式を決定
+  - **推奨**: iframe方式（DOM事故ゼロ）
+  - **次点**: JSタグ注入（専用コンポーネントで隔離）
+- [ ] `/billing/subscribe` 実装（iframe or JSタグ）
+- [ ] `/billing/return` 実装（受け皿のみ）
+- [ ] サンクスURL設定（MyASP側のみ）
+
+#### DoD
+- [ ] 決済完了後に `/billing/return` にリダイレクト
+- [ ] `/billing/return` で plan/status が反映される（30秒以内）
+- [ ] CSS衝突がない（アプリのスタイルが崩れない）
+- [ ] スマホ表示確認（iPhone / Android）
+
+---
+
+### Epic 6.5-3: CI（lint/build自動チェック）
+
+**優先度**: P0（最優先）  
+**工数**: 0.5日（GitHub Actions設定）
+
+#### タスク
+- [ ] GitHub Actions設定（`.github/workflows/ci.yml`）
+- [ ] 必須チェック3項目
+  1. TypeScript型チェック（`tsc -b`）
+  2. ESLint（`eslint src/`）
+  3. Vite Build（`vite build`）
+- [ ] PR作成時に自動実行
+- [ ] main merge時に自動実行
+
+#### DoD
+- [ ] PR作成時にCIが自動実行される
+- [ ] 型エラー・lint警告・ビルドエラーで CI失敗
+- [ ] CI失敗時はmerge不可
+
+---
+
+### 重要：本体未完成でも負債にならない設計
+
+**今回のスコープ（P0非機能要件）**:
+- ✅ DOM事故を「起こせなくする」ルール化
+- ✅ 外部サービス埋め込みの隔離方針
+- ✅ CI自動チェック（lint/build）
+
+**将来の拡張（Phase Next-12以降）**:
+- Bundle Size チェック
+- 未使用コンポーネント検出
+- E2Eテスト自動化
+
+---
+
 ## 7. リスクと対策
 
 ### リスク1: OAuth審査が長引く

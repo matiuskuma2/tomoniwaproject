@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            apps/api/package-lock.json
+      
+      # Frontend checks
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+      
+      - name: TypeScript check (frontend)
+        working-directory: ./frontend
+        run: npx tsc -b
+      
+      - name: ESLint (frontend)
+        working-directory: ./frontend
+        run: npm run lint
+        continue-on-error: false
+      
+      - name: Build (frontend)
+        working-directory: ./frontend
+        run: npm run build
+      
+      # Backend checks
+      - name: Install backend dependencies
+        working-directory: ./apps/api
+        run: npm ci
+      
+      - name: TypeScript check (backend)
+        working-directory: ./apps/api
+        run: npx tsc -b
+      
+      - name: ESLint (backend)
+        working-directory: ./apps/api
+        run: npm run lint
+        continue-on-error: false
+      
+      - name: Build (backend)
+        working-directory: ./apps/api
+        run: npm run build
+      
+      # Bundle size check (optional)
+      - name: Check frontend bundle size
+        working-directory: ./frontend
+        run: |
+          echo "Frontend bundle size:"
+          du -sh dist/
+          # Fail if bundle is too large (over 5MB)
+          SIZE=$(du -sb dist/ | cut -f1)
+          if [ $SIZE -gt 5242880 ]; then
+            echo "❌ Bundle size too large: $SIZE bytes (limit: 5MB)"
+            exit 1
+          fi
+          echo "✅ Bundle size OK: $SIZE bytes"

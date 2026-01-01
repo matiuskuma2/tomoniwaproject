@@ -132,9 +132,13 @@
 - ✅ `SUPERADMIN_SPEC.md` - 運営者向け管理仕様
 
 ### 開発計画（現在地）
-- ✅ `DEVELOPMENT_ROADMAP.md` - 審査待ち期間の開発計画（v1.0）
+- ✅ `DEVELOPMENT_ROADMAP.md` - 審査待ち期間の開発計画（v1.1）
 - ✅ `CHAT_DATA_CONTRACT.md` - チャットデータ契約（v1.0）
 - ✅ `LOGGING_AND_RETENTION.md` - ログ分離とRetention（v1.0）
+
+### P0非機能要件（DOM事故防止）
+- ✅ `UI_DOM_RULES.md` - DOM構造事故を防ぐ固定ルール（v1.0）
+- ✅ `EMBED_INTEGRATION_POLICY.md` - 外部サービス埋め込みの隔離方針（v1.0）
 
 ### 課金連携（Phase Next-11）
 - ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.1）
@@ -287,6 +291,8 @@ cd apps/api && npm run deploy
 | **課金連携** | `MYASP_INTEGRATION_SPEC.md` | MyASP連携実装 |
 | **MyASP設定** | `MYASP_ADMIN_SETUP.md` | MyASP管理画面設定 |
 | **実装TODO** | `MYASP_IMPLEMENTATION_CHECKLIST.md` | Jira/Backlog用チェックリスト |
+| **DOM事故防止** | `UI_DOM_RULES.md` | DOM構造の固定ルール |
+| **埋め込み隔離** | `EMBED_INTEGRATION_POLICY.md` | 外部サービス埋め込み方針 |
 
 ---
 
