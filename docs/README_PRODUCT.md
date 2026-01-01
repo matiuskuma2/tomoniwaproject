@@ -139,6 +139,7 @@
 ### P0非機能要件（DOM事故防止）
 - ✅ `UI_DOM_RULES.md` - DOM構造事故を防ぐ固定ルール（v1.0）
 - ✅ `EMBED_INTEGRATION_POLICY.md` - 外部サービス埋め込みの隔離方針（v1.0）
+- ✅ `P0_NON_FUNCTIONAL_REQUIREMENTS_IMPLEMENTATION_GUIDE.md` - 実装ガイド（PR手順・レビュー観点）（v1.0）
 
 ### 課金連携（Phase Next-11）
 - ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.1）
