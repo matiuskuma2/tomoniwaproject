@@ -137,8 +137,9 @@
 - ✅ `LOGGING_AND_RETENTION.md` - ログ分離とRetention（v1.0）
 
 ### 課金連携（Phase Next-11）
-- ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.0）
+- ✅ `MYASP_INTEGRATION_SPEC.md` - MyASP課金連携 実装仕様書（v1.1）
 - ✅ `MYASP_ADMIN_SETUP.md` - MyASP管理画面 設定手順書（v1.0）
+- ✅ `MYASP_IMPLEMENTATION_CHECKLIST.md` - 実装チェックリスト（Jira/Backlog用）（v1.0）
 
 ### 技術仕様
 - `DATABASE_SCHEMA.md` - DBスキーマ
@@ -285,6 +286,7 @@ cd apps/api && npm run deploy
 | **制限** | `BILLING_AND_LIMITS.md` | プラン別entitlements |
 | **課金連携** | `MYASP_INTEGRATION_SPEC.md` | MyASP連携実装 |
 | **MyASP設定** | `MYASP_ADMIN_SETUP.md` | MyASP管理画面設定 |
+| **実装TODO** | `MYASP_IMPLEMENTATION_CHECKLIST.md` | Jira/Backlog用チェックリスト |
 
 ---
 
