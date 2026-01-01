@@ -29,6 +29,7 @@ import contactsRoutes from './routes/contacts';
 import listsRoutes from './routes/lists';
 import businessCardsRoutes from './routes/businessCards';
 import calendarRoutes from './routes/calendar';
+import billingRoutes from './routes/billing';
 
 // Middleware
 import { requireAuth, requireAdmin } from './middleware/auth';
@@ -175,6 +176,13 @@ app.route('/api/business-cards', businessCardsRoutes);
 app.use('/api/calendar', requireAuth);
 app.use('/api/calendar/*', requireAuth);
 app.route('/api/calendar', calendarRoutes);
+
+// Billing API (MyASP課金連携 - Phase Next-11)
+// 認証境界:
+//   - /api/billing/myasp/* → 認証不要（token認証のみ、MyASP側からのPOST用）
+//   - /api/billing/* → requireAuth（ユーザー用API、将来実装予定）
+// 注意: 将来 /api/billing/me などを追加する際は、billing/index.ts内で認証を設定すること
+app.route('/api/billing', billingRoutes);
 
 // TODO: Add more routes
 // app.route('/admin/abuse', adminAbuseRoutes);

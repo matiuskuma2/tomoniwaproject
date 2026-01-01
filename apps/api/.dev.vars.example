@@ -1,0 +1,6 @@
+# Development environment variables for local testing
+# Copy this file to .dev.vars and fill in your values
+# NEVER commit .dev.vars to git
+
+# MyASP Sync Token（課金連携用）
+MYASP_SYNC_TOKEN=your_token_here_694eRfw9eb4d
