@@ -11,6 +11,7 @@ import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
 import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
 import { MEETING_PROVIDER } from '../../../../packages/shared/src/types/meeting';
 import { GoogleCalendarService } from '../services/googleCalendar';
+import { checkBillingGate } from '../utils/billingGate';
 
 type Variables = {
   userId?: string;
@@ -37,6 +38,21 @@ app.post('/:id/finalize', async (c) => {
     const userId = c.get('userId');
     if (!userId) {
       return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    // ====== (0-1) Billing Gate (Day4) ======
+    // confirm実行点のみ止める（status=2,4 → 実行禁止）
+    const gate = await checkBillingGate(c);
+    if (!gate.ok) {
+      return c.json(
+        {
+          error: gate.code,
+          status: gate.status,
+          message: gate.message,
+          request_id: gate.requestId,
+        },
+        gate.httpStatus
+      );
     }
     
     const threadId = c.req.param('id');
