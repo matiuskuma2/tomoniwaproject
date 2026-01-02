@@ -13,7 +13,7 @@ export interface AuthContext {
   isDevMode?: boolean;
 }
 
-type Variables = {
+export type Variables = {
   userId?: string;
   userRole?: string;
 };

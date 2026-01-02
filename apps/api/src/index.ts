@@ -32,12 +32,12 @@ import calendarRoutes from './routes/calendar';
 import billingRoutes from './routes/billing';
 
 // Middleware
-import { requireAuth, requireAdmin } from './middleware/auth';
+import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ============================================================
 // Global Middleware
@@ -193,8 +193,8 @@ app.use('/api/billing/*', async (c, next) => {
     return await next();
   }
 
-  // ✅ それ以外は必ず認証（型キャスト: requireAuthのContext型に合わせる）
-  return await requireAuth(c as any, next);
+  // ✅ それ以外は必ず認証
+  return await requireAuth(c, next);
 });
 
 // ルート登録
