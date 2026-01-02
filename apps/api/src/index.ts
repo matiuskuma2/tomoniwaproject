@@ -178,10 +178,26 @@ app.use('/api/calendar/*', requireAuth);
 app.route('/api/calendar', calendarRoutes);
 
 // Billing API (MyASP課金連携 - Phase Next-11)
-// 認証境界:
-//   - /api/billing/myasp/* → 認証不要（token認証のみ、MyASP側からのPOST用）
-//   - /api/billing/* → requireAuth（ユーザー用API、将来実装予定）
-// 注意: 将来 /api/billing/me などを追加する際は、billing/index.ts内で認証を設定すること
+// 認証境界を「コードで固定」する（運用事故防止 - Day3-0）
+//
+// ルール:
+// - /api/billing/myasp/* → token認証のみ（requireAuthを絶対にかけない）
+// - /api/billing/*       → requireAuth必須（将来も漏れない）
+//
+// この条件分岐ミドルウェアにより、構造的に認証漏れを防ぐ
+app.use('/api/billing/*', async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+
+  // ✅ 明示的除外: /api/billing/myasp/* はrequireAuthをスキップ
+  if (path.startsWith('/api/billing/myasp/')) {
+    return await next();
+  }
+
+  // ✅ それ以外は必ず認証（型キャスト: requireAuthのContext型に合わせる）
+  return await requireAuth(c as any, next);
+});
+
+// ルート登録
 app.route('/api/billing', billingRoutes);
 
 // TODO: Add more routes
