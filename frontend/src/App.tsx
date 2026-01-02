@@ -8,6 +8,7 @@ import { ThreadDetailPage } from './pages/ThreadDetailPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
+import BillingPage from './pages/BillingPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -81,6 +82,16 @@ function App() {
           element={
             <ProtectedRoute>
               <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Day3-2: Billing Settings */}
+        <Route
+          path="/settings/billing"
+          element={
+            <ProtectedRoute>
+              <BillingPage />
             </ProtectedRoute>
           }
         />
