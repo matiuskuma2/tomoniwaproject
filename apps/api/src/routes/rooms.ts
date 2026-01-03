@@ -101,8 +101,9 @@ app.get('/', async (c) => {
         rm.role,
         COUNT(DISTINCT rm2.user_id) as member_count
       FROM rooms r
-      JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = ?
+      JOIN room_members rm ON rm.room_id = r.id
       LEFT JOIN room_members rm2 ON rm2.room_id = r.id
+      WHERE rm.user_id = ?
       ${cursorCondition}
       GROUP BY r.id
       ORDER BY r.created_at DESC, r.id DESC

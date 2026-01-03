@@ -29,7 +29,11 @@ export function decodeCursor(cursor: string): Cursor | null {
   }
 }
 
-export function clampLimit(raw: string | undefined, max: number = 50): number {
+/**
+ * Clamp limit for pagination (accepts string, number, or undefined)
+ * P0-2: Type safety improvement to prevent TypeScript errors
+ */
+export function clampLimit(raw: unknown, max: number = 50): number {
   const n = Number(raw ?? 20);
   if (!Number.isFinite(n) || n <= 0) return 20;
   return Math.min(max, Math.floor(n));
