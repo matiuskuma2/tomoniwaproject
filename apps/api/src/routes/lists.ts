@@ -12,6 +12,7 @@
  */
 
 import { Hono } from 'hono';
+import { getTenant } from '../utils/workspaceContext';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { ListsRepository } from '../repositories/listsRepository';
 import { ContactsRepository } from '../repositories/contactsRepository';
@@ -24,7 +25,7 @@ type Variables = {
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // Default workspace_id (暫定：workspaces実装後に正規化)
-const DEFAULT_WORKSPACE = 'ws-default';
+const workspaceId = 'ws-default';
 
 /**
  * POST /api/lists
@@ -35,6 +36,9 @@ app.post('/', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
@@ -51,7 +55,7 @@ app.post('/', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     const list = await repo.create({
-      workspace_id: DEFAULT_WORKSPACE,
+      workspace_id: workspaceId,
       owner_user_id: userId,
       name: body.name,
       description: body.description,
@@ -87,7 +91,7 @@ app.get('/', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     const result = await repo.getAll(
-      DEFAULT_WORKSPACE,
+      workspaceId,
       userId,
       query.limit ? parseInt(query.limit, 10) : 50,
       query.offset ? parseInt(query.offset, 10) : 0
@@ -97,7 +101,7 @@ app.get('/', async (c) => {
     const listsWithCounts = await Promise.all(
       result.lists.map(async (list) => ({
         ...list,
-        member_count: await repo.getMemberCount(list.id, DEFAULT_WORKSPACE),
+        member_count: await repo.getMemberCount(list.id, workspaceId),
       }))
     );
 
@@ -135,13 +139,13 @@ app.get('/:id', async (c) => {
     const listId = c.req.param('id');
     const repo = new ListsRepository(env.DB);
 
-    const list = await repo.getById(listId, DEFAULT_WORKSPACE, userId);
+    const list = await repo.getById(listId, workspaceId, userId);
 
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
 
-    const member_count = await repo.getMemberCount(list.id, DEFAULT_WORKSPACE);
+    const member_count = await repo.getMemberCount(list.id, workspaceId);
 
     return c.json({
       list: {
@@ -182,7 +186,7 @@ app.patch('/:id', async (c) => {
 
     const repo = new ListsRepository(env.DB);
 
-    const list = await repo.update(listId, DEFAULT_WORKSPACE, userId, body);
+    const list = await repo.update(listId, workspaceId, userId, body);
 
     return c.json({ list });
   } catch (error) {
@@ -213,7 +217,7 @@ app.delete('/:id', async (c) => {
     const listId = c.req.param('id');
     const repo = new ListsRepository(env.DB);
 
-    await repo.delete(listId, DEFAULT_WORKSPACE, userId);
+    await repo.delete(listId, workspaceId, userId);
 
     return c.json({ success: true });
   } catch (error) {
@@ -237,6 +241,9 @@ app.post('/:id/members', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
@@ -253,19 +260,19 @@ app.post('/:id/members', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, DEFAULT_WORKSPACE, userId);
+    const list = await repo.getById(listId, workspaceId, userId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
 
     // Verify contact ownership
     const contactsRepo = new ContactsRepository(env.DB);
-    const contact = await contactsRepo.getById(body.contact_id, DEFAULT_WORKSPACE, userId);
+    const contact = await contactsRepo.getById(body.contact_id, workspaceId, userId);
     if (!contact) {
       return c.json({ error: 'Contact not found' }, 404);
     }
 
-    const member = await repo.addMember(listId, body.contact_id, DEFAULT_WORKSPACE);
+    const member = await repo.addMember(listId, body.contact_id, workspaceId);
 
     return c.json({ member }, 201);
   } catch (error) {
@@ -302,12 +309,12 @@ app.delete('/:id/members/:contactId', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, DEFAULT_WORKSPACE, userId);
+    const list = await repo.getById(listId, workspaceId, userId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
 
-    await repo.removeMember(listId, contactId, DEFAULT_WORKSPACE);
+    await repo.removeMember(listId, contactId, workspaceId);
 
     return c.json({ success: true });
   } catch (error) {
@@ -341,14 +348,14 @@ app.get('/:id/members', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, DEFAULT_WORKSPACE, userId);
+    const list = await repo.getById(listId, workspaceId, userId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
 
     const result = await repo.getMembers(
       listId,
-      DEFAULT_WORKSPACE,
+      workspaceId,
       query.limit ? parseInt(query.limit, 10) : 100,
       query.offset ? parseInt(query.offset, 10) : 0
     );

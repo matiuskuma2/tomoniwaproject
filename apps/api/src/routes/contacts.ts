@@ -11,6 +11,8 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import type { Variables } from '../middleware/auth';
+import { getTenant, ensureOwnedOr404 } from '../utils/workspaceContext';
 import {
   ContactsRepository,
   type ContactKind,
@@ -19,15 +21,7 @@ import {
   type UpdateContactInput,
 } from '../repositories/contactsRepository';
 
-type Variables = {
-  userId?: string;
-  userRole?: string;
-};
-
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
-
-// Default workspace_id (暫定：workspaces実装後に正規化)
-const DEFAULT_WORKSPACE = 'ws-default';
 
 /**
  * POST /api/contacts
@@ -40,6 +34,7 @@ app.post('/', async (c) => {
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
+
 
   try {
     const body = await c.req.json<{
@@ -68,24 +63,24 @@ app.post('/', async (c) => {
 
     const repo = new ContactsRepository(env.DB);
 
-    // Check duplicate
+    // Check duplicate (with tenant isolation)
     if (body.kind === 'internal_user' && body.user_id) {
-      const existing = await repo.getByUserId(body.user_id, DEFAULT_WORKSPACE, userId);
+      const existing = await repo.getByUserId(body.user_id, workspaceId, ownerUserId);
       if (existing) {
         return c.json({ error: 'Contact already exists for this user' }, 409);
       }
     }
 
     if ((body.kind === 'external_person' || body.kind === 'list_member') && body.email) {
-      const existing = await repo.getByEmail(body.email, DEFAULT_WORKSPACE, userId);
+      const existing = await repo.getByEmail(body.email, workspaceId, ownerUserId);
       if (existing) {
         return c.json({ error: 'Contact already exists for this email' }, 409);
       }
     }
 
     const input: CreateContactInput = {
-      workspace_id: DEFAULT_WORKSPACE,
-      owner_user_id: userId,
+      workspace_id: workspaceId,  // P0-1: Use tenant context
+      owner_user_id: ownerUserId,  // P0-1: Use tenant context
       kind: body.kind,
       user_id: body.user_id,
       email: body.email,
@@ -132,12 +127,13 @@ app.get('/', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
   try {
     const query = c.req.query();
     const repo = new ContactsRepository(env.DB);
 
     const result = await repo.search({
-      workspace_id: DEFAULT_WORKSPACE,
+      workspace_id: workspaceId,
       owner_user_id: userId,
       q: query.q,
       kind: query.kind as ContactKind | undefined,
@@ -182,14 +178,18 @@ app.get('/:id', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
+
     return c.json({ error: 'Unauthorized' }, 401);
   }
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
 
   try {
     const contactId = c.req.param('id');
     const repo = new ContactsRepository(env.DB);
 
-    const contact = await repo.getById(contactId, DEFAULT_WORKSPACE, userId);
+    const contact = await repo.getById(contactId, workspaceId, userId);
 
     if (!contact) {
       return c.json({ error: 'Contact not found' }, 404);
@@ -223,6 +223,7 @@ app.patch('/:id', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
+
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
@@ -232,7 +233,7 @@ app.patch('/:id', async (c) => {
 
     const repo = new ContactsRepository(env.DB);
 
-    const contact = await repo.update(contactId, DEFAULT_WORKSPACE, userId, body);
+    const contact = await repo.update(contactId, workspaceId, userId, body);
 
     return c.json({
       contact: {
@@ -262,6 +263,7 @@ app.delete('/:id', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
+
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
@@ -269,7 +271,7 @@ app.delete('/:id', async (c) => {
     const contactId = c.req.param('id');
     const repo = new ContactsRepository(env.DB);
 
-    await repo.delete(contactId, DEFAULT_WORKSPACE, userId);
+    await repo.delete(contactId, workspaceId, userId);
 
     return c.json({ success: true });
   } catch (error) {

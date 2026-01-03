@@ -37,6 +37,18 @@ jobs:
           done
           echo "✅ Migration順序OK"
 
+      - name: Check for migration file deletion or rename (CRITICAL)
+        run: |
+          # Detect D (delete) or R (rename) in git diff
+          if git diff --name-status origin/main...HEAD | grep -E '^[DR]\s+db/migrations/' > /dev/null; then
+            echo "❌ Migration file deletion or rename detected (FORBIDDEN)"
+            echo "過去のmigrationファイルは絶対に削除・リネームしない"
+            echo "失敗したmigrationは新しい番号のfix migrationで修正してください"
+            git diff --name-status origin/main...HEAD | grep -E '^[DR]\s+db/migrations/'
+            exit 1
+          fi
+          echo "✅ No migration deletion/rename detected"
+
       - name: Apply migrations (local)
         run: npm run db:migrate:local
         continue-on-error: false

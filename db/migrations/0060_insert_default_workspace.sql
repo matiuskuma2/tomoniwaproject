@@ -1,0 +1,24 @@
+-- Phase 1: Default workspace (DEPRECATED - DO NOT USE)
+--
+-- IMPORTANT: This migration is deprecated and should NOT be applied.
+-- 
+-- Reason: ws-default is a logical value, not a physical DB record.
+-- - Inserting into DB causes FK errors (owner_user_id is undefined)
+-- - Seed order dependency breaks tenant isolation
+-- - Phase 2 migration will be harder
+--
+-- Phase 1 Design:
+-- - workspaceId = 'ws-default' is set by middleware (logical value)
+-- - No DB record needed
+-- - All queries use WHERE workspace_id = 'ws-default'
+--
+-- Phase 2 Design:
+-- - Fetch workspaceId from workspaces table
+-- - Middleware queries DB: SELECT workspace_id FROM workspace_members WHERE user_id = ?
+-- - Multi-tenant support
+--
+-- This file exists to preserve migration history.
+-- Do NOT delete or rename (breaks migration sequence).
+
+-- NOOP: Do nothing
+SELECT 1;

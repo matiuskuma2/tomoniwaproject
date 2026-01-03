@@ -12,6 +12,7 @@
  */
 
 import { Hono } from 'hono';
+import { getTenant } from '../utils/workspaceContext';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
