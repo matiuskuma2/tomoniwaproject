@@ -203,10 +203,12 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
             targetId: listId,
             action: 'create',
             payload: { 
+              batch_operation: 'add_members',
               list_id: listId, 
               inserted_count: chunkInserted.length,
               skipped_count: chunkSkipped.length,
               chunk_index: Math.floor(i / CHUNK_SIZE),
+              total_chunks: Math.ceil(uniqueContactIds.length / CHUNK_SIZE),
             },
             requestId,
           });

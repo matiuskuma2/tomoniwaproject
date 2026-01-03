@@ -360,12 +360,17 @@ app.post(
 
         console.log('[Threads] Batch invite result:', batchResult);
 
-        // Fetch created invites for email queue
-        const inviteList = await env.DB.prepare(
-          `SELECT * FROM thread_invites WHERE thread_id = ? ORDER BY created_at DESC LIMIT ?`
-        ).bind(threadId, validMembers.length).all();
+        // P0-3: Fetch only inserted invites (accurate tracking)
+        if (batchResult.insertedIds.length > 0) {
+          const placeholders = batchResult.insertedIds.map(() => '?').join(',');
+          const inviteList = await env.DB.prepare(
+            `SELECT * FROM thread_invites WHERE id IN (${placeholders}) ORDER BY created_at DESC`
+          ).bind(...batchResult.insertedIds).all();
 
-        invites = inviteList.results as any[];
+          invites = inviteList.results as any[];
+        } else {
+          invites = [];
+        }
 
         // Convert to candidates format for response
         candidates = validMembers.map((m) => ({
