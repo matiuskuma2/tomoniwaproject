@@ -50,6 +50,7 @@ app.post('/:id/finalize', async (c) => {
       return c.json(
         {
           error: gate.code,
+          reason: gate.reason,
           status: gate.status,
           message: gate.message,
           request_id: gate.requestId,

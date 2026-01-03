@@ -7,11 +7,18 @@
  * Incident safety:
  * - Fail-closed (if DB/user lookup fails, block with 402)
  * - Never throw 500 to client (return controlled 402 w/ request_id)
+ * - Reason field for operational debugging
  */
 
 import type { Context } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
+import { normalizeEmail } from './email';
+
+export type BillingGateReason = 
+  | 'billing_blocked'      // status=2 or 4
+  | 'user_not_found'       // userId missing or user.email null
+  | 'db_error';            // DB query failed
 
 export type BillingGateResult =
   | { ok: true }
@@ -19,6 +26,7 @@ export type BillingGateResult =
       ok: false;
       httpStatus: 402;
       code: 'billing_blocked';
+      reason: BillingGateReason;
       status: 2 | 4 | null;
       message: string;
       requestId: string;
@@ -36,6 +44,7 @@ export async function checkBillingGate(
         ok: false,
         httpStatus: 402,
         code: 'billing_blocked',
+        reason: 'user_not_found',
         status: null,
         message: '認証情報が取得できないため、実行できません。',
         requestId,
@@ -53,13 +62,14 @@ export async function checkBillingGate(
         ok: false,
         httpStatus: 402,
         code: 'billing_blocked',
+        reason: 'user_not_found',
         status: null,
         message: 'ユーザー情報が取得できないため、実行できません。',
         requestId,
       };
     }
 
-    const normalizedEmail = user.email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(user.email);
 
     const account = await c.env.DB.prepare(
       `SELECT status
@@ -79,6 +89,7 @@ export async function checkBillingGate(
         ok: false,
         httpStatus: 402,
         code: 'billing_blocked',
+        reason: 'billing_blocked',
         status: 2,
         message: '課金状態が停止のため、実行できません（提案は可能です）。',
         requestId,
@@ -90,6 +101,7 @@ export async function checkBillingGate(
         ok: false,
         httpStatus: 402,
         code: 'billing_blocked',
+        reason: 'billing_blocked',
         status: 4,
         message: '課金状態が解約のため、実行できません（提案は可能です）。',
         requestId,
@@ -104,6 +116,7 @@ export async function checkBillingGate(
       ok: false,
       httpStatus: 402,
       code: 'billing_blocked',
+      reason: 'db_error',
       status: null,
       message: '課金状態を確認できないため、実行できません。',
       requestId,
