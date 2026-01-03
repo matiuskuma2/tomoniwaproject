@@ -58,12 +58,19 @@ jobs:
           npm run db:migrate:local
 
       # ============================================================
-      # P0-5: Tenant Isolation Smoke Test（最小E2E）
+      # P0-5: Tenant Isolation SQL Check（軽量版・CI で実行）
       # ============================================================
-      # Note: 本番ではサーバー起動が必要なため、ローカルで手動実行
-      # ここでは実行可能性のみ確認
-      - name: Tenant Isolation Smoke Test (Script Check)
+      - name: Tenant Isolation SQL Check
+        run: |
+          chmod +x scripts/p0/tenant-isolation-sql-check.sh
+          ./scripts/p0/tenant-isolation-sql-check.sh
+
+      # ============================================================
+      # P0-6: Tenant Isolation Smoke Test（E2E・手動実行）
+      # ============================================================
+      # Note: サーバー起動が必要なため、ローカルで手動実行
+      - name: Tenant Isolation E2E (Script Check)
         run: |
           chmod +x scripts/p0/tenant-smoke.sh
-          echo "✅ Tenant smoke test script is executable"
+          echo "✅ Tenant E2E test script is executable"
           echo "⚠️  Run manually: ./scripts/p0/tenant-smoke.sh"

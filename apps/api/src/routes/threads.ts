@@ -19,6 +19,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS, isValidThreadStatus } from '../../../../packages/shared/src/types/thread';
 import { getTenant } from '../utils/workspaceContext';
+import { encodeCursor, decodeCursor } from '../utils/cursor';
 
 type Variables = {
   userId?: string;
@@ -50,19 +51,17 @@ app.get('/', async (c) => {
     const limit = Math.min(Math.max(1, rawLimit), 100); // clamp: 1-100
     const cursorParam = c.req.query('cursor');
 
-    // P0-2: Decode cursor
+    // P0-2: Decode cursor (using cursor.ts for format safety)
     let cursorCreatedAt: string | null = null;
     let cursorId: string | null = null;
 
     if (cursorParam) {
-      try {
-        const decoded = decodeURIComponent(cursorParam);
-        const [ca, cid] = decoded.split('|');
-        cursorCreatedAt = ca;
-        cursorId = cid;
-      } catch (e) {
+      const decoded = decodeCursor(cursorParam);
+      if (!decoded) {
         return c.json({ error: 'Invalid cursor format' }, 400);
       }
+      cursorCreatedAt = decoded.timestamp;
+      cursorId = decoded.id;
     }
 
     const threadsRepo = new ThreadsRepository(env.DB);
@@ -119,11 +118,14 @@ app.get('/', async (c) => {
     const hasMore = results.length > limit;
     const items = hasMore ? results.slice(0, limit) : results;
 
-    // P0-2: Generate next cursor
+    // P0-2: Generate next cursor (using cursor.ts for format safety)
     let nextCursor: string | null = null;
     if (hasMore && items.length > 0) {
       const last = items[items.length - 1] as any;
-      nextCursor = encodeURIComponent(`${last.created_at}|${last.id}`);
+      nextCursor = encodeCursor({
+        timestamp: last.created_at,
+        id: last.id,
+      });
     }
 
     return c.json({
