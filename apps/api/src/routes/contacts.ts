@@ -35,6 +35,8 @@ app.post('/', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
 
   try {
     const body = await c.req.json<{
@@ -127,6 +129,8 @@ app.get('/', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
 
   try {
     const query = c.req.query();
@@ -134,7 +138,7 @@ app.get('/', async (c) => {
 
     const result = await repo.search({
       workspace_id: workspaceId,
-      owner_user_id: userId,
+      owner_user_id: ownerUserId,
       q: query.q,
       kind: query.kind as ContactKind | undefined,
       relationship_type: query.relationship_type as RelationshipType | undefined,
@@ -189,7 +193,7 @@ app.get('/:id', async (c) => {
     const contactId = c.req.param('id');
     const repo = new ContactsRepository(env.DB);
 
-    const contact = await repo.getById(contactId, workspaceId, userId);
+    const contact = await repo.getById(contactId, workspaceId, ownerUserId);
 
     if (!contact) {
       return c.json({ error: 'Contact not found' }, 404);
@@ -223,9 +227,11 @@ app.patch('/:id', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
-
     return c.json({ error: 'Unauthorized' }, 401);
   }
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
 
   try {
     const contactId = c.req.param('id');
@@ -233,7 +239,7 @@ app.patch('/:id', async (c) => {
 
     const repo = new ContactsRepository(env.DB);
 
-    const contact = await repo.update(contactId, workspaceId, userId, body);
+    const contact = await repo.update(contactId, workspaceId, ownerUserId, body);
 
     return c.json({
       contact: {
@@ -263,15 +269,17 @@ app.delete('/:id', async (c) => {
   const userId = c.get('userId');
 
   if (!userId) {
-
     return c.json({ error: 'Unauthorized' }, 401);
   }
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
 
   try {
     const contactId = c.req.param('id');
     const repo = new ContactsRepository(env.DB);
 
-    await repo.delete(contactId, workspaceId, userId);
+    await repo.delete(contactId, workspaceId, ownerUserId);
 
     return c.json({ success: true });
   } catch (error) {

@@ -86,13 +86,16 @@ app.get('/', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
+
   try {
     const query = c.req.query();
     const repo = new ListsRepository(env.DB);
 
     const result = await repo.getAll(
       workspaceId,
-      userId,
+      ownerUserId,
       query.limit ? parseInt(query.limit, 10) : 50,
       query.offset ? parseInt(query.offset, 10) : 0
     );
@@ -135,11 +138,14 @@ app.get('/:id', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const repo = new ListsRepository(env.DB);
 
-    const list = await repo.getById(listId, workspaceId, userId);
+    const list = await repo.getById(listId, workspaceId, ownerUserId);
 
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
@@ -177,6 +183,9 @@ app.patch('/:id', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const body = await c.req.json<{
@@ -186,7 +195,7 @@ app.patch('/:id', async (c) => {
 
     const repo = new ListsRepository(env.DB);
 
-    const list = await repo.update(listId, workspaceId, userId, body);
+    const list = await repo.update(listId, workspaceId, ownerUserId, body);
 
     return c.json({ list });
   } catch (error) {
@@ -213,11 +222,14 @@ app.delete('/:id', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const repo = new ListsRepository(env.DB);
 
-    await repo.delete(listId, workspaceId, userId);
+    await repo.delete(listId, workspaceId, ownerUserId);
 
     return c.json({ success: true });
   } catch (error) {
@@ -247,6 +259,9 @@ app.post('/:id/members', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const body = await c.req.json<{
@@ -260,14 +275,14 @@ app.post('/:id/members', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, workspaceId, userId);
+    const list = await repo.getById(listId, workspaceId, ownerUserId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
 
     // Verify contact ownership
     const contactsRepo = new ContactsRepository(env.DB);
-    const contact = await contactsRepo.getById(body.contact_id, workspaceId, userId);
+    const contact = await contactsRepo.getById(body.contact_id, workspaceId, ownerUserId);
     if (!contact) {
       return c.json({ error: 'Contact not found' }, 404);
     }
@@ -302,6 +317,9 @@ app.delete('/:id/members/:contactId', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const contactId = c.req.param('contactId');
@@ -309,7 +327,7 @@ app.delete('/:id/members/:contactId', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, workspaceId, userId);
+    const list = await repo.getById(listId, workspaceId, ownerUserId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
@@ -341,6 +359,9 @@ app.get('/:id/members', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
   try {
     const listId = c.req.param('id');
     const query = c.req.query();
@@ -348,7 +369,7 @@ app.get('/:id/members', async (c) => {
     const repo = new ListsRepository(env.DB);
 
     // Verify list ownership
-    const list = await repo.getById(listId, workspaceId, userId);
+    const list = await repo.getById(listId, workspaceId, ownerUserId);
     if (!list) {
       return c.json({ error: 'List not found' }, 404);
     }
