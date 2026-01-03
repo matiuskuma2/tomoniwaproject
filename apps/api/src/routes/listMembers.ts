@@ -150,42 +150,73 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       }, 400);
     }
 
-    // Bulk insert with INSERT OR IGNORE (重複防止)
+    // P0-1: Bulk insert with Transaction + Chunk (200件×N)
+    // - Deduplicate contact_ids first (無駄なクエリを減らす)
+    // - Split into 200-item chunks to avoid timeout
+    // - Use db.batch() for transaction per chunk
+    // - Track inserted/skipped/failed accurately via meta.changes
+    
+    const uniqueContactIds = Array.from(new Set(contactIds));
+    const CHUNK_SIZE = 200;
     const inserted: string[] = [];
     const skipped: string[] = [];
+    const failed: string[] = [];
     
-    for (const contactId of contactIds) {
-      const memberId = crypto.randomUUID();
+    for (let i = 0; i < uniqueContactIds.length; i += CHUNK_SIZE) {
+      const chunk = uniqueContactIds.slice(i, i + CHUNK_SIZE);
+      
       try {
-        const result = await c.env.DB.prepare(
-          `INSERT OR IGNORE INTO list_members (id, workspace_id, owner_user_id, list_id, contact_id, added_by)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-          .bind(memberId, workspaceId, ownerUserId, listId, contactId, userId)
-          .run();
-
-        // P0-4: INSERT OR IGNORE の結果を正確に判定
-        // D1の場合、changes が 0 なら既存レコード（スキップ）
-        if (result.meta.changes > 0) {
-          inserted.push(contactId);
-
-          // Audit log
+        // Prepare batch statements
+        const statements = chunk.map((contactId) => {
+          const memberId = crypto.randomUUID();
+          return c.env.DB.prepare(
+            `INSERT OR IGNORE INTO list_members (id, workspace_id, owner_user_id, list_id, contact_id, added_by)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          ).bind(memberId, workspaceId, ownerUserId, listId, contactId, userId);
+        });
+        
+        // Execute in transaction
+        const results = await c.env.DB.batch(statements);
+        
+        // Process results
+        const chunkInserted: string[] = [];
+        const chunkSkipped: string[] = [];
+        
+        results.forEach((result, idx) => {
+          const contactId = chunk[idx];
+          if (result.meta.changes > 0) {
+            inserted.push(contactId);
+            chunkInserted.push(contactId);
+          } else {
+            skipped.push(contactId);
+            chunkSkipped.push(contactId);
+          }
+        });
+        
+        // Audit log per chunk (肥大防止: chunk単位で1行)
+        if (chunkInserted.length > 0 || chunkSkipped.length > 0) {
           await writeLedgerAudit(c.env.DB, {
             workspaceId,
             ownerUserId,
             actorUserId: userId,
             targetType: 'list_member',
-            targetId: memberId,
+            targetId: listId,
             action: 'create',
-            payload: { list_id: listId, contact_id: contactId },
+            payload: { 
+              list_id: listId, 
+              inserted_count: chunkInserted.length,
+              skipped_count: chunkSkipped.length,
+              chunk_index: Math.floor(i / CHUNK_SIZE),
+            },
             requestId,
           });
-        } else {
-          skipped.push(contactId);
         }
+        
+        console.log(`[listMembers.batch] Chunk ${Math.floor(i / CHUNK_SIZE) + 1}: inserted=${chunkInserted.length}, skipped=${chunkSkipped.length}`);
       } catch (err) {
-        console.error('[listMembers.batch] insert failed', contactId, err);
-        skipped.push(contactId);
+        console.error('[listMembers.batch] Chunk failed:', i, err);
+        // Mark entire chunk as failed
+        chunk.forEach((contactId) => failed.push(contactId));
       }
     }
 
@@ -194,7 +225,8 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       success: true,
       inserted: inserted.length,
       skipped: skipped.length,
-      total: contactIds.length,
+      failed: failed.length,
+      total: uniqueContactIds.length,
     }, 201);
   } catch (e: any) {
     if (String(e?.message) === 'unauthorized') {
