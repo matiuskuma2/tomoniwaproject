@@ -234,14 +234,14 @@ app.post(
         return c.json({ error: 'Missing or invalid field: title' }, 400);
       }
 
-      // Step 1: Create thread in scheduling_threads
+      // Step 1: Create thread in scheduling_threads (P0-1: tenant isolation)
       const threadId = crypto.randomUUID();
       const now = new Date().toISOString();
       
       await env.DB.prepare(`
-        INSERT INTO scheduling_threads (id, organizer_user_id, title, description, status, mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'one_on_one', ?, ?)
-      `).bind(threadId, userId, title, description || null, THREAD_STATUS.DRAFT, now, now).run();
+        INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, description, status, mode, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'one_on_one', ?, ?)
+      `).bind(threadId, workspaceId, ownerUserId, title, description || null, THREAD_STATUS.DRAFT, now, now).run();
 
       console.log('[Threads] Created thread in scheduling_threads:', threadId);
 
