@@ -26,8 +26,9 @@ PRAGMA foreign_keys = ON;
 -- FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
 
 -- Add index for fast lookup by contact_id
-CREATE INDEX IF NOT EXISTS idx_thread_participants_contact_id
-  ON thread_participants(contact_id);
+-- P0: NOOP（contact_id列が未追加のため実行不可、後で対応）
+-- CREATE INDEX IF NOT EXISTS idx_thread_participants_contact_id
+--   ON thread_participants(contact_id);
 
 -- Add unique constraint for thread_id + contact_id (future)
 -- Note: SQLiteでは既存UNIQUEに追加不可のため、Week3で再作成予定

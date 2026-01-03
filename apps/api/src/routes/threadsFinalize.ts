@@ -12,10 +12,13 @@ import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/type
 import { MEETING_PROVIDER } from '../../../../packages/shared/src/types/meeting';
 import { GoogleCalendarService } from '../services/googleCalendar';
 import { checkBillingGate } from '../utils/billingGate';
+import { getTenant } from '../utils/workspaceContext';
 
 type Variables = {
   userId?: string;
   userRole?: string;
+  workspaceId?: string;
+  ownerUserId?: string;
 };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -57,6 +60,9 @@ app.post('/:id/finalize', async (c) => {
     
     const threadId = c.req.param('id');
     
+    // P0-1: Get tenant context
+    const { workspaceId, ownerUserId } = getTenant(c);
+    
     // Parse body
     const body = await c.req.json();
     if (!body.selected_slot_id) {
@@ -66,7 +72,7 @@ app.post('/:id/finalize', async (c) => {
       }, 400);
     }
     
-    // ====== (1) Load Thread ======
+    // ====== (1) Load Thread (P0-1: tenant isolation) ======
     const thread = await env.DB.prepare(`
       SELECT 
         id,
@@ -76,17 +82,13 @@ app.post('/:id/finalize', async (c) => {
         status
       FROM scheduling_threads
       WHERE id = ?
-    `).bind(threadId).first();
+        AND workspace_id = ?
+        AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first();
     
     if (!thread) {
+      // P0-1: 404 で存在を隠す
       return c.json({ error: 'Thread not found' }, 404);
-    }
-    
-    if (thread.organizer_user_id !== userId) {
-      return c.json({ 
-        error: 'Access denied',
-        message: 'Only organizer can finalize thread'
-      }, 403);
     }
     
     // ====== (2) Idempotent Check ======

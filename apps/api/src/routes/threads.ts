@@ -18,11 +18,16 @@ import { rateLimit } from '../middleware/rateLimit';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS, isValidThreadStatus } from '../../../../packages/shared/src/types/thread';
+import { getTenant } from '../utils/workspaceContext';
 
-const app = new Hono<{ Bindings: Env }>();
+type Variables = {
+  userId?: string;
+  userRole?: string;
+  workspaceId?: string;
+  ownerUserId?: string;
+};
 
-// Default workspace_id (暫定)
-const DEFAULT_WORKSPACE = 'ws-default';
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * Get user's threads
@@ -36,6 +41,9 @@ app.get('/', async (c) => {
   const { env } = c;
   const userId = await getUserIdFromContext(c as any);
 
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
+
   try {
     const status = c.req.query('status');
     const limit = parseInt(c.req.query('limit') || '50', 10);
@@ -43,7 +51,7 @@ app.get('/', async (c) => {
 
     const threadsRepo = new ThreadsRepository(env.DB);
     
-    // Get threads for user
+    // Get threads for user (P0-1: tenant isolation)
     let query = `
       SELECT 
         t.id,
@@ -58,10 +66,11 @@ app.get('/', async (c) => {
         COUNT(DISTINCT CASE WHEN ti.status = 'accepted' THEN ti.id END) as accepted_count
       FROM scheduling_threads t
       LEFT JOIN thread_invites ti ON ti.thread_id = t.id
-      WHERE t.organizer_user_id = ?
+      WHERE t.workspace_id = ?
+        AND t.organizer_user_id = ?
     `;
     
-    const params: any[] = [userId];
+    const params: any[] = [workspaceId, ownerUserId];
     
     // Validate status parameter
     if (status) {
@@ -125,18 +134,21 @@ app.get('/:id', async (c) => {
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
+
   try {
-    // Get thread from scheduling_threads
+    // Get thread from scheduling_threads (P0-1: tenant isolation)
     const thread = await env.DB.prepare(`
-      SELECT * FROM scheduling_threads WHERE id = ?
-    `).bind(threadId).first();
+      SELECT * FROM scheduling_threads 
+      WHERE id = ?
+        AND workspace_id = ?
+        AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first();
 
     if (!thread) {
+      // P0-1: 404 で存在を隠す
       return c.json({ error: 'Thread not found' }, 404);
-    }
-
-    if (thread.organizer_user_id !== userId) {
-      return c.json({ error: 'Access denied' }, 403);
     }
 
     // Get invites
@@ -192,6 +204,9 @@ app.post(
   async (c) => {
     const { env } = c;
     const userId = await getUserIdFromContext(c as any);
+
+    // P0-1: Get tenant context
+    const { workspaceId, ownerUserId } = getTenant(c);
 
     try {
       const body = await c.req.json();
@@ -282,14 +297,14 @@ app.post(
         const listsRepo = new ListsRepository(env.DB);
         const contactsRepo = new ContactsRepository(env.DB);
 
-        // Verify list ownership
-        const list = await listsRepo.getById(target_list_id, DEFAULT_WORKSPACE, userId);
+        // Verify list ownership (P0-1: tenant isolation)
+        const list = await listsRepo.getById(target_list_id, workspaceId, ownerUserId);
         if (!list) {
           return c.json({ error: 'List not found or access denied' }, 404);
         }
 
         // Get total count first (最重要ポイント 2: 上限1000件チェック)
-        const { members, total } = await listsRepo.getMembers(target_list_id, DEFAULT_WORKSPACE, 1001, 0);
+        const { members, total } = await listsRepo.getMembers(target_list_id, workspaceId, 1001, 0);
 
         if (total > 1000) {
           return c.json({ 
