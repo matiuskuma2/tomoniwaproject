@@ -28,6 +28,7 @@ import schedulingApiRoutes from './routes/schedulingApi';
 import contactsRoutes from './routes/contacts';
 import listsRoutes from './routes/lists';
 import listItemsRoutes from './routes/listItems';
+import listMembersRoutes from './routes/listMembers';
 import businessCardsRoutes from './routes/businessCards';
 import calendarRoutes from './routes/calendar';
 import billingRoutes from './routes/billing';
@@ -167,6 +168,11 @@ app.route('/api/contacts', contactsRoutes);
 app.use('/api/lists', requireAuth);
 app.use('/api/lists/*', requireAuth);
 app.route('/api/lists', listsRoutes);
+
+// List Members API (Phase Next-8 Day2: 参加者解決の正)
+app.use('/api/lists/:listId/members', requireAuth);
+app.use('/api/lists/:listId/members/*', requireAuth);
+app.route('/api', listMembersRoutes);
 
 // List Items API (Phase Next-8 Day2: タスク/TODO管理)
 app.use('/api/list-items', requireAuth);

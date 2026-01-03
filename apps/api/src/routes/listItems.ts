@@ -14,7 +14,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
-import { decodeCursor, encodeCursor, clampLimit, buildCursorCondition } from '../utils/cursor';
+import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
 import { writeListItemEvent } from '../utils/audit';
 
 type AppContext = { Bindings: Env; Variables: Variables };
@@ -72,9 +72,10 @@ app.get('/lists/:listId/items', async (c) => {
     const binds: any[] = [workspaceId, ownerUserId, listId];
 
     // Cursor condition for DESC order
-    const cursorCond = buildCursorCondition(cursor);
-    sql += cursorCond.sql;
-    binds.push(...cursorCond.binds);
+    if (cursor) {
+      sql += ` AND (created_at < ? OR (created_at = ? AND id < ?)) `;
+      binds.push(cursor.timestamp, cursor.timestamp, cursor.id);
+    }
 
     sql += ` ORDER BY created_at DESC, id DESC LIMIT ? `;
     binds.push(limit + 1); // fetch one extra to know has_more
@@ -87,7 +88,7 @@ app.get('/lists/:listId/items', async (c) => {
 
     const nextCursor = hasMore
       ? encodeCursor({ 
-          createdAt: page[page.length - 1].created_at, 
+          timestamp: page[page.length - 1].created_at, 
           id: page[page.length - 1].id 
         })
       : null;
