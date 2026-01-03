@@ -1,0 +1,69 @@
+name: P0 Guardrails (Migration / Tenant / Offset)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  p0-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全履歴取得（migration改変検知用）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ============================================================
+      # P0-1: Migration 不変性チェック（過去migration編集禁止）
+      # ============================================================
+      - name: Check Migration Immutability
+        run: |
+          chmod +x scripts/p0/check-migration-immutable.sh
+          ./scripts/p0/check-migration-immutable.sh
+
+      # ============================================================
+      # P0-2: OFFSET 禁止チェック（cursor only 強制）
+      # ============================================================
+      - name: Check No OFFSET in Routes
+        run: |
+          chmod +x scripts/p0/check-no-offset.sh
+          ./scripts/p0/check-no-offset.sh
+
+      # ============================================================
+      # P0-3: TypeScript Build チェック
+      # ============================================================
+      - name: TypeScript Build Check
+        run: npm run build
+
+      # ============================================================
+      # P0-4: Migration 適用チェック（migrate が通ること）
+      # ============================================================
+      - name: Migration Apply Check
+        run: |
+          # seed を除外して migrate のみ実行
+          rm -rf .wrangler/state/v3/d1
+          npm run db:migrate:local
+
+      # ============================================================
+      # P0-5: Tenant Isolation Smoke Test（最小E2E）
+      # ============================================================
+      # Note: 本番ではサーバー起動が必要なため、ローカルで手動実行
+      # ここでは実行可能性のみ確認
+      - name: Tenant Isolation Smoke Test (Script Check)
+        run: |
+          chmod +x scripts/p0/tenant-smoke.sh
+          echo "✅ Tenant smoke test script is executable"
+          echo "⚠️  Run manually: ./scripts/p0/tenant-smoke.sh"

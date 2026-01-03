@@ -30,12 +30,12 @@ type Variables = {
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * Get user's threads
+ * Get user's threads (P0-2: cursor pagination only)
  * 
  * @route GET /threads
  * @query status?: 'draft' | 'sent' | 'confirmed' | 'cancelled'
- * @query limit?: number (default: 50)
- * @query offset?: number (default: 0)
+ * @query limit?: number (default: 50, max: 100)
+ * @query cursor?: string (encoded: created_at|id)
  */
 app.get('/', async (c) => {
   const { env } = c;
@@ -46,12 +46,28 @@ app.get('/', async (c) => {
 
   try {
     const status = c.req.query('status');
-    const limit = parseInt(c.req.query('limit') || '50', 10);
-    const offset = parseInt(c.req.query('offset') || '0', 10);
+    const rawLimit = parseInt(c.req.query('limit') || '50', 10);
+    const limit = Math.min(Math.max(1, rawLimit), 100); // clamp: 1-100
+    const cursorParam = c.req.query('cursor');
+
+    // P0-2: Decode cursor
+    let cursorCreatedAt: string | null = null;
+    let cursorId: string | null = null;
+
+    if (cursorParam) {
+      try {
+        const decoded = decodeURIComponent(cursorParam);
+        const [ca, cid] = decoded.split('|');
+        cursorCreatedAt = ca;
+        cursorId = cid;
+      } catch (e) {
+        return c.json({ error: 'Invalid cursor format' }, 400);
+      }
+    }
 
     const threadsRepo = new ThreadsRepository(env.DB);
     
-    // Get threads for user (P0-1: tenant isolation)
+    // Get threads for user (P0-1: tenant isolation + P0-2: cursor pagination)
     let query = `
       SELECT 
         t.id,
@@ -83,39 +99,39 @@ app.get('/', async (c) => {
       query += ` AND t.status = ?`;
       params.push(status);
     }
+
+    // P0-2: Cursor pagination
+    if (cursorCreatedAt && cursorId) {
+      query += ` AND (t.created_at < ? OR (t.created_at = ? AND t.id < ?))`;
+      params.push(cursorCreatedAt, cursorCreatedAt, cursorId);
+    }
     
     query += ` 
       GROUP BY t.id
-      ORDER BY t.created_at DESC
-      LIMIT ? OFFSET ?
+      ORDER BY t.created_at DESC, t.id DESC
+      LIMIT ?
     `;
-    params.push(limit, offset);
+    params.push(limit + 1); // +1 for hasMore detection
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    // Get total count
-    let countQuery = `
-      SELECT COUNT(*) as total
-      FROM scheduling_threads
-      WHERE organizer_user_id = ?
-    `;
-    const countParams: any[] = [userId];
-    
-    if (status) {
-      countQuery += ` AND status = ?`;
-      countParams.push(status);
+    // P0-2: Detect hasMore
+    const hasMore = results.length > limit;
+    const items = hasMore ? results.slice(0, limit) : results;
+
+    // P0-2: Generate next cursor
+    let nextCursor: string | null = null;
+    if (hasMore && items.length > 0) {
+      const last = items[items.length - 1] as any;
+      nextCursor = encodeURIComponent(`${last.created_at}|${last.id}`);
     }
 
-    const countResult = await env.DB.prepare(countQuery).bind(...countParams).first<{ total: number }>();
-    const total = countResult?.total || 0;
-
     return c.json({
-      threads: results,
+      threads: items,
       pagination: {
-        total,
         limit,
-        offset,
-        has_more: offset + limit < total,
+        cursor: nextCursor,
+        has_more: hasMore,
       },
     });
   } catch (error) {
