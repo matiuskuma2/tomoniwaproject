@@ -1,0 +1,52 @@
+name: DB Migration Check
+
+on:
+  pull_request:
+    paths:
+      - "db/migrations/**"
+      - "package.json"
+      - "wrangler.jsonc"
+
+jobs:
+  migrate-local:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check migration file順序
+        run: |
+          cd db/migrations
+          prev=""
+          for f in $(ls -1 *.sql 2>/dev/null || true); do
+            if [[ -n "$prev" && "$prev" > "$f" ]]; then
+              echo "❌ Migration順序エラー: $prev > $f"
+              echo "Migration番号は増やすだけ、過去ファイルは触らない"
+              exit 1
+            fi
+            prev="$f"
+          done
+          echo "✅ Migration順序OK"
+
+      - name: Apply migrations (local)
+        run: npm run db:migrate:local
+        continue-on-error: false
+
+      - name: Check migration success
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ Migration適用成功"
+          else
+            echo "❌ Migration適用失敗"
+            echo "失敗したmigrationを修正するか、新しい番号のfix migrationを作成してください"
+            exit 1
+          fi

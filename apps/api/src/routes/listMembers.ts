@@ -10,7 +10,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
 import { writeLedgerAudit } from '../utils/ledgerAudit';
-import { getWorkspaceContext, validateResourceOwnership, validateResourceOwnershipBatch } from '../utils/workspaceContext';
+import { getTenant, ensureOwnedOr404, filterOwnedContactIds } from '../utils/workspaceContext';
 
 type AppContext = { Bindings: Env; Variables: Variables };
 
@@ -37,18 +37,13 @@ listMembersRoutes.get('/lists/:listId/members', async (c) => {
     const cursor = c.req.query('cursor');
     const cur = cursor ? decodeCursor(cursor) : null;
 
-    // P0-1: Get tenant context (set by requireAuth middleware)
-    const ctx = getWorkspaceContext(c);
-    const { workspaceId, ownerUserId } = ctx;
-
-    // P0-4: list_id の tenant整合性チェック（越境防止）
-    const listRow = await c.env.DB.prepare(
-      `SELECT id FROM lists WHERE id = ? AND workspace_id = ? AND owner_user_id = ?`
-    ).bind(listId, workspaceId, ownerUserId).first();
-    
-    if (!listRow) {
-      return c.json({ error: 'list_not_found_or_no_access', request_id: requestId }, 404);
+    // P0-1: Ensure list is owned by current tenant (404 if not)
+    const isOwned = await ensureOwnedOr404(c, { table: 'lists', id: listId });
+    if (!isOwned) {
+      return c.json({ error: 'not_found', request_id: requestId }, 404);
     }
+
+    const { workspaceId, ownerUserId } = getTenant(c);
 
     let sql = `
       SELECT lm.id, lm.list_id, lm.contact_id, lm.added_at, lm.added_by,
@@ -119,20 +114,17 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       return c.json({ error: 'too_many_contacts', max: 1000, request_id: requestId }, 400);
     }
 
-    // P0-1: Get tenant context (set by requireAuth middleware)
-    const ctx = getWorkspaceContext(c);
-    const { workspaceId, ownerUserId } = ctx;
-
-    // P0-2: Validate list_id ownership (tenant isolation)
-    const isListOwner = await validateResourceOwnership(c.env.DB, ctx, 'lists', listId);
-    if (!isListOwner) {
-      // Return 404 instead of 403 to prevent information leakage
-      return c.json({ error: 'list_not_found_or_no_access', request_id: requestId }, 404);
+    // P0-1: Ensure list is owned by current tenant (404 if not)
+    const isOwned = await ensureOwnedOr404(c, { table: 'lists', id: listId });
+    if (!isOwned) {
+      return c.json({ error: 'not_found', request_id: requestId }, 404);
     }
 
-    // P0-2: Validate contact_ids ownership (batch, O(1) DB roundtrip)
-    const validContactIds = await validateResourceOwnershipBatch(c.env.DB, ctx, 'contacts', contactIds);
-    const invalidContactIds = contactIds.filter(id => !validContactIds.includes(id));
+    const { workspaceId, ownerUserId } = getTenant(c);
+
+    // P0-2: Filter owned contact IDs (batch, chunk splitting, O(1) per chunk)
+    const validContactIdsSet = await filterOwnedContactIds(c, contactIds);
+    const invalidContactIds = contactIds.filter(id => !validContactIdsSet.has(id));
     
     if (invalidContactIds.length > 0) {
       // Log security incident: attempted cross-tenant access
@@ -143,13 +135,17 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
         targetType: 'list_member',
         targetId: listId,
         action: 'access_denied',
-        payload: { reason: 'invalid_contacts', invalid_ids: invalidContactIds },
+        payload: { 
+          reason: 'invalid_contacts', 
+          invalid_ids: invalidContactIds.slice(0, 50)  // Prevent log bloat
+        },
         requestId,
+        sourceIp: c.req.header('cf-connecting-ip'),
+        userAgent: c.req.header('user-agent'),
       });
 
       return c.json({
         error: 'invalid_contacts',
-        invalid_ids: invalidContactIds,
         request_id: requestId
       }, 400);
     }
@@ -221,9 +217,13 @@ listMembersRoutes.delete('/lists/:listId/members/:memberId', async (c) => {
     const listId = c.req.param('listId');
     const memberId = c.req.param('memberId');
 
-    // P0-1: Get tenant context
-    const ctx = getWorkspaceContext(c);
-    const { workspaceId, ownerUserId } = ctx;
+    // P0-1: Ensure list is owned
+    const isOwned = await ensureOwnedOr404(c, { table: 'lists', id: listId });
+    if (!isOwned) {
+      return c.json({ error: 'not_found', request_id: requestId }, 404);
+    }
+
+    const { workspaceId, ownerUserId } = getTenant(c);
 
     // Get member info before delete (for audit)
     const member = await c.env.DB.prepare(
