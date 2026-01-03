@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono';
 import { getUserIdFromContext } from '../middleware/auth';
+import { encodeCursor, decodeCursor, clampLimit } from '../utils/cursor';
 
 type Bindings = {
   DB: D1Database;
@@ -83,81 +84,144 @@ adminDashboard.get('/stats', async (c) => {
 
 // ============================================================
 // GET /admin/dashboard/users
-// User list with pagination
+// User list with cursor pagination (P0-2: OFFSET禁止)
 // ============================================================
 adminDashboard.get('/users', async (c) => {
   const { env } = c;
   
-  const limitParam = c.req.query('limit') || '50';
-  const offsetParam = c.req.query('offset') || '0';
-  const limit = Math.min(parseInt(limitParam, 10), 100);
-  const offset = parseInt(offsetParam, 10);
+  const limit = clampLimit(c.req.query('limit'), 100);
+  const cursorParam = c.req.query('cursor');
 
-  const users = await env.DB
-    .prepare(
-      `SELECT 
-        id, email, display_name, role, 
-        created_at, updated_at
-      FROM users
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?`
-    )
-    .bind(limit, offset)
-    .all();
+  // P0-2: Decode cursor
+  let cursorCreatedAt: string | null = null;
+  let cursorId: string | null = null;
 
-  const totalCount = await env.DB
-    .prepare('SELECT COUNT(*) as count FROM users')
-    .first<{ count: number }>();
+  if (cursorParam) {
+    const decoded = decodeCursor(cursorParam);
+    if (!decoded) {
+      return c.json({ error: 'Invalid cursor format' }, 400);
+    }
+    cursorCreatedAt = decoded.timestamp;
+    cursorId = decoded.id;
+  }
+
+  let query = `
+    SELECT 
+      id, email, display_name, role, 
+      created_at, updated_at
+    FROM users
+    WHERE 1=1
+  `;
+
+  const params: any[] = [];
+
+  // P0-2: Cursor condition
+  if (cursorCreatedAt && cursorId) {
+    query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`;
+    params.push(cursorCreatedAt, cursorCreatedAt, cursorId);
+  }
+
+  query += `
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `;
+  params.push(limit + 1);
+
+  const users = await env.DB.prepare(query).bind(...params).all();
+
+  // P0-2: Detect hasMore
+  const hasMore = users.results && users.results.length > limit;
+  const items = hasMore ? users.results!.slice(0, limit) : users.results || [];
+
+  // P0-2: Generate next cursor
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const last = items[items.length - 1] as any;
+    nextCursor = encodeCursor({
+      timestamp: last.created_at,
+      id: last.id,
+    });
+  }
 
   return c.json({
-    users: users.results || [],
+    users: items,
     pagination: {
-      total: totalCount?.count || 0,
       limit,
-      offset,
-      has_more: offset + (users.results?.length || 0) < (totalCount?.count || 0),
+      cursor: nextCursor,
+      has_more: hasMore,
     },
   });
 });
 
 // ============================================================
 // GET /admin/dashboard/rooms
-// Room list with member counts
+// Room list with member counts (P0-2: cursor pagination)
 // ============================================================
 adminDashboard.get('/rooms', async (c) => {
   const { env } = c;
   
-  const limitParam = c.req.query('limit') || '50';
-  const offsetParam = c.req.query('offset') || '0';
-  const limit = Math.min(parseInt(limitParam, 10), 100);
-  const offset = parseInt(offsetParam, 10);
+  const limit = clampLimit(c.req.query('limit'), 100);
+  const cursorParam = c.req.query('cursor');
 
-  const rooms = await env.DB
-    .prepare(
-      `SELECT 
-        r.id, r.name, r.description, r.owner_user_id,
-        r.visibility, r.created_at,
-        COUNT(rm.user_id) as member_count
-      FROM rooms r
-      LEFT JOIN room_members rm ON r.id = rm.room_id
-      GROUP BY r.id
-      ORDER BY r.created_at DESC
-      LIMIT ? OFFSET ?`
-    )
-    .bind(limit, offset)
-    .all();
+  // P0-2: Decode cursor
+  let cursorCreatedAt: string | null = null;
+  let cursorId: string | null = null;
 
-  const totalCount = await env.DB
-    .prepare('SELECT COUNT(*) as count FROM rooms')
-    .first<{ count: number }>();
+  if (cursorParam) {
+    const decoded = decodeCursor(cursorParam);
+    if (!decoded) {
+      return c.json({ error: 'Invalid cursor format' }, 400);
+    }
+    cursorCreatedAt = decoded.timestamp;
+    cursorId = decoded.id;
+  }
+
+  let query = `
+    SELECT 
+      r.id, r.name, r.description, r.owner_user_id,
+      r.visibility, r.created_at,
+      COUNT(rm.user_id) as member_count
+    FROM rooms r
+    LEFT JOIN room_members rm ON r.id = rm.room_id
+  `;
+
+  const params: any[] = [];
+
+  // P0-2: Cursor condition
+  if (cursorCreatedAt && cursorId) {
+    query += ` WHERE (r.created_at < ? OR (r.created_at = ? AND r.id < ?))`;
+    params.push(cursorCreatedAt, cursorCreatedAt, cursorId);
+  }
+
+  query += `
+    GROUP BY r.id
+    ORDER BY r.created_at DESC, r.id DESC
+    LIMIT ?
+  `;
+  params.push(limit + 1);
+
+  const rooms = await env.DB.prepare(query).bind(...params).all();
+
+  // P0-2: Detect hasMore
+  const hasMore = rooms.results && rooms.results.length > limit;
+  const items = hasMore ? rooms.results!.slice(0, limit) : rooms.results || [];
+
+  // P0-2: Generate next cursor
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const last = items[items.length - 1] as any;
+    nextCursor = encodeCursor({
+      timestamp: last.created_at,
+      id: last.id,
+    });
+  }
 
   return c.json({
-    rooms: rooms.results || [],
+    rooms: items,
     pagination: {
-      total: totalCount?.count || 0,
       limit,
-      offset,
-      has_more: offset + (rooms.results?.length || 0) < (totalCount?.count || 0),
+      cursor: nextCursor,
+      has_more: hasMore,
     },
   });
 });
@@ -217,16 +281,27 @@ adminDashboard.get('/ai-usage', async (c) => {
 
 // ============================================================
 // GET /admin/dashboard/threads
-// Thread list with status
+// Thread list with status (P0-2: cursor pagination)
 // ============================================================
 adminDashboard.get('/threads', async (c) => {
   const { env } = c;
   
-  const limitParam = c.req.query('limit') || '50';
-  const offsetParam = c.req.query('offset') || '0';
+  const limit = clampLimit(c.req.query('limit'), 100);
   const statusParam = c.req.query('status');
-  const limit = Math.min(parseInt(limitParam, 10), 100);
-  const offset = parseInt(offsetParam, 10);
+  const cursorParam = c.req.query('cursor');
+
+  // P0-2: Decode cursor
+  let cursorCreatedAt: string | null = null;
+  let cursorId: string | null = null;
+
+  if (cursorParam) {
+    const decoded = decodeCursor(cursorParam);
+    if (!decoded) {
+      return c.json({ error: 'Invalid cursor format' }, 400);
+    }
+    cursorCreatedAt = decoded.timestamp;
+    cursorId = decoded.id;
+  }
 
   let query = `
     SELECT 
@@ -237,40 +312,51 @@ adminDashboard.get('/threads', async (c) => {
     FROM scheduling_threads t
     LEFT JOIN users u ON t.organizer_user_id = u.id
     LEFT JOIN thread_invites ti ON t.id = ti.thread_id
+    WHERE 1=1
   `;
 
   const bindings: any[] = [];
 
   if (statusParam) {
-    query += ' WHERE t.status = ?';
+    query += ' AND t.status = ?';
     bindings.push(statusParam);
+  }
+
+  // P0-2: Cursor condition
+  if (cursorCreatedAt && cursorId) {
+    query += ` AND (t.created_at < ? OR (t.created_at = ? AND t.id < ?))`;
+    bindings.push(cursorCreatedAt, cursorCreatedAt, cursorId);
   }
 
   query += ` 
     GROUP BY t.id
-    ORDER BY t.created_at DESC
-    LIMIT ? OFFSET ?
+    ORDER BY t.created_at DESC, t.id DESC
+    LIMIT ?
   `;
-  bindings.push(limit, offset);
+  bindings.push(limit + 1);
 
   const threads = await env.DB.prepare(query).bind(...bindings).all();
 
-  let countQuery = 'SELECT COUNT(*) as count FROM scheduling_threads';
-  if (statusParam) {
-    countQuery += ' WHERE status = ?';
+  // P0-2: Detect hasMore
+  const hasMore = threads.results && threads.results.length > limit;
+  const items = hasMore ? threads.results!.slice(0, limit) : threads.results || [];
+
+  // P0-2: Generate next cursor
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const last = items[items.length - 1] as any;
+    nextCursor = encodeCursor({
+      timestamp: last.created_at,
+      id: last.id,
+    });
   }
-  const totalCount = await env.DB
-    .prepare(countQuery)
-    .bind(...(statusParam ? [statusParam] : []))
-    .first<{ count: number }>();
 
   return c.json({
-    threads: threads.results || [],
+    threads: items,
     pagination: {
-      total: totalCount?.count || 0,
       limit,
-      offset,
-      has_more: offset + (threads.results?.length || 0) < (totalCount?.count || 0),
+      cursor: nextCursor,
+      has_more: hasMore,
     },
   });
 });

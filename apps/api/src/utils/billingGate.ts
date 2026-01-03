@@ -1,52 +1,60 @@
+/**
+ * Billing Gate (Week1: status only)
+ * - Stop ONLY execution endpoints (finalize/remind)
+ * - status=2(suspended),4(cancelled) => BLOCK (402)
+ * - status=1(active),3(recovered) or no billing row => ALLOW
+ *
+ * Incident safety:
+ * - Fail-closed (if DB/user lookup fails, block with 402)
+ * - Never throw 500 to client (return controlled 402 w/ request_id)
+ */
+
 import type { Context } from 'hono';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 
-/**
- * Billing Gate（confirm実行点のみ止める）
- * - status=2(停止),4(解約) → 実行禁止
- * - status=1(登録),3(復活) → 実行許可
- * - billing_accounts レコードなし → Free扱いで実行許可
- *
- * 事故防止:
- * - 例外時は「止める」（fail-closed）
- * - 500にしない（運用インシデントを軽症化）
- */
+export type BillingGateResult =
+  | { ok: true }
+  | {
+      ok: false;
+      httpStatus: 402;
+      code: 'billing_blocked';
+      status: 2 | 4 | null;
+      message: string;
+      requestId: string;
+    };
+
 export async function checkBillingGate(
   c: Context<{ Bindings: Env; Variables: Variables }>
-): Promise<
-  | { ok: true }
-  | { ok: false; httpStatus: 402 | 403; code: 'billing_blocked'; status: 2 | 4 | null; message: string; requestId: string }
-> {
+): Promise<BillingGateResult> {
   const requestId = crypto.randomUUID();
 
   try {
-    // requireAuth後の前提：userIdが入っている（Variables.userId）
     const userId = c.get('userId');
     if (!userId) {
       return {
         ok: false,
-        httpStatus: 403,
+        httpStatus: 402,
         code: 'billing_blocked',
         status: null,
-        message: '認証情報が取得できませんでした。',
+        message: '認証情報が取得できないため、実行できません。',
         requestId,
       };
     }
 
-    // usersからemail取得（Week1の正：billing_accountsはemail照合）
+    // Week1: billing_accounts is keyed by normalized email
     const user = await c.env.DB.prepare(`SELECT email FROM users WHERE id = ?`)
       .bind(userId)
       .first<{ email: string }>();
 
-    // users.emailが無い or userが無い：安全側で止める（データ不整合は早期検知）
     if (!user?.email) {
+      // Fail-closed: data inconsistency should not allow execution
       return {
         ok: false,
-        httpStatus: 403,
+        httpStatus: 402,
         code: 'billing_blocked',
         status: null,
-        message: 'ユーザー情報が取得できませんでした。',
+        message: 'ユーザー情報が取得できないため、実行できません。',
         requestId,
       };
     }
@@ -63,7 +71,7 @@ export async function checkBillingGate(
       .bind(normalizedEmail)
       .first<{ status: number }>();
 
-    // billing_accounts無し = Free（実行OK）
+    // No row => Free => allow (Week1 rule)
     if (!account) return { ok: true };
 
     if (account.status === 2) {
@@ -88,11 +96,10 @@ export async function checkBillingGate(
       };
     }
 
-    // 1 or 3 → OK
+    // status=1 or 3 => allow
     return { ok: true };
   } catch (e) {
     console.error('[billingGate]', requestId, e);
-    // 安全側：止める（500にしない）
     return {
       ok: false,
       httpStatus: 402,

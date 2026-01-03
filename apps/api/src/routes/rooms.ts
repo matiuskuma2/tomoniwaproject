@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { encodeCursor, decodeCursor, clampLimit } from '../utils/cursor';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -59,18 +60,35 @@ app.post('/', async (c) => {
  * Get user's rooms
  * 
  * @route GET /rooms
- * @query limit?: number (default: 50)
- * @query offset?: number (default: 0)
+ * @query limit?: number (default: 50, max: 100)
+ * @query cursor?: string (encoded created_at|id)
+ * P0-2: cursor pagination only
  */
 app.get('/', async (c) => {
   const { env } = c;
   const userId = await getUserIdFromContext(c as any);
 
   try {
-    const limit = parseInt(c.req.query('limit') || '50', 10);
-    const offset = parseInt(c.req.query('offset') || '0', 10);
+    const limit = clampLimit(c.req.query('limit'), 100);
+    const cursor = c.req.query('cursor') || null;
 
-    // Get rooms where user is a member
+    let cursorCreatedAt: string | null = null;
+    let cursorId: string | null = null;
+
+    if (cursor) {
+      const decoded = decodeCursor(cursor);
+      if (!decoded) {
+        return c.json({ error: 'Invalid cursor format' }, 400);
+      }
+      cursorCreatedAt = decoded.timestamp;
+      cursorId = decoded.id;
+    }
+
+    // Build SQL with cursor condition (P0-2: cursor pagination only)
+    const cursorCondition = cursorCreatedAt && cursorId
+      ? `AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))`
+      : '';
+
     const { results } = await env.DB.prepare(`
       SELECT 
         r.id,
@@ -85,27 +103,33 @@ app.get('/', async (c) => {
       FROM rooms r
       JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = ?
       LEFT JOIN room_members rm2 ON rm2.room_id = r.id
+      ${cursorCondition}
       GROUP BY r.id
-      ORDER BY r.created_at DESC
-      LIMIT ? OFFSET ?
-    `).bind(userId, limit, offset).all();
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT ?
+    `).bind(
+      userId,
+      ...(cursorCreatedAt && cursorId ? [cursorCreatedAt, cursorCreatedAt, cursorId] : []),
+      limit + 1
+    ).all();
 
-    // Get total count
-    const countResult = await env.DB.prepare(`
-      SELECT COUNT(*) as total
-      FROM rooms r
-      JOIN room_members rm ON rm.room_id = r.id AND rm.user_id = ?
-    `).bind(userId).first<{ total: number }>();
-    
-    const total = countResult?.total || 0;
+    // Detect has_more (P0-2: cursor pagination only)
+    const hasMore = results.length > limit;
+    const rooms = hasMore ? results.slice(0, limit) : results;
+
+    // Build nextCursor
+    let nextCursor: string | null = null;
+    if (hasMore && rooms.length > 0) {
+      const last: any = rooms[rooms.length - 1];
+      nextCursor = encodeCursor({ timestamp: last.created_at, id: last.id });
+    }
 
     return c.json({
-      rooms: results,
+      rooms,
       pagination: {
-        total,
         limit,
-        offset,
-        has_more: offset + limit < total,
+        cursor: nextCursor,
+        has_more: hasMore,
       },
     });
   } catch (error) {
