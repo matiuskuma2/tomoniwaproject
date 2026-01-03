@@ -11,6 +11,7 @@ import type { Variables } from '../middleware/auth';
 import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
 import { writeLedgerAudit } from '../utils/ledgerAudit';
 import { getWorkspaceId } from '../utils/tenant';
+import { getWorkspaceContext, validateResourceOwnership } from '../utils/workspaceContext';
 
 type AppContext = { Bindings: Env; Variables: Variables };
 
