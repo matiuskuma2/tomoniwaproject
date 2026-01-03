@@ -1,8 +1,10 @@
 /**
  * Ledger audit helper (運用インシデント防止)
+ * P0-2: Payload clamping to prevent log bloat
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { clampPayload } from './payloadClamp';
 
 export async function writeLedgerAudit(
   db: D1Database,
@@ -19,7 +21,14 @@ export async function writeLedgerAudit(
     userAgent?: string;
   }
 ) {
-  const payloadJson = JSON.stringify(args.payload ?? {});
+  // P0-2: Clamp payload to prevent log bloat (max 8KB)
+  const { payload: clampedPayload, truncated, originalBytes } = clampPayload(args.payload ?? {});
+  
+  if (truncated) {
+    console.warn(`[Audit] Payload truncated: ${originalBytes} bytes -> 8KB (request_id: ${args.requestId})`);
+  }
+  
+  const payloadJson = JSON.stringify(clampedPayload);
   
   await db
     .prepare(

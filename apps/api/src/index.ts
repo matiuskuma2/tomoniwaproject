@@ -251,9 +251,39 @@ app.onError((err, c) => {
 });
 
 // ============================================================
-// Export (includes HTTP handler + Queue consumer)
+// Scheduled Tasks (Cron)
+// ============================================================
+import { pruneAuditLogs } from './scheduled/pruneAuditLogs';
+
+async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  const cron = event.cron;
+  
+  console.log('[Scheduled] Cron triggered:', cron);
+  
+  // Daily cleanup (0 2 * * *)
+  if (cron === '0 2 * * *') {
+    console.log('[Scheduled] Running daily cleanup...');
+    
+    try {
+      const result = await pruneAuditLogs(env.DB);
+      console.log('[Scheduled] Audit log pruning completed:', result);
+    } catch (error) {
+      console.error('[Scheduled] Audit log pruning failed:', error);
+    }
+  }
+  
+  // Hourly budget check (0 * * * *)
+  if (cron === '0 * * * *') {
+    console.log('[Scheduled] Running hourly budget check...');
+    // TODO: Implement budget check logic
+  }
+}
+
+// ============================================================
+// Export (includes HTTP handler + Queue consumer + Scheduled)
 // ============================================================
 export default {
   fetch: app.fetch,
   queue: emailConsumer.queue, // Email queue consumer (Ticket 06)
+  scheduled, // Cron tasks (P0-2: Audit log pruning)
 };

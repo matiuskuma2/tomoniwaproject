@@ -5,9 +5,12 @@
  * - すべての書き込みイベントを記録
  * - request_id でリクエスト全体を追跡
  * - payload_json で差分を保存
+ * 
+ * P0-2: Payload clamping to prevent log bloat
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { clampPayload } from './payloadClamp';
 
 export interface ListItemEventPayload {
   userId: string;
@@ -21,12 +24,20 @@ export interface ListItemEventPayload {
 
 /**
  * Write list_item event to audit log
+ * P0-2: Payload clamping to prevent log bloat
  */
 export async function writeListItemEvent(
   db: D1Database,
   event: ListItemEventPayload
 ): Promise<void> {
-  const payloadJson = JSON.stringify(event.payload ?? {});
+  // P0-2: Clamp payload to prevent log bloat (max 8KB)
+  const { payload: clampedPayload, truncated, originalBytes } = clampPayload(event.payload ?? {});
+  
+  if (truncated) {
+    console.warn(`[Audit] List item payload truncated: ${originalBytes} bytes -> 8KB (request_id: ${event.requestId})`);
+  }
+  
+  const payloadJson = JSON.stringify(clampedPayload);
   
   await db.prepare(`
     INSERT INTO list_item_events (
