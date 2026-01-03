@@ -10,8 +10,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
 import { writeLedgerAudit } from '../utils/ledgerAudit';
-import { getWorkspaceId } from '../utils/tenant';
-import { getWorkspaceContext, validateResourceOwnership } from '../utils/workspaceContext';
+import { getWorkspaceContext, validateResourceOwnership, validateResourceOwnershipBatch } from '../utils/workspaceContext';
 
 type AppContext = { Bindings: Env; Variables: Variables };
 
@@ -38,8 +37,9 @@ listMembersRoutes.get('/lists/:listId/members', async (c) => {
     const cursor = c.req.query('cursor');
     const cur = cursor ? decodeCursor(cursor) : null;
 
-    const workspaceId = getWorkspaceId(userId);
-    const ownerUserId = userId;
+    // P0-1: Get tenant context (set by requireAuth middleware)
+    const ctx = getWorkspaceContext(c);
+    const { workspaceId, ownerUserId } = ctx;
 
     // P0-4: list_id の tenant整合性チェック（越境防止）
     const listRow = await c.env.DB.prepare(
@@ -119,31 +119,34 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       return c.json({ error: 'too_many_contacts', max: 1000, request_id: requestId }, 400);
     }
 
-    const workspaceId = getWorkspaceId(userId);
-    const ownerUserId = userId;
+    // P0-1: Get tenant context (set by requireAuth middleware)
+    const ctx = getWorkspaceContext(c);
+    const { workspaceId, ownerUserId } = ctx;
 
-    // P0-4: list_id の tenant整合性チェック
-    const listRow = await c.env.DB.prepare(
-      `SELECT id FROM lists WHERE id = ? AND workspace_id = ? AND owner_user_id = ?`
-    ).bind(listId, workspaceId, ownerUserId).first();
-    
-    if (!listRow) {
+    // P0-2: Validate list_id ownership (tenant isolation)
+    const isListOwner = await validateResourceOwnership(c.env.DB, ctx, 'lists', listId);
+    if (!isListOwner) {
+      // Return 404 instead of 403 to prevent information leakage
       return c.json({ error: 'list_not_found_or_no_access', request_id: requestId }, 404);
     }
 
-    // P0-4: contact_ids の tenant整合性チェック（batch検証）
-    const contactCheckSql = `
-      SELECT id FROM contacts 
-      WHERE workspace_id = ? AND owner_user_id = ? AND id IN (${contactIds.map(() => '?').join(',')})
-    `;
-    const contactRows = await c.env.DB.prepare(contactCheckSql)
-      .bind(workspaceId, ownerUserId, ...contactIds)
-      .all<{ id: string }>();
-    
-    const validContactIds = new Set((contactRows.results ?? []).map(r => r.id));
-    const invalidContactIds = contactIds.filter(id => !validContactIds.has(id));
+    // P0-2: Validate contact_ids ownership (batch, O(1) DB roundtrip)
+    const validContactIds = await validateResourceOwnershipBatch(c.env.DB, ctx, 'contacts', contactIds);
+    const invalidContactIds = contactIds.filter(id => !validContactIds.includes(id));
     
     if (invalidContactIds.length > 0) {
+      // Log security incident: attempted cross-tenant access
+      await writeLedgerAudit(c.env.DB, {
+        workspaceId,
+        ownerUserId,
+        actorUserId: userId,
+        targetType: 'list_member',
+        targetId: listId,
+        action: 'access_denied',
+        payload: { reason: 'invalid_contacts', invalid_ids: invalidContactIds },
+        requestId,
+      });
+
       return c.json({
         error: 'invalid_contacts',
         invalid_ids: invalidContactIds,
@@ -218,8 +221,9 @@ listMembersRoutes.delete('/lists/:listId/members/:memberId', async (c) => {
     const listId = c.req.param('listId');
     const memberId = c.req.param('memberId');
 
-    const workspaceId = getWorkspaceId(userId);
-    const ownerUserId = userId;
+    // P0-1: Get tenant context
+    const ctx = getWorkspaceContext(c);
+    const { workspaceId, ownerUserId } = ctx;
 
     // Get member info before delete (for audit)
     const member = await c.env.DB.prepare(

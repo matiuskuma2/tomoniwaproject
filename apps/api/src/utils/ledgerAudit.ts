@@ -12,7 +12,7 @@ export async function writeLedgerAudit(
     actorUserId: string;
     targetType: 'contact' | 'channel' | 'list_member';
     targetId: string;
-    action: 'create' | 'update' | 'delete';
+    action: 'create' | 'update' | 'delete' | 'access_denied';  // P0-2: Security incident logging
     payload: unknown;
     requestId: string;
     sourceIp?: string;

@@ -16,6 +16,8 @@ export interface AuthContext {
 export type Variables = {
   userId?: string;
   userRole?: string;
+  workspaceId?: string;  // P0-1: Tenant isolation enforcement
+  ownerUserId?: string;  // P0-1: Owner of current request (= userId for now)
 };
 
 /**
@@ -102,6 +104,11 @@ export async function getUserId(c: Context<{ Bindings: Env; Variables: Variables
 /**
  * Require authentication middleware
  * 
+ * P0-1: Tenant isolation enforcement
+ * - Sets userId, workspaceId, ownerUserId in context
+ * - Phase 1: workspaceId = 'ws-default' (single-tenant mode)
+ * - Phase 2: Fetch from workspaces table (multi-tenant mode)
+ * 
  * Usage:
  * app.use('/api/protected/*', requireAuth)
  */
@@ -118,8 +125,15 @@ export async function requireAuth(c: Context<{ Bindings: Env; Variables: Variabl
     );
   }
 
-  // Store userId in context for downstream handlers
+  // P0-1: Enforce tenant isolation at middleware level
+  // Phase 1: Single-tenant mode (all users in 'ws-default')
+  const workspaceId = 'ws-default';
+  const ownerUserId = userId;  // For now, owner = authenticated user
+
+  // Store in context for downstream handlers
   c.set('userId', userId);
+  c.set('workspaceId', workspaceId);
+  c.set('ownerUserId', ownerUserId);
   
   await next();
 }
