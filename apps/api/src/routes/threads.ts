@@ -346,21 +346,26 @@ app.post(
           console.warn(`[Threads] Skipped ${skippedCount} contacts without email`);
         }
 
-        // Step 3A: Create invites for each valid contact
+        // Step 3A: Create invites in batch (P0-1: Transaction for performance)
         const threadsRepo = new ThreadsRepository(env.DB);
-        invites = await Promise.all(
-          validMembers.map(async (member) => {
-            return threadsRepo.createInvite({
-              thread_id: threadId,
-              email: member.contact_email!,
-              candidate_name: member.contact_display_name || member.contact_email!,
-              candidate_reason: `From list: ${list.name}`,
-              expires_in_hours: 72, // 3 days
-            });
-          })
+        const batchResult = await threadsRepo.createInvitesBatch(
+          validMembers.map((member) => ({
+            thread_id: threadId,
+            email: member.contact_email!,
+            candidate_name: member.contact_display_name || member.contact_email!,
+            candidate_reason: `From list: ${list.name}`,
+            expires_in_hours: 72, // 3 days
+          }))
         );
 
-        console.log('[Threads] Created bulk invites:', invites.length);
+        console.log('[Threads] Batch invite result:', batchResult);
+
+        // Fetch created invites for email queue
+        const inviteList = await env.DB.prepare(
+          `SELECT * FROM thread_invites WHERE thread_id = ? ORDER BY created_at DESC LIMIT ?`
+        ).bind(threadId, validMembers.length).all();
+
+        invites = inviteList.results as any[];
 
         // Convert to candidates format for response
         candidates = validMembers.map((m) => ({

@@ -154,6 +154,84 @@ export class ThreadsRepository {
   }
 
   /**
+   * Create invites in batch (P0-1: Transaction for performance)
+   * - Splits into chunks of 200 to avoid timeout
+   * - Uses INSERT OR IGNORE for idempotency
+   * - Returns { inserted, skipped, total }
+   */
+  async createInvitesBatch(
+    invites: Array<{
+      thread_id: string;
+      email: string;
+      candidate_name: string;
+      candidate_reason?: string | null;
+      expires_in_hours?: number;
+    }>
+  ): Promise<{ inserted: number; skipped: number; total: number }> {
+    const CHUNK_SIZE = 200;
+    let totalInserted = 0;
+    let totalSkipped = 0;
+
+    // Split into chunks
+    for (let i = 0; i < invites.length; i += CHUNK_SIZE) {
+      const chunk = invites.slice(i, i + CHUNK_SIZE);
+
+      // Process chunk in transaction
+      const result = await this.db.batch(
+        await Promise.all(
+          chunk.map(async (data) => {
+            const id = uuidv4();
+            const token = this.generateToken();
+            const now = new Date();
+            const expiresAt = new Date(
+              now.getTime() + (data.expires_in_hours || 72) * 60 * 60 * 1000
+            );
+
+            // Generate invitee_key
+            const encoder = new TextEncoder();
+            const emailData = encoder.encode(data.email.toLowerCase());
+            const hashBuffer = await crypto.subtle.digest('SHA-256', emailData);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+            const emailHash = hashHex.substring(0, 16);
+            const inviteeKey = `e:${emailHash}`;
+
+            return this.db.prepare(
+              `INSERT OR IGNORE INTO thread_invites (id, thread_id, token, email, candidate_name, candidate_reason, invitee_key, status, expires_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+            ).bind(
+              id,
+              data.thread_id,
+              token,
+              data.email,
+              data.candidate_name,
+              data.candidate_reason || null,
+              inviteeKey,
+              expiresAt.toISOString(),
+              now.toISOString()
+            );
+          })
+        )
+      );
+
+      // Count inserted vs skipped
+      const inserted = result.filter((r) => r.meta.changes > 0).length;
+      const skipped = chunk.length - inserted;
+
+      totalInserted += inserted;
+      totalSkipped += skipped;
+
+      console.log(`[ThreadsRepository] Batch chunk ${i / CHUNK_SIZE + 1}: inserted=${inserted}, skipped=${skipped}`);
+    }
+
+    return {
+      inserted: totalInserted,
+      skipped: totalSkipped,
+      total: invites.length,
+    };
+  }
+
+  /**
    * Get invite by token
    */
   async getInviteByToken(token: string): Promise<ThreadInvite | null> {
