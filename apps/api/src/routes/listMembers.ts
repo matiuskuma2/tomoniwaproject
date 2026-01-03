@@ -10,6 +10,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 import { decodeCursor, encodeCursor, clampLimit } from '../utils/cursor';
 import { writeLedgerAudit } from '../utils/ledgerAudit';
+import { getWorkspaceId } from '../utils/tenant';
 
 type AppContext = { Bindings: Env; Variables: Variables };
 
@@ -36,9 +37,17 @@ listMembersRoutes.get('/lists/:listId/members', async (c) => {
     const cursor = c.req.query('cursor');
     const cur = cursor ? decodeCursor(cursor) : null;
 
-    // TODO: workspace_id の取得ロジック（現状は仮で userId を使用）
-    const workspaceId = 'ws-default'; // 実際は users テーブルから取得
+    const workspaceId = getWorkspaceId(userId);
     const ownerUserId = userId;
+
+    // P0-4: list_id の tenant整合性チェック（越境防止）
+    const listRow = await c.env.DB.prepare(
+      `SELECT id FROM lists WHERE id = ? AND workspace_id = ? AND owner_user_id = ?`
+    ).bind(listId, workspaceId, ownerUserId).first();
+    
+    if (!listRow) {
+      return c.json({ error: 'list_not_found_or_no_access', request_id: requestId }, 404);
+    }
 
     let sql = `
       SELECT lm.id, lm.list_id, lm.contact_id, lm.added_at, lm.added_by,
@@ -109,37 +118,74 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       return c.json({ error: 'too_many_contacts', max: 1000, request_id: requestId }, 400);
     }
 
-    // TODO: workspace_id の取得ロジック
-    const workspaceId = 'ws-default';
+    const workspaceId = getWorkspaceId(userId);
     const ownerUserId = userId;
+
+    // P0-4: list_id の tenant整合性チェック
+    const listRow = await c.env.DB.prepare(
+      `SELECT id FROM lists WHERE id = ? AND workspace_id = ? AND owner_user_id = ?`
+    ).bind(listId, workspaceId, ownerUserId).first();
+    
+    if (!listRow) {
+      return c.json({ error: 'list_not_found_or_no_access', request_id: requestId }, 404);
+    }
+
+    // P0-4: contact_ids の tenant整合性チェック（batch検証）
+    const contactCheckSql = `
+      SELECT id FROM contacts 
+      WHERE workspace_id = ? AND owner_user_id = ? AND id IN (${contactIds.map(() => '?').join(',')})
+    `;
+    const contactRows = await c.env.DB.prepare(contactCheckSql)
+      .bind(workspaceId, ownerUserId, ...contactIds)
+      .all<{ id: string }>();
+    
+    const validContactIds = new Set((contactRows.results ?? []).map(r => r.id));
+    const invalidContactIds = contactIds.filter(id => !validContactIds.has(id));
+    
+    if (invalidContactIds.length > 0) {
+      return c.json({
+        error: 'invalid_contacts',
+        invalid_ids: invalidContactIds,
+        request_id: requestId
+      }, 400);
+    }
 
     // Bulk insert with INSERT OR IGNORE (重複防止)
     const inserted: string[] = [];
+    const skipped: string[] = [];
+    
     for (const contactId of contactIds) {
       const memberId = crypto.randomUUID();
       try {
-        await c.env.DB.prepare(
+        const result = await c.env.DB.prepare(
           `INSERT OR IGNORE INTO list_members (id, workspace_id, owner_user_id, list_id, contact_id, added_by)
            VALUES (?, ?, ?, ?, ?, ?)`
         )
           .bind(memberId, workspaceId, ownerUserId, listId, contactId, userId)
           .run();
 
-        inserted.push(contactId);
+        // P0-4: INSERT OR IGNORE の結果を正確に判定
+        // D1の場合、changes が 0 なら既存レコード（スキップ）
+        if (result.meta.changes > 0) {
+          inserted.push(contactId);
 
-        // Audit log
-        await writeLedgerAudit(c.env.DB, {
-          workspaceId,
-          ownerUserId,
-          actorUserId: userId,
-          targetType: 'list_member',
-          targetId: memberId,
-          action: 'create',
-          payload: { list_id: listId, contact_id: contactId },
-          requestId,
-        });
+          // Audit log
+          await writeLedgerAudit(c.env.DB, {
+            workspaceId,
+            ownerUserId,
+            actorUserId: userId,
+            targetType: 'list_member',
+            targetId: memberId,
+            action: 'create',
+            payload: { list_id: listId, contact_id: contactId },
+            requestId,
+          });
+        } else {
+          skipped.push(contactId);
+        }
       } catch (err) {
         console.error('[listMembers.batch] insert failed', contactId, err);
+        skipped.push(contactId);
       }
     }
 
@@ -147,6 +193,7 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       request_id: requestId,
       success: true,
       inserted: inserted.length,
+      skipped: skipped.length,
       total: contactIds.length,
     }, 201);
   } catch (e: any) {
@@ -170,7 +217,7 @@ listMembersRoutes.delete('/lists/:listId/members/:memberId', async (c) => {
     const listId = c.req.param('listId');
     const memberId = c.req.param('memberId');
 
-    const workspaceId = 'ws-default';
+    const workspaceId = getWorkspaceId(userId);
     const ownerUserId = userId;
 
     // Get member info before delete (for audit)

@@ -1,6 +1,11 @@
 /**
  * Cursor pagination utility (offset禁止)
- * Format: "timestamp|id" -> base64url
+ * Format: "timestamp|id" -> URL-safe直接エンコード
+ * 
+ * P0-5: 簡素化（base64不要、Workers/D1安全）
+ * - 固定長: ISO8601 datetime + UUID
+ * - 直接 encodeURIComponent で URL-safe化
+ * - 例: "2026-01-03T01:00:00.000Z|abc-123" -> "2026-01-03T01%3A00%3A00.000Z%7Cabc-123"
  */
 
 export type Cursor = {
@@ -10,19 +15,12 @@ export type Cursor = {
 
 export function encodeCursor(c: Cursor): string {
   const raw = `${c.timestamp}|${c.id}`;
-  // Use TextEncoder for Web standard compatibility
-  const bytes = new TextEncoder().encode(raw);
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return encodeURIComponent(raw);
 }
 
 export function decodeCursor(cursor: string): Cursor | null {
   try {
-    // Reverse base64url to base64
-    const base64 = cursor.replace(/-/g, '+').replace(/_/g, '/');
-    const paddedBase64 = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
-    const binary = atob(paddedBase64);
-    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-    const raw = new TextDecoder().decode(bytes);
+    const raw = decodeURIComponent(cursor);
     const [timestamp, id] = raw.split('|');
     if (!timestamp || !id) return null;
     return { timestamp, id };
