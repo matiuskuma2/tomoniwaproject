@@ -142,6 +142,8 @@ export function ChatPane({
         pendingNotify,
         pendingSplit,
       });
+      
+      console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
 
       // Execute intent
       // Phase Next-5 Day2: Pass pendingAutoPropose for confirm/cancel
@@ -149,6 +151,7 @@ export function ChatPane({
       // Phase Next-6 Day1: Pass pendingRemind and remindCount
       // Phase Next-6 Day3: Pass pendingNotify
       // Phase Next-6 Day2: Pass pendingSplit
+      console.log('[API] Executing intent:', intentResult.intent);
       const result = await executeIntent(intentResult, {
         pendingAutoPropose,
         additionalProposeCount,
@@ -157,6 +160,7 @@ export function ChatPane({
         pendingNotify,
         pendingSplit,
       });
+      console.log('[API] Result:', result.success, result.message);
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
