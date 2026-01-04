@@ -36,6 +36,9 @@ import billingRoutes from './routes/billing';
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
 
+// Scheduled Tasks
+import { pruneAuditLogs } from './scheduled/pruneAuditLogs';
+
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
 
@@ -253,7 +256,6 @@ app.onError((err, c) => {
 // ============================================================
 // Scheduled Tasks (Cron)
 // ============================================================
-import { pruneAuditLogs } from './scheduled/pruneAuditLogs';
 
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
   const cron = event.cron;
@@ -264,12 +266,17 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   if (cron === '0 2 * * *') {
     console.log('[Scheduled] Running daily cleanup...');
     
-    try {
-      const result = await pruneAuditLogs(env.DB);
-      console.log('[Scheduled] Audit log pruning completed:', result);
-    } catch (error) {
-      console.error('[Scheduled] Audit log pruning failed:', error);
-    }
+    // P0-2: Use ctx.waitUntil to prevent premature termination
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const result = await pruneAuditLogs(env.DB);
+          console.log('[Scheduled] Audit log pruning completed:', result);
+        } catch (error) {
+          console.error('[Scheduled] Audit log pruning failed:', error);
+        }
+      })()
+    );
   }
   
   // Hourly budget check (0 * * * *)
