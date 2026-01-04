@@ -14,6 +14,21 @@ import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 import { SpeakButton } from './SpeakButton';
 
+/**
+ * 安全な時刻フォーマット関数
+ * Date / number(ms) / ISO string を全て受け入れ、エラーで落ちない
+ */
+function formatTime(ts: unknown): string {
+  const d =
+    ts instanceof Date ? ts :
+    typeof ts === 'number' ? new Date(ts) :
+    typeof ts === 'string' ? new Date(ts) :
+    null;
+
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -270,7 +285,7 @@ export function ChatPane({
                   </div>
                   <div className="flex items-center space-x-2 mt-1">
                     <p className="text-xs text-gray-400">
-                      {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                      {formatTime(msg.timestamp)}
                     </p>
                     {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
                     <SpeakButton text={msg.content} messageId={msg.id} />
@@ -285,7 +300,7 @@ export function ChatPane({
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   </div>
                   <p className="text-xs text-gray-400 mt-1 text-right">
-                    {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(msg.timestamp)}
                   </p>
                 </div>
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-700 text-sm font-medium">

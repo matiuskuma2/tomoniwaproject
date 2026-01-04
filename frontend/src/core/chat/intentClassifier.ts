@@ -353,6 +353,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   ) {
     // Check if we have required context
     if (!context?.selectedThreadId) {
+      console.log('[Intent] schedule.finalize: No threadId in context');
       return {
         intent: 'schedule.finalize',
         confidence: 0.9,
@@ -366,6 +367,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
 
     // Extract slot number from input (e.g., "1番で" -> 1, "1番" -> 1)
     const slotMatch = normalizedInput.match(/(\d+)番?/);
+    console.log('[Intent] schedule.finalize: slotMatch =', slotMatch, 'normalizedInput =', normalizedInput);
     
     return {
       intent: 'schedule.finalize',
