@@ -266,7 +266,7 @@ export function ChatPane({
                   </div>
                   <div className="flex items-center space-x-2 mt-1">
                     <p className="text-xs text-gray-400">
-                      {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                     </p>
                     {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
                     <SpeakButton text={msg.content} messageId={msg.id} />
@@ -281,7 +281,7 @@ export function ChatPane({
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   </div>
                   <p className="text-xs text-gray-400 mt-1 text-right">
-                    {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-700 text-sm font-medium">

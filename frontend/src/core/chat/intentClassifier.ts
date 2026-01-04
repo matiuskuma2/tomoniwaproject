@@ -346,10 +346,10 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   }
 
   // P0-3: schedule.finalize
-  // Keywords: 確定、決める、この日
+  // Keywords: 確定、決める、この日、1番、2番、etc.
   if (
     /(確定|決め(る|て)|この日)/.test(normalizedInput) ||
-    /^\d+番?(で|に)/.test(normalizedInput) // "1番で", "2で"
+    /\d+番?(で|に|を)/.test(normalizedInput) // "1番で", "2で", "1番"
   ) {
     // Check if we have required context
     if (!context?.selectedThreadId) {
@@ -364,8 +364,8 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       };
     }
 
-    // Extract slot number from input (e.g., "1番で" -> 1)
-    const slotMatch = normalizedInput.match(/(\d+)番?(で|に)/);
+    // Extract slot number from input (e.g., "1番で" -> 1, "1番" -> 1)
+    const slotMatch = normalizedInput.match(/(\d+)番?/);
     
     return {
       intent: 'schedule.finalize',
@@ -376,7 +376,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       },
       needsClarification: !slotMatch ? {
         field: 'slotId',
-        message: 'どの候補日時で確定しますか？\n右側のカードから候補を選択してください。',
+        message: 'どの候補日時で確定しますか？\n\n例: 「1番で確定」と入力してください。',
       } : undefined,
     };
   }
