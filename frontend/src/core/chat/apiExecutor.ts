@@ -1363,7 +1363,7 @@ async function executeFinalize(
     // Get thread status to find slot_id
     const status = await threadsApi.getStatus(threadId);
     
-    if (status.slots.length === 0) {
+    if (!status.slots || status.slots.length === 0) {
       return {
         success: false,
         message: '候補日時が設定されていません。',
@@ -1373,16 +1373,24 @@ async function executeFinalize(
     // Determine selected_slot_id
     let selectedSlotId: string | undefined;
 
-    if (slotNumber) {
+    if (typeof slotNumber === 'number' && slotNumber > 0) {
       // Use slot number (1-indexed)
       const slotIndex = slotNumber - 1;
+      
       if (slotIndex >= 0 && slotIndex < status.slots.length) {
         selectedSlotId = status.slots[slotIndex].slot_id;
+        console.log('[Finalize] Resolved slotNumber', slotNumber, '-> slot_id', selectedSlotId);
+      } else {
+        // 範囲外エラー
+        return {
+          success: false,
+          message: `候補番号が範囲外です。1〜${status.slots.length} の範囲で指定してください。`,
+        };
       }
     }
 
     if (!selectedSlotId) {
-      // Show slot options
+      // slotNumber がない → 候補を表示して番号入力を促す
       let message = 'どの候補日時で確定しますか？\n\n';
       status.slots.forEach((slot, index) => {
         const votes = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
@@ -1446,13 +1454,19 @@ function getWarningMessage(warning: string): string {
 }
 
 /**
+ * 安全な時刻フォーマット関数
+ */
+function safeFormatTime(ts: string | Date): string {
+  const d = typeof ts === 'string' ? new Date(ts) : ts;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
  * Format time range (same day, time only)
  */
 function formatTimeRange(start: string, end: string): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  
-  return `${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${safeFormatTime(start)} - ${safeFormatTime(end)}`;
 }
 
 /**

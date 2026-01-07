@@ -6,6 +6,15 @@
 
 import type { CalendarTodayResponse } from '../../core/models';
 
+/**
+ * 安全な時刻フォーマット関数
+ */
+function formatTime(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+}
+
 interface CalendarTodayCardProps {
   data: CalendarTodayResponse;
 }
@@ -46,8 +55,7 @@ export function CalendarTodayCard({ data }: CalendarTodayCardProps) {
           <div key={event.id} className="border-l-4 border-blue-500 pl-3">
             <p className="text-sm font-medium text-gray-900">{event.summary}</p>
             <p className="text-xs text-gray-500">
-              {new Date(event.start).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} - 
-              {new Date(event.end).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+              {formatTime(event.start)} - {formatTime(event.end)}
             </p>
             {event.location && (
               <p className="text-xs text-gray-500">📍 {event.location}</p>
