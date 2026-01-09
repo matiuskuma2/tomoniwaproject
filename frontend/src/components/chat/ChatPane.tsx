@@ -174,11 +174,39 @@ export function ChatPane({
       });
       console.log('[API] Result:', result.success, result.message);
 
+      // Add assistant response
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: result.message,
+        timestamp: new Date(),
+      };
+
       // Phase P0-5: thread.create の結果を受け取って navigate
       if (result.data?.kind === 'thread.create') {
         const newThreadId = result.data?.payload?.threadId;
         if (newThreadId && typeof newThreadId === 'string') {
-          navigate(`/chat/${newThreadId}`);
+          // メッセージを新しいスレッドに追加してから navigate
+          onAppend(newThreadId, assistantMessage);
+          
+          // Phase Next-5 Day2.1: Unified execution result handler
+          if (result.data && onExecutionResult) {
+            onExecutionResult(result);
+          }
+          
+          // If successful, trigger refresh
+          if (result.success && onThreadUpdate) {
+            setTimeout(() => {
+              onThreadUpdate();
+            }, 500);
+          }
+          
+          // Navigate to the new thread
+          setTimeout(() => {
+            navigate(`/chat/${newThreadId}`);
+          }, 100);
+          
+          setIsProcessing(false);
           return; // navigate するので処理終了
         }
       }
@@ -187,18 +215,30 @@ export function ChatPane({
       if (result.data?.kind === 'thread.invites.batch') {
         const newThreadId = result.data?.payload?.threadId;
         if (newThreadId && typeof newThreadId === 'string' && !threadId) {
-          navigate(`/chat/${newThreadId}`);
+          // メッセージを新しいスレッドに追加してから navigate
+          onAppend(newThreadId, assistantMessage);
+          
+          // Phase Next-5 Day2.1: Unified execution result handler
+          if (result.data && onExecutionResult) {
+            onExecutionResult(result);
+          }
+          
+          // If successful, trigger refresh
+          if (result.success && onThreadUpdate) {
+            setTimeout(() => {
+              onThreadUpdate();
+            }, 500);
+          }
+          
+          // Navigate to the new thread
+          setTimeout(() => {
+            navigate(`/chat/${newThreadId}`);
+          }, 100);
+          
+          setIsProcessing(false);
           return; // navigate するので処理終了
         }
       }
-
-      // Add assistant response
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: result.message,
-        timestamp: new Date(),
-      };
 
       // Phase P0-5: threadId が無い場合は 'temp' を使う
       onAppend(targetThreadId, assistantMessage);
@@ -272,61 +312,74 @@ export function ChatPane({
     );
   }
 
-  if (!status) {
-    return (
-      <div className="h-full flex items-center justify-center bg-white">
-        <div className="text-center text-gray-500">
-          <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-          <p className="text-sm">左のスレッド一覧から選択してください</p>
-        </div>
-      </div>
-    );
-  }
+  // Phase P0-5: status が無くてもチャット入力は可能にする
 
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id} className="flex items-start">
-            {msg.role === 'assistant' ? (
-              <>
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                  AI
-                </div>
-                <div className="ml-3 flex-1">
-                  <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
-                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
+        {messages.length === 0 && !threadId ? (
+          /* Phase P0-5: スレッド未選択時のプレースホルダー */
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center text-gray-500 max-w-md">
+              <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <p className="text-lg font-medium mb-2">新しい日程調整を作成</p>
+              <p className="text-sm text-gray-400 mb-4">
+                メールアドレスを入力して<br/>
+                日程調整を始めましょう
+              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                <p className="text-xs text-blue-800 font-medium mb-2">💡 使い方</p>
+                <p className="text-xs text-blue-600">
+                  1. メールアドレスを入力 (例: tanaka@example.com)<br/>
+                  2. 自動的にスレッドが作成されます<br/>
+                  3. 招待リンクが生成されます
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <div key={msg.id} className="flex items-start">
+              {msg.role === 'assistant' ? (
+                <>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                    AI
                   </div>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <p className="text-xs text-gray-400">
+                  <div className="ml-3 flex-1">
+                    <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
+                      <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <p className="text-xs text-gray-400">
+                        {formatTime(msg.timestamp)}
+                      </p>
+                      {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
+                      <SpeakButton text={msg.content} messageId={msg.id} />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1"></div>
+                  <div className="mr-3 flex-shrink-0">
+                    <div className="bg-blue-600 text-white rounded-lg p-3 inline-block max-w-2xl">
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1 text-right">
                       {formatTime(msg.timestamp)}
                     </p>
-                    {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
-                    <SpeakButton text={msg.content} messageId={msg.id} />
                   </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex-1"></div>
-                <div className="mr-3 flex-shrink-0">
-                  <div className="bg-blue-600 text-white rounded-lg p-3 inline-block max-w-2xl">
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-700 text-sm font-medium">
+                    You
                   </div>
-                  <p className="text-xs text-gray-400 mt-1 text-right">
-                    {formatTime(msg.timestamp)}
-                  </p>
-                </div>
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-700 text-sm font-medium">
-                  You
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+                </>
+              )}
+            </div>
+          ))
+        )}
         <div ref={messagesEndRef} />
       </div>
 
