@@ -1,7 +1,8 @@
 # Beta A 実装チケット（Jira/Notion用）
 
 **作成日**: 2026-01-09  
-**ステータス**: 確定版  
+**最終更新**: 2026-01-09 (実装完了版)  
+**ステータス**: チケットB完了  
 **対象リポジトリ**: tomoniwaproject (Migration 0065〜)  
 
 ---
@@ -39,8 +40,12 @@ Beta Aの実装を4つのチケット（A〜D）に分解。
 
 ```
 db/migrations/
-├── 0065_create_pending_actions.sql  ✅ 作成済み
-└── 0066_create_invite_deliveries.sql  ✅ 作成済み
+├── 0065_create_pending_actions.sql  ✅ 作成済み (4.3KB)
+└── 0066_create_invite_deliveries.sql  ✅ 作成済み (4.7KB)
+
+packages/shared/src/types/
+├── pendingAction.ts  ✅ 作成済み (型定義)
+└── inviteDelivery.ts  ✅ 作成済み (型定義)
 ```
 
 ### A-4. DoD（完了条件）
@@ -229,23 +234,26 @@ wrangler d1 execute tomoniwao-production --command="SELECT name FROM sqlite_mast
 ```
 apps/api/src/
 ├── routes/
-│   ├── pendingActions.ts      # 新規: confirm/execute
-│   └── threads.ts             # 修正: prepare-send追加
+│   ├── pendingActions.ts      # ✅ 実装完了: confirm/execute
+│   └── threads.ts             # ✅ 修正完了: prepare-send/invites/prepare追加
 ├── repositories/
-│   ├── pendingActionsRepository.ts  # 新規
-│   └── inviteDeliveriesRepository.ts  # 新規
-└── utils/
-    └── emailNormalizer.ts     # 新規: trim/lower/validation
+│   ├── pendingActionsRepository.ts  # ✅ 実装完了
+│   └── inviteDeliveriesRepository.ts  # ✅ 実装完了
+├── utils/
+│   └── emailNormalizer.ts     # ✅ 実装完了: trim/lower/validation
+└── index.ts                   # ✅ 修正完了: pendingActionsRoutes登録
 ```
 
 ### B-6. DoD（完了条件）
 
-- [ ] `POST /api/threads/prepare-send` で pending_actions 作成
-- [ ] `POST /api/pending-actions/:token/confirm` で status 更新
-- [ ] `POST /api/pending-actions/:token/execute` で invite + delivery 作成
-- [ ] request_id による冪等性（二重実行で同じ結果）
-- [ ] 期限切れ（410 Gone）エラー返却
-- [ ] 認証なし（401）エラー返却
+- [x] `POST /api/threads/prepare-send` で pending_actions 作成 ✅ 実装済み
+- [x] `POST /api/threads/:id/invites/prepare` で追加招待準備 ✅ 実装済み
+- [x] `POST /api/pending-actions/:token/confirm` で status 更新 ✅ 実装済み
+- [x] `POST /api/pending-actions/:token/execute` で invite + delivery 作成 ✅ 実装済み
+- [x] request_id による冪等性（二重実行で同じ結果）✅ 実装済み
+- [x] 期限切れ（410 Gone）エラー返却 ✅ 実装済み
+- [x] 認証なし（401）エラー返却 ✅ 実装済み
+- [ ] **Migration適用後にローカルテスト完了（チケットA依存）**
 
 ### B-7. エラーコード
 
@@ -446,29 +454,38 @@ wrangler queues messages EMAIL_DLQ --limit 10
 ```
 Week 1:
   Day 1-2: チケットA（Migration適用）
-  Day 3-5: チケットB（API実装）
+  Day 3-5: チケットB（API実装）✅ 完了
 
 Week 2:
-  Day 1-3: チケットC（フロント実装）
+  Day 1-3: チケットC（フロント実装）← 次はここ
   Day 4-5: チケットD（E2Eテスト）
 ```
+
+### 現在のステータス (2026-01-09)
+
+| チケット | ステータス | 備考 |
+|----------|-----------|------|
+| A: Migration | 🟡 Ready | SQLファイル作成済み、適用待ち |
+| B: API | ✅ Done | 全エンドポイント実装完了 |
+| C: フロント | 🔴 Not Started | B完了後に開始 |
+| D: E2E | 🔴 Not Started | C完了後に開始 |
 
 ---
 
 ## チェックリスト（全体）
 
-### Migration
+### Migration（チケットA）
 - [ ] 0065_create_pending_actions.sql 適用
 - [ ] 0066_create_invite_deliveries.sql 適用
-- [ ] 型定義 pendingAction.ts 確認
-- [ ] 型定義 inviteDelivery.ts 確認
+- [x] 型定義 pendingAction.ts 確認 ✅
+- [x] 型定義 inviteDelivery.ts 確認 ✅
 
-### API
-- [ ] POST /api/threads/prepare-send
-- [ ] POST /api/threads/:id/invites/prepare
-- [ ] POST /api/pending-actions/:token/confirm
-- [ ] POST /api/pending-actions/:token/execute
-- [ ] POST /api/threads/:id/finalize（確定通知追加）
+### API（チケットB）✅ 全API実装完了
+- [x] POST /api/threads/prepare-send ✅
+- [x] POST /api/threads/:id/invites/prepare ✅
+- [x] POST /api/pending-actions/:token/confirm ✅
+- [x] POST /api/pending-actions/:token/execute ✅
+- [ ] POST /api/threads/:id/finalize（確定通知追加）— 次フェーズ
 
 ### フロント
 - [ ] Intent: メール入力 → prepare
