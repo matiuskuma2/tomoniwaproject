@@ -8,6 +8,7 @@ export type IntentType =
   | 'schedule.status.check'
   | 'schedule.finalize'
   | 'schedule.invite.list'  // P0-4: リスト全員に招待メール送信
+  | 'thread.create'  // P0-5: チャットからスレッド作成
   | 'schedule.today'      // Phase Next-3 (P1)
   | 'schedule.week'       // Phase Next-3 (P1)
   | 'schedule.freebusy'   // Phase Next-3 (P1)
@@ -312,6 +313,18 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   // ============================================================
   // Phase Next-2 (P0): Scheduling
   // ============================================================
+
+  // P0-5: thread.create
+  // Keywords: スレッド作って、新規日程、日程調整開始
+  if (/(スレッド(作|つく)|新規(スレッド|日程)|日程調整(開始|作成)|予定調整(開始|作成))/i.test(normalizedInput)) {
+    return {
+      intent: 'thread.create',
+      confidence: 0.9,
+      params: {
+        rawInput: input,
+      },
+    };
+  }
 
   // P0-1: schedule.external.create
   // PRIORITY: Email extraction first!

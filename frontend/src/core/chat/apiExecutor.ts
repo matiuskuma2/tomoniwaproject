@@ -15,7 +15,7 @@ export type ExecutionResultData =
   | { kind: 'calendar.week'; payload: CalendarWeekResponse }
   | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
-  | { kind: 'thread.create'; payload: any }
+  | { kind: 'thread.create'; payload: { threadId: string } }
   | { kind: 'thread.finalize'; payload: any }
   | { kind: 'thread.invites.batch'; payload: any }
   | { kind: 'auto_propose.generated'; payload: { 
@@ -162,6 +162,9 @@ export async function executeIntent(
       return executeFreeBusy(intentResult);
     
     // Phase Next-2 (P0): Scheduling
+    case 'thread.create':
+      return executeThreadCreate(intentResult);
+    
     case 'schedule.external.create':
       return executeCreate(intentResult);
     
@@ -1201,12 +1204,21 @@ async function executeCreate(
       });
     }
 
+    // Extract threadId from response
+    const threadId = response.thread?.id;
+    if (!threadId) {
+      return {
+        success: false,
+        message: '❌ スレッド作成に失敗しました（threadId取得不可）',
+      };
+    }
+
     return {
       success: true,
       message,
       data: {
         kind: 'thread.create',
-        payload: response,
+        payload: { threadId },
       },
     };
   } catch (error) {
@@ -1444,6 +1456,46 @@ async function executeFinalize(
 }
 
 /**
+ * P0-5: thread.create
+ * チャットからスレッドを作成
+ */
+async function executeThreadCreate(intentResult: IntentResult): Promise<ExecutionResult> {
+  try {
+    const raw = (intentResult.params?.rawInput ?? '').toString();
+
+    // まずは最小：タイトル固定でOK（後で抽出ロジック強化）
+    const title = '日程調整';
+    const description = raw.length > 0 ? raw : 'チャットから作成';
+
+    const created: any = await threadsApi.create({ title, description });
+
+    const threadId =
+      created?.thread?.id ??
+      created?.thread_id ??
+      created?.id ??
+      null;
+
+    if (!threadId) {
+      return {
+        success: false,
+        message: '❌ スレッドは作成されましたが、threadId が取得できませんでした（APIレスポンス確認が必要）',
+      };
+    }
+
+    return {
+      success: true,
+      message: `✅ スレッドを作成しました。\nこのまま「候補出して」「来週の午後で」など入力してください。`,
+      data: { kind: 'thread.create', payload: { threadId } },
+    };
+  } catch (e: any) {
+    return {
+      success: false,
+      message: `❌ スレッド作成に失敗しました: ${e?.message ?? String(e)}`,
+    };
+  }
+}
+
+/**
  * P0-4: schedule.invite.list
  * リストの全員に招待メールを送信
  */
@@ -1465,12 +1517,19 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
       };
     }
 
-    // Step 3: Check if thread is selected
-    if (!threadId) {
-      return {
-        success: false,
-        message: `⚠️ スレッドを選択してください。\n左のスレッド一覧からスレッドを選択してから、再度実行してください。`,
-      };
+    // Step 3: threadId が無い場合は自動で作成（P0-5）
+    let ensuredThreadId = threadId;
+
+    if (!ensuredThreadId) {
+      const created: any = await threadsApi.create({
+        title: '日程調整',
+        description: `招待: ${listName}`,
+      });
+      ensuredThreadId = created?.thread?.id ?? created?.thread_id ?? created?.id ?? null;
+
+      if (!ensuredThreadId) {
+        return { success: false, message: '❌ スレッド作成に失敗しました（threadId取得不可）' };
+      }
     }
 
     // Step 4: Get list members count
@@ -1484,8 +1543,8 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
       };
     }
 
-    // Step 6: Add bulk invites to existing thread
-    const result = await threadsApi.addBulkInvites(threadId, {
+    // Step 6: Add bulk invites to existing thread (ensuredThreadId を使用)
+    const result = await threadsApi.addBulkInvites(ensuredThreadId, {
       target_list_id: targetList.id,
     });
 
@@ -1509,7 +1568,7 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
       message,
       data: {
         kind: 'thread.invites.batch',
-        payload: result,
+        payload: { ...result, threadId: ensuredThreadId },
       },
     };
 

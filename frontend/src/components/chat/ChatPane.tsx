@@ -8,6 +8,7 @@
 
 import { useRef, useEffect } from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
@@ -102,6 +103,7 @@ export function ChatPane({
   pendingNotify = null,
   pendingSplit = null
 }: ChatPaneProps) {
+  const navigate = useNavigate();
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // Phase Next-4 Day2.5: 音声補正中フラグ
@@ -133,8 +135,8 @@ export function ChatPane({
   }, [threadId, status?.thread?.id, loading]);
 
   const handleSendClick = async () => {
-    if (!message.trim() || isProcessing || !threadId) return;
-
+    if (!message.trim() || isProcessing) return;
+    
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -142,17 +144,17 @@ export function ChatPane({
       timestamp: new Date(),
     };
 
-    onAppend(threadId, userMessage);
+    if (threadId) {
+      onAppend(threadId, userMessage);
+    }
     setMessage('');
     setIsProcessing(true);
 
     try {
       // Classify intent
-      // Phase Next-6 Day1: Pass pendingRemind for confirm/cancel
-      // Phase Next-6 Day3: Pass pendingNotify for confirm/cancel
-      // Phase Next-6 Day2: Pass pendingSplit for confirm/cancel
+      // Phase P0-5: threadId が無い場合でも Intent 分類は実行
       const intentResult = classifyIntent(message, {
-        selectedThreadId: threadId,
+        selectedThreadId: threadId || undefined,
         pendingRemind,
         pendingNotify,
         pendingSplit,
@@ -161,11 +163,6 @@ export function ChatPane({
       console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
 
       // Execute intent
-      // Phase Next-5 Day2: Pass pendingAutoPropose for confirm/cancel
-      // Phase Next-5 Day3: Pass additionalProposeCount for execution limit
-      // Phase Next-6 Day1: Pass pendingRemind and remindCount
-      // Phase Next-6 Day3: Pass pendingNotify
-      // Phase Next-6 Day2: Pass pendingSplit
       console.log('[API] Executing intent:', intentResult.intent);
       const result = await executeIntent(intentResult, {
         pendingAutoPropose,
@@ -177,6 +174,24 @@ export function ChatPane({
       });
       console.log('[API] Result:', result.success, result.message);
 
+      // Phase P0-5: thread.create の結果を受け取って navigate
+      if (result.data?.kind === 'thread.create') {
+        const newThreadId = result.data?.payload?.threadId;
+        if (newThreadId && typeof newThreadId === 'string') {
+          navigate(`/chat/${newThreadId}`);
+          return; // navigate するので処理終了
+        }
+      }
+
+      // Phase P0-5: thread.invites.batch の結果を受け取って navigate
+      if (result.data?.kind === 'thread.invites.batch') {
+        const newThreadId = result.data?.payload?.threadId;
+        if (newThreadId && typeof newThreadId === 'string' && !threadId) {
+          navigate(`/chat/${newThreadId}`);
+          return; // navigate するので処理終了
+        }
+      }
+
       // Add assistant response
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -185,7 +200,9 @@ export function ChatPane({
         timestamp: new Date(),
       };
 
-      onAppend(threadId, assistantMessage);
+      if (threadId) {
+        onAppend(threadId, assistantMessage);
+      }
 
       // Phase Next-5 Day2.1: Unified execution result handler
       if (result.data && onExecutionResult) {
@@ -205,7 +222,9 @@ export function ChatPane({
         content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
         timestamp: new Date(),
       };
-      onAppend(threadId, errorMessage);
+      if (threadId) {
+        onAppend(threadId, errorMessage);
+      }
     } finally {
       setIsProcessing(false);
     }

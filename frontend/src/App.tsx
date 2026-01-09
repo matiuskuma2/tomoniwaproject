@@ -27,8 +27,10 @@ function App() {
         <Route path="/" element={<LoginPage />} />
         
         {/* Protected Routes */}
+        {/* Phase P0-5: /dashboard を /chat に強制リダイレクト */}
+        <Route path="/dashboard" element={<Navigate to="/chat" replace />} />
         <Route
-          path="/dashboard"
+          path="/dashboard-legacy"
           element={
             <ProtectedRoute>
               <DashboardPage />
