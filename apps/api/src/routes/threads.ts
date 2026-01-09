@@ -965,4 +965,387 @@ app.post('/:id/invites/batch', async (c) => {
   }
 });
 
+// ============================================================
+// Beta A: POST /threads/prepare-send
+// 新規スレッド用の送信準備（pending_action作成）
+// ============================================================
+import {
+  PendingActionsRepository,
+  generateConfirmToken,
+  generateExpiresAt,
+  type PendingActionPayload,
+  type PendingActionSummary,
+} from '../repositories/pendingActionsRepository';
+import {
+  checkIsAppUserBatch,
+} from '../repositories/inviteDeliveriesRepository';
+import {
+  normalizeAndValidateEmails,
+  normalizeEmail,
+} from '../utils/emailNormalizer';
+
+app.post('/prepare-send', async (c) => {
+  const requestId = crypto.randomUUID();
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
+  }
+
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    const body = await c.req.json().catch(() => ({} as any));
+    const sourceType = body.source_type as 'emails' | 'list';
+    const title = body.title || '日程調整';
+
+    if (!sourceType || !['emails', 'list'].includes(sourceType)) {
+      return c.json({
+        error: 'invalid_source_type',
+        message: 'source_type は "emails" または "list" を指定してください',
+        request_id: requestId,
+      }, 400);
+    }
+
+    // ====== 送信先メール取得 ======
+    let emails: string[] = [];
+    let invalidEmails: string[] = [];
+    let duplicateCount = 0;
+    let missingEmailCount = 0;
+    let listName = '';
+
+    if (sourceType === 'emails') {
+      const { valid, invalid, duplicates } = normalizeAndValidateEmails(body.emails);
+      emails = valid;
+      invalidEmails = invalid;
+      duplicateCount = duplicates.length;
+
+    } else if (sourceType === 'list') {
+      const listId = normalizeEmail(body.list_id);
+      if (!listId) {
+        return c.json({
+          error: 'invalid_list_id',
+          request_id: requestId,
+        }, 400);
+      }
+
+      const listsRepo = new ListsRepository(env.DB);
+      const list = await listsRepo.getById(listId, workspaceId, ownerUserId);
+      if (!list) {
+        return c.json({ error: 'list_not_found', request_id: requestId }, 404);
+      }
+
+      listName = list.name;
+
+      const { members, total } = await listsRepo.getMembers(listId, workspaceId, 1001, 0);
+      if (total > 1000) {
+        return c.json({
+          error: 'list_too_large',
+          total,
+          limit: 1000,
+          request_id: requestId,
+        }, 400);
+      }
+
+      const normalized = members
+        .map((m) => normalizeEmail(m.contact_email))
+        .filter((x): x is string => !!x);
+
+      missingEmailCount = members.length - normalized.length;
+      emails = Array.from(new Set(normalized));
+    }
+
+    if (emails.length === 0) {
+      return c.json({
+        error: 'no_valid_emails',
+        skipped: {
+          invalid_email: invalidEmails.length,
+          duplicate_input: duplicateCount,
+          missing_email: missingEmailCount,
+        },
+        request_id: requestId,
+      }, 400);
+    }
+
+    // ====== アプリユーザー判定（preview用） ======
+    const preview = emails.slice(0, 5);
+    const appUserMap = await checkIsAppUserBatch(env.DB, preview);
+
+    const appUsersInPreview = preview.filter((e) => appUserMap.get(e)?.isAppUser).length;
+
+    // ====== サマリ生成 ======
+    const summary: PendingActionSummary = {
+      total_count: emails.length + invalidEmails.length + duplicateCount + missingEmailCount,
+      valid_count: emails.length,
+      preview: preview.map((e) => {
+        const appUser = appUserMap.get(e);
+        return {
+          email: e,
+          display_name: appUser?.displayName || undefined,
+          is_app_user: appUser?.isAppUser || false,
+        };
+      }),
+      preview_count: preview.length,
+      skipped: {
+        invalid_email: invalidEmails.length,
+        duplicate_input: duplicateCount,
+        missing_email: missingEmailCount,
+        already_invited: 0, // 新規スレッドなので0
+      },
+      app_users_count: appUsersInPreview,
+      external_count: preview.length - appUsersInPreview,
+    };
+
+    // ====== Payload 生成 ======
+    const payload: PendingActionPayload = {
+      source_type: sourceType,
+      emails,
+      list_id: body.list_id || undefined,
+      list_name: listName || undefined,
+      title,
+    };
+
+    // ====== pending_action 作成 ======
+    const pendingRepo = new PendingActionsRepository(env.DB);
+    const pendingId = crypto.randomUUID();
+    const confirmToken = generateConfirmToken();
+    const expiresAt = generateExpiresAt(15);
+
+    await pendingRepo.create({
+      id: pendingId,
+      workspaceId,
+      ownerUserId,
+      threadId: null, // 新規スレッドなのでnull
+      actionType: 'send_invites',
+      sourceType,
+      payload,
+      summary,
+      confirmToken,
+      expiresAtISO: expiresAt,
+      requestId,
+    });
+
+    // ====== レスポンス ======
+    const sourceLabel = sourceType === 'list'
+      ? `${listName}リスト`
+      : `${emails.length}件のメールアドレス`;
+
+    return c.json({
+      request_id: requestId,
+      confirm_token: confirmToken,
+      expires_at: expiresAt,
+      expires_in_seconds: 15 * 60,
+      summary: {
+        ...summary,
+        source_label: sourceLabel,
+      },
+      default_decision: 'send',
+      message_for_chat: `送信先: ${emails.length}件 / スキップ: ${summary.skipped.invalid_email + summary.skipped.missing_email}件\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
+    });
+
+  } catch (error) {
+    console.error('[Threads] prepare-send error:', error);
+    return c.json({
+      error: 'internal_error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      request_id: requestId,
+    }, 500);
+  }
+});
+
+// ============================================================
+// Beta A: POST /threads/:id/invites/prepare
+// 追加招待用の送信準備（pending_action作成）
+// ============================================================
+app.post('/:id/invites/prepare', async (c) => {
+  const requestId = crypto.randomUUID();
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+  const threadId = c.req.param('id');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
+  }
+
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    // スレッド存在確認
+    const thread = await env.DB.prepare(`
+      SELECT id, title, status FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first<{ id: string; title: string; status: string }>();
+
+    if (!thread) {
+      return c.json({ error: 'thread_not_found', request_id: requestId }, 404);
+    }
+
+    const body = await c.req.json().catch(() => ({} as any));
+    const sourceType = body.source_type as 'emails' | 'list';
+
+    if (!sourceType || !['emails', 'list'].includes(sourceType)) {
+      return c.json({
+        error: 'invalid_source_type',
+        request_id: requestId,
+      }, 400);
+    }
+
+    // ====== 送信先メール取得 ======
+    let emails: string[] = [];
+    let invalidEmails: string[] = [];
+    let duplicateCount = 0;
+    let missingEmailCount = 0;
+    let listName = '';
+
+    if (sourceType === 'emails') {
+      const { valid, invalid, duplicates } = normalizeAndValidateEmails(body.emails);
+      emails = valid;
+      invalidEmails = invalid;
+      duplicateCount = duplicates.length;
+
+    } else if (sourceType === 'list') {
+      const listId = normalizeEmail(body.list_id);
+      if (!listId) {
+        return c.json({ error: 'invalid_list_id', request_id: requestId }, 400);
+      }
+
+      const listsRepo = new ListsRepository(env.DB);
+      const list = await listsRepo.getById(listId, workspaceId, ownerUserId);
+      if (!list) {
+        return c.json({ error: 'list_not_found', request_id: requestId }, 404);
+      }
+
+      listName = list.name;
+
+      const { members, total } = await listsRepo.getMembers(listId, workspaceId, 1001, 0);
+      if (total > 1000) {
+        return c.json({ error: 'list_too_large', total, limit: 1000, request_id: requestId }, 400);
+      }
+
+      const normalized = members
+        .map((m) => normalizeEmail(m.contact_email))
+        .filter((x): x is string => !!x);
+
+      missingEmailCount = members.length - normalized.length;
+      emails = Array.from(new Set(normalized));
+    }
+
+    if (emails.length === 0) {
+      return c.json({
+        error: 'no_valid_emails',
+        request_id: requestId,
+      }, 400);
+    }
+
+    // ====== already_invited チェック ======
+    const existingInvites = await env.DB.prepare(`
+      SELECT LOWER(email) as email FROM thread_invites WHERE thread_id = ?
+    `).bind(threadId).all<{ email: string }>();
+    const existingEmailSet = new Set((existingInvites.results || []).map((r) => r.email));
+
+    const newEmails = emails.filter((e) => !existingEmailSet.has(e.toLowerCase()));
+    const alreadyInvitedCount = emails.length - newEmails.length;
+
+    // ====== アプリユーザー判定 ======
+    const preview = newEmails.slice(0, 5);
+    const appUserMap = await checkIsAppUserBatch(env.DB, preview);
+    const appUsersInPreview = preview.filter((e) => appUserMap.get(e)?.isAppUser).length;
+
+    // ====== サマリ生成 ======
+    const summary: PendingActionSummary = {
+      total_count: emails.length + invalidEmails.length + duplicateCount + missingEmailCount,
+      valid_count: newEmails.length,
+      preview: preview.map((e) => {
+        const appUser = appUserMap.get(e);
+        return {
+          email: e,
+          display_name: appUser?.displayName || undefined,
+          is_app_user: appUser?.isAppUser || false,
+        };
+      }),
+      preview_count: preview.length,
+      skipped: {
+        invalid_email: invalidEmails.length,
+        duplicate_input: duplicateCount,
+        missing_email: missingEmailCount,
+        already_invited: alreadyInvitedCount,
+      },
+      app_users_count: appUsersInPreview,
+      external_count: preview.length - appUsersInPreview,
+    };
+
+    // 全員already_invitedの場合
+    if (newEmails.length === 0) {
+      return c.json({
+        request_id: requestId,
+        confirm_token: null,
+        expires_at: null,
+        summary: {
+          ...summary,
+          source_label: sourceType === 'list' ? `${listName}リスト` : `${emails.length}件のメールアドレス`,
+        },
+        message_for_chat: `全員すでに招待済みです（${alreadyInvitedCount}件）。`,
+      });
+    }
+
+    // ====== Payload 生成 ======
+    const payload: PendingActionPayload = {
+      source_type: sourceType,
+      emails: newEmails,
+      list_id: body.list_id || undefined,
+      list_name: listName || undefined,
+      title: thread.title,
+    };
+
+    // ====== pending_action 作成 ======
+    const pendingRepo = new PendingActionsRepository(env.DB);
+    const pendingId = crypto.randomUUID();
+    const confirmToken = generateConfirmToken();
+    const expiresAt = generateExpiresAt(15);
+
+    await pendingRepo.create({
+      id: pendingId,
+      workspaceId,
+      ownerUserId,
+      threadId, // 既存スレッドのID
+      actionType: 'add_invites',
+      sourceType,
+      payload,
+      summary,
+      confirmToken,
+      expiresAtISO: expiresAt,
+      requestId,
+    });
+
+    // ====== レスポンス ======
+    const sourceLabel = sourceType === 'list'
+      ? `${listName}リスト`
+      : `${newEmails.length}件のメールアドレス`;
+
+    return c.json({
+      request_id: requestId,
+      confirm_token: confirmToken,
+      expires_at: expiresAt,
+      expires_in_seconds: 15 * 60,
+      thread_id: threadId,
+      thread_title: thread.title,
+      summary: {
+        ...summary,
+        source_label: sourceLabel,
+      },
+      default_decision: 'send',
+      message_for_chat: `「${thread.title}」に${newEmails.length}名を追加招待します。\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
+    });
+
+  } catch (error) {
+    console.error('[Threads] invites/prepare error:', error);
+    return c.json({
+      error: 'internal_error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      request_id: requestId,
+    }, 500);
+  }
+});
+
 export default app;

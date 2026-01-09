@@ -32,6 +32,7 @@ import listMembersRoutes from './routes/listMembers';
 import businessCardsRoutes from './routes/businessCards';
 import calendarRoutes from './routes/calendar';
 import billingRoutes from './routes/billing';
+import pendingActionsRoutes from './routes/pendingActions';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -151,6 +152,11 @@ app.route('/api/threads', threadsRoutes);
 app.route('/api/threads', threadsStatusRoutes);   // GET /:id/status
 app.route('/api/threads', threadsRemindRoutes);   // POST /:id/remind
 app.route('/api/threads', threadsFinalizeRoutes); // POST /:id/finalize
+
+// Beta A: Pending Actions API (送信確認フロー)
+app.use('/api/pending-actions', requireAuth);
+app.use('/api/pending-actions/*', requireAuth);
+app.route('/api/pending-actions', pendingActionsRoutes); // POST /:token/confirm, /:token/execute
 
 // Inbox API (User notifications)
 app.use('/api/inbox', requireAuth);
