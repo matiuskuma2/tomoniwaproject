@@ -1,650 +1,443 @@
-# Beta A 実装チケット（Jira/Notion貼り付け用）
+# Beta A 実装チケット（Jira/Notion用）
 
-**バージョン**: 1.0  
-**最終更新**: 2026-01-09  
-**リポジトリ**: tomoniwaproject (migration 0064 → 0065/0066)
+**作成日**: 2026-01-09  
+**ステータス**: 確定版  
+**対象リポジトリ**: tomoniwaproject (Migration 0065〜)  
 
 ---
 
 ## 概要
 
-Beta A = 「チャットで日程調整を完走できる」最小体験
-
-**確定ゴール**:
-1. 主催者: /chat → メール/リスト指定 → サマリ → 送る/キャンセル/別スレッドで（3語固定） → 送信 → 回答収集 → 確定 → Google Calendar + Meet → 確定通知
-2. 外部ユーザー: メールリンク → 回答 → 確定後にMeet/カレンダー追加表示
-
-**設計原則**:
-- Relationship（承認モデル）と Delivery（通知チャネル）を分離
-- 送信は必ず確認ステップを経る（pending_actions）
-- アプリユーザー判定は「メール一致」（Beta A）
+Beta Aの実装を4つのチケット（A〜D）に分解。  
+**確認済み方針**:
+- 送信確認は「送る/キャンセル/別スレッドで」の3語固定
+- 追加招待はデフォで許容
+- アプリユーザー判定はメール一致
+- リスト5コマンドをチャットで完走
 
 ---
 
-## A) DB Migration（0065/0066）
+## チケット A: DB Migration (0065/0066)
 
-### A-1. チケット詳細
+### A-1. 基本情報
 
-**タイトル**: [DB] pending_actions / invite_deliveries テーブル作成
+| 項目 | 値 |
+|------|-----|
+| **チケットID** | BETA-A-001 |
+| **タイトル** | DB Migration: pending_actions / invite_deliveries |
+| **見積もり** | 2h |
+| **優先度** | P0 (ブロッカー) |
+| **担当** | Backend |
 
-**優先度**: P0（Blocker）
+### A-2. 目的
 
-**見積**: 2h
+1. 送信確認をDBで必須化（pending_actions）
+2. 配信状況を追跡可能に（invite_deliveries）
+3. 将来の配信チャネル追加にも対応可能な構造
 
-**説明**:
-送信確認とデリバリー追跡のコアテーブルを作成する。
+### A-3. 成果物
 
-**ファイル**:
-- `db/migrations/0065_create_pending_actions.sql`
-- `db/migrations/0066_create_invite_deliveries.sql`
-- `packages/shared/src/types/pendingAction.ts`
-- `packages/shared/src/types/inviteDelivery.ts`
+```
+db/migrations/
+├── 0065_create_pending_actions.sql  ✅ 作成済み
+└── 0066_create_invite_deliveries.sql  ✅ 作成済み
+```
 
-**DoD（完了条件）**:
-- [ ] ローカル migrate 成功
-- [ ] pending_actions に INSERT/SELECT できる
-- [ ] invite_deliveries に INSERT/SELECT できる
-- [ ] 既存テーブルに影響なし
-- [ ] 本番 migrate 成功
+### A-4. DoD（完了条件）
 
-### A-2. 適用手順
+- [ ] ローカル: `npm run db:migrate:local` PASS
+- [ ] 本番: `wrangler d1 migrations apply tomoniwao-production` PASS
+- [ ] pending_actions への INSERT 可能
+- [ ] invite_deliveries への INSERT 可能
+- [ ] 既存機能が壊れていない（threads/invites/inbox）
+
+### A-5. 適用手順
 
 ```bash
-# ローカル
+# 1. ローカル適用
 cd /home/user/tomoniwaproject
 npm run db:migrate:local
 
-# 確認
-wrangler d1 execute tomoniwao --local --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('pending_actions', 'invite_deliveries');"
+# 2. 確認
+wrangler d1 execute tomoniwao-local --local --command="SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'pending%' OR name LIKE 'invite_del%';"
 
-# 本番（十分にテスト後）
-wrangler d1 migrations apply tomoniwao
+# 3. 本番適用（慎重に）
+wrangler d1 migrations apply tomoniwao-production
+
+# 4. 本番確認
+wrangler d1 execute tomoniwao-production --command="SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'pending%' OR name LIKE 'invite_del%';"
 ```
 
-### A-3. SQL詳細
+### A-6. リスク/注意点
 
-**0065_create_pending_actions.sql**:
-```sql
-CREATE TABLE IF NOT EXISTS pending_actions (
-  id                TEXT PRIMARY KEY,
-  workspace_id      TEXT NOT NULL,
-  owner_user_id     TEXT NOT NULL,
-  thread_id         TEXT,  -- 新規時はNULL
-  action_type       TEXT NOT NULL CHECK (action_type IN ('send_invites','add_invites','send_finalize_notice')),
-  source_type       TEXT NOT NULL CHECK (source_type IN ('emails','list')),
-  payload_json      TEXT NOT NULL,
-  summary_json      TEXT NOT NULL,
-  confirm_token     TEXT UNIQUE NOT NULL,
-  status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed_send','confirmed_cancel','confirmed_new_thread','executed','expired')),
-  expires_at        TEXT NOT NULL,
-  confirmed_at      TEXT,
-  executed_at       TEXT,
-  request_id        TEXT,
-  last_error        TEXT,
-  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (thread_id) REFERENCES scheduling_threads(id) ON DELETE SET NULL
-);
-```
-
-**0066_create_invite_deliveries.sql**:
-```sql
-CREATE TABLE IF NOT EXISTS invite_deliveries (
-  id                TEXT PRIMARY KEY,
-  workspace_id      TEXT NOT NULL,
-  owner_user_id     TEXT NOT NULL,
-  thread_id         TEXT NOT NULL,
-  invite_id         TEXT,
-  delivery_type     TEXT NOT NULL CHECK (delivery_type IN ('invite_sent','finalized_notice','reminder')),
-  channel           TEXT NOT NULL CHECK (channel IN ('email','in_app')),
-  recipient_email   TEXT,
-  recipient_user_id TEXT,
-  status            TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','delivered','failed','skipped')),
-  provider          TEXT,
-  provider_message_id TEXT,
-  queue_job_id      TEXT,
-  last_error        TEXT,
-  retry_count       INTEGER DEFAULT 0,
-  queued_at         TEXT NOT NULL DEFAULT (datetime('now')),
-  sent_at           TEXT,
-  delivered_at      TEXT,
-  failed_at         TEXT,
-  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (thread_id) REFERENCES scheduling_threads(id) ON DELETE CASCADE,
-  FOREIGN KEY (invite_id) REFERENCES thread_invites(id) ON DELETE SET NULL,
-  CHECK (recipient_email IS NOT NULL OR recipient_user_id IS NOT NULL)
-);
-```
+| リスク | 対策 |
+|--------|------|
+| payload_json肥大化 | 8KB制限をAPIで検証 |
+| confirm_token衝突 | UNIQUE制約 + 32文字ランダム |
+| FK失敗 | workspace_id/owner_user_id は既存レコード必須 |
 
 ---
 
-## B) バックエンドAPI（prepare → confirm → execute）
+## チケット B: バックエンドAPI (prepare → confirm → execute)
 
-### B-1. チケット詳細
+### B-1. 基本情報
 
-**タイトル**: [API] 送信確認3段階API（prepare/confirm/execute）
+| 項目 | 値 |
+|------|-----|
+| **チケットID** | BETA-A-002 |
+| **タイトル** | API実装: 送信確認フロー (prepare/confirm/execute) |
+| **見積もり** | 8h |
+| **優先度** | P0 (ブロッカー) |
+| **担当** | Backend |
+| **依存** | BETA-A-001 (Migration) |
 
-**優先度**: P0（Blocker）
+### B-2. 目的
 
-**見積**: 8h
+メール/リスト入力 → サマリ → 送信/キャンセル/別スレッドで → 実行をチャットテキストだけで完結。
 
-**説明**:
-送信確認必須の3段階APIを実装。冪等性・リロード耐性・監査対応。
+### B-3. 新規API一覧
 
-**ファイル**:
-- `apps/api/src/routes/pendingActions.ts` (新規)
-- `apps/api/src/repositories/pendingActionsRepository.ts` (新規)
-- `apps/api/src/routes/threads.ts` (修正: prepare-send追加)
+#### B-3-1. POST /api/threads/prepare-send（新規スレッド準備）
 
-### B-2. API一覧
-
-#### 1) POST /api/threads/prepare-send
-**目的**: 新規スレッド作成＋招待送信の準備（pending_action作成）
-
-**Request**:
+**リクエスト:**
 ```typescript
 {
   source_type: 'emails' | 'list';
   emails?: string[];      // source_type='emails' の場合
   list_id?: string;       // source_type='list' の場合
-  title?: string;         // スレッドタイトル
-  description?: string;
+  thread_title?: string;  // 任意（デフォルト: "新規日程調整"）
 }
 ```
 
-**Response (200)**:
+**レスポンス:**
 ```typescript
 {
-  confirm_token: string;      // 40文字
-  expires_at: string;         // ISO8601, 15分後
+  confirm_token: string;          // 32文字
+  expires_at: string;             // ISO8601 (15分後)
+  expires_in_seconds: number;     // 900
   summary: {
     total_count: number;
     valid_count: number;
     skipped_count: number;
     skipped_reasons: Array<{
-      reason: 'invalid_email' | 'duplicate_input' | 'missing_email' | 'already_invited';
+      reason: 'invalid_email' | 'duplicate_input' | 'missing_email';
       count: number;
-      examples?: string[];
     }>;
-    preview: Array<{
+    preview: Array<{              // 最大5件
       email: string;
-      name?: string;
+      display_name?: string;
       is_app_user: boolean;
     }>;
-    source_description: string;
+    source_label: string;         // "3件のメールアドレス" or "営業部リスト"
   };
-  default_mode: 'new_thread';
-  message: string;
+  default_decision: 'send';
+  message: string;                // "3名に招待を送信しますか？"
 }
 ```
 
-**処理フロー**:
-1. emails正規化（trim/lowercase）
-2. 重複除去
-3. 無効メール除外
-4. アプリユーザー判定（メール一致）
-5. サマリ生成（preview最大5件）
-6. pending_actions INSERT
-7. レスポンス返却
+**処理フロー:**
+1. emails/list_id からメールリスト取得
+2. normalizeEmail(trim/lower)、重複除去、無効メール除外
+3. アプリユーザー判定（users.email一致）
+4. pending_actions INSERT
+5. confirm_token + summary 返却
 
-#### 2) POST /api/threads/:threadId/invites/prepare
-**目的**: 既存スレッドへの追加招待準備
+#### B-3-2. POST /api/threads/:threadId/invites/prepare（追加招待準備）
 
-**Request**: 同上
+**リクエスト:** 同上
 
-**Response (200)**: 同上（default_mode: 'add_to_thread'）
+**レスポンス:** 同上 + `thread_id` 付与
 
-**追加処理**:
-- already_invited チェック（既存inviteとの重複）
-- thread所有者検証
+**追加処理:**
+- already_invited チェック（thread_invites.email 重複）
 
-#### 3) POST /api/pending-actions/:confirm_token/confirm
-**目的**: 確認決定（送る/キャンセル/別スレッドで）
+#### B-3-3. POST /api/pending-actions/:confirmToken/confirm（確認決定）
 
-**Request**:
+**リクエスト:**
 ```typescript
 {
   decision: 'send' | 'cancel' | 'new_thread';
 }
 ```
 
-**Response (200)**:
+**レスポンス:**
 ```typescript
 {
   status: 'confirmed_send' | 'confirmed_cancel' | 'confirmed_new_thread';
-  message: string;
-  next_action?: 'execute';  // send/new_thread の場合
+  decision: string;
+  message: string;           // "送信を確定しました" / "キャンセルしました" / "別スレッドで送信を確定しました"
+  can_execute: boolean;      // true (send/new_thread) / false (cancel)
 }
 ```
 
-**バリデーション**:
-- status='pending' のみ許可
-- expires_at 未超過
-- decision は 3値のみ
+**処理フロー:**
+1. confirm_token で pending_actions 検索
+2. status='pending' かつ expires_at > now 検証
+3. status 更新 + confirmed_at 記録
+4. can_execute フラグ返却
 
-#### 4) POST /api/pending-actions/:confirm_token/execute
-**目的**: 実際の送信実行（冪等）
+#### B-3-4. POST /api/pending-actions/:confirmToken/execute（送信実行）
 
-**Request**:
+**リクエスト:**
 ```typescript
 {
-  request_id?: string;  // 冪等性担保用
+  request_id?: string;  // 冪等性用（任意）
 }
 ```
 
-**Response (200)**:
+**レスポンス:**
 ```typescript
 {
+  success: boolean;
   thread_id: string;
-  inserted: number;
-  skipped: number;
-  failed: number;
-  deliveries: {
-    email_queued: number;
-    in_app_created: number;
+  result: {
+    inserted: number;
+    skipped: number;
+    failed: number;
+    deliveries: {
+      email_queued: number;
+      in_app_created: number;
+    };
   };
   message: string;
   request_id: string;
 }
 ```
 
-**処理フロー（confirmed_send）**:
-1. request_id チェック（二重実行防止）
-2. thread_id あり → 追加招待 / なし → 新規スレッド作成
-3. thread_invites バッチINSERT
-4. EMAIL_QUEUE 投入 → invite_deliveries(channel='email') INSERT
-5. アプリユーザーには inbox + invite_deliveries(channel='in_app') INSERT
-6. pending_actions.status → 'executed'
-7. レスポンス返却
+**処理フロー:**
+1. confirm_token で pending_actions 検索
+2. status が confirmed_send/confirmed_new_thread 検証
+3. request_id 重複チェック（冪等性）
+4. **new_thread の場合**: scheduling_threads INSERT
+5. thread_invites バッチ INSERT（200件チャンク）
+6. EMAIL_QUEUE 投入 + invite_deliveries(email) 作成
+7. アプリユーザーには inbox_items + invite_deliveries(in_app) 作成
+8. pending_actions.status='executed' + executed_at 更新
 
-**処理フロー（confirmed_new_thread）**:
-1. 元スレッドからタイトル継承
-2. 新規スレッド作成
-3. 以降は confirmed_send と同じ
+### B-4. 既存API修正
 
-### B-3. 擬似コード（execute部分）
+#### B-4-1. POST /api/threads/:id/finalize（確定通知必須化）
 
-```typescript
-// apps/api/src/routes/pendingActions.ts
-app.post('/:confirm_token/execute', async (c) => {
-  const { env } = c;
-  const { workspaceId, ownerUserId } = getTenant(c);
-  const { confirm_token } = c.req.param();
-  const { request_id } = await c.req.json();
+**追加処理:**
+1. thread_finalize 作成後、全参加者に確定通知
+2. invite_deliveries(finalized_notice) 作成
+3. メール: EMAIL_QUEUE投入
+4. in_app: inbox_items 作成
 
-  const repo = new PendingActionsRepository(env.DB);
-  const action = await repo.getByToken(confirm_token);
+### B-5. ファイル構成
 
-  // 1. Validation
-  if (!action) return c.json({ error: 'Not found' }, 404);
-  if (action.workspace_id !== workspaceId) return c.json({ error: 'Access denied' }, 403);
-  if (action.status === 'executed') {
-    // 冪等性: 既に実行済みなら前回の結果を返す
-    return c.json({ 
-      thread_id: action.thread_id,
-      message: 'Already executed',
-      request_id: action.request_id
-    });
-  }
-  if (!['confirmed_send', 'confirmed_new_thread'].includes(action.status)) {
-    return c.json({ error: 'Invalid status for execute' }, 409);
-  }
-  if (isExpired(action.expires_at)) {
-    await repo.updateStatus(action.id, 'expired');
-    return c.json({ error: 'Expired' }, 410);
-  }
-
-  // 2. request_id 二重チェック
-  if (request_id && action.request_id && action.request_id !== request_id) {
-    return c.json({ error: 'Duplicate request' }, 409);
-  }
-
-  // 3. Execute
-  const payload = JSON.parse(action.payload_json) as PendingActionPayload;
-  const threadsRepo = new ThreadsRepository(env.DB);
-  const deliveriesRepo = new InviteDeliveriesRepository(env.DB);
-
-  let threadId = action.thread_id;
-
-  // 新規スレッド作成
-  if (!threadId || action.status === 'confirmed_new_thread') {
-    const newThread = await threadsRepo.create({
-      workspace_id: workspaceId,
-      organizer_user_id: ownerUserId,
-      title: payload.title || 'New Thread',
-      description: payload.description,
-      status: 'draft',
-    });
-    threadId = newThread.id;
-    await repo.updateThreadId(action.id, threadId);
-  }
-
-  // メール取得
-  let emails: string[] = [];
-  if (payload.source_type === 'emails') {
-    emails = payload.emails;
-  } else {
-    const members = await listsRepo.getMembers(payload.list_id, workspaceId);
-    emails = members.filter(m => m.email).map(m => m.email);
-  }
-
-  // Batch invite作成
-  const batchResult = await threadsRepo.createInvitesBatch(
-    emails.map(email => ({
-      thread_id: threadId,
-      email,
-      expires_in_hours: 72,
-    }))
-  );
-
-  // Deliveries記録 + EMAIL_QUEUE投入
-  let emailQueued = 0;
-  let inAppCreated = 0;
-
-  for (const inviteId of batchResult.insertedIds) {
-    const invite = await threadsRepo.getInviteById(inviteId);
-    const { is_app_user, user_id } = await checkIsAppUser(env.DB, invite.email);
-
-    // Email delivery
-    const emailJobId = `invite-${inviteId}`;
-    await env.EMAIL_QUEUE.send({
-      job_id: emailJobId,
-      type: 'invite',
-      to: invite.email,
-      // ...
-    });
-    await deliveriesRepo.create({
-      workspace_id: workspaceId,
-      owner_user_id: ownerUserId,
-      thread_id: threadId,
-      invite_id: inviteId,
-      delivery_type: 'invite_sent',
-      channel: 'email',
-      recipient_email: invite.email,
-      queue_job_id: emailJobId,
-    });
-    emailQueued++;
-
-    // In-app delivery (app users only)
-    if (is_app_user && user_id) {
-      await inboxRepo.create({
-        user_id,
-        type: 'scheduling_invite',
-        title: `日程調整の招待`,
-        // ...
-      });
-      await deliveriesRepo.create({
-        workspace_id: workspaceId,
-        owner_user_id: ownerUserId,
-        thread_id: threadId,
-        invite_id: inviteId,
-        delivery_type: 'invite_sent',
-        channel: 'in_app',
-        recipient_user_id: user_id,
-        provider: 'inbox',
-        status: 'delivered',
-      });
-      inAppCreated++;
-    }
-  }
-
-  // Update pending_action
-  await repo.markExecuted(action.id, request_id || crypto.randomUUID());
-
-  return c.json({
-    thread_id: threadId,
-    inserted: batchResult.insertedIds.length,
-    skipped: batchResult.skipped,
-    failed: 0,
-    deliveries: {
-      email_queued: emailQueued,
-      in_app_created: inAppCreated,
-    },
-    message: `${batchResult.insertedIds.length}名に招待を送信しました。`,
-    request_id: action.request_id,
-  });
-});
+```
+apps/api/src/
+├── routes/
+│   ├── pendingActions.ts      # 新規: confirm/execute
+│   └── threads.ts             # 修正: prepare-send追加
+├── repositories/
+│   ├── pendingActionsRepository.ts  # 新規
+│   └── inviteDeliveriesRepository.ts  # 新規
+└── utils/
+    └── emailNormalizer.ts     # 新規: trim/lower/validation
 ```
 
-### B-4. エラーコード
+### B-6. DoD（完了条件）
 
-| Code | 条件 | メッセージ |
-|------|------|-----------|
-| 400 | 入力不正 | `Missing required field: emails or list_id` |
-| 401 | 未認証 | `Unauthorized` |
-| 403 | 権限なし | `Access denied` |
-| 404 | 見つからない | `Pending action not found` |
-| 409 | 状態不正 | `Invalid status for this operation` |
-| 410 | 期限切れ | `Confirmation expired (15 minutes)` |
-| 500 | サーバーエラー | `Internal server error` |
+- [ ] `POST /api/threads/prepare-send` で pending_actions 作成
+- [ ] `POST /api/pending-actions/:token/confirm` で status 更新
+- [ ] `POST /api/pending-actions/:token/execute` で invite + delivery 作成
+- [ ] request_id による冪等性（二重実行で同じ結果）
+- [ ] 期限切れ（410 Gone）エラー返却
+- [ ] 認証なし（401）エラー返却
+
+### B-7. エラーコード
+
+| HTTP | コード | 説明 |
+|------|--------|------|
+| 400 | INVALID_PAYLOAD | payload_json が 8KB 超過 |
+| 401 | UNAUTHORIZED | 認証なし |
+| 404 | NOT_FOUND | confirm_token/thread_id 不明 |
+| 409 | ALREADY_EXECUTED | 既に execute 済み |
+| 410 | EXPIRED | confirm_token 期限切れ |
+| 422 | INVALID_STATUS | confirm/execute 不可なステータス |
 
 ---
 
-## C) フロントエンド（Intent/Executor/リスト5コマンド）
+## チケット C: フロントエンド (Intent/Executor/リスト5コマンド)
 
-### C-1. チケット詳細
+### C-1. 基本情報
 
-**タイトル**: [Frontend] チャットIntent + 送信確認UI + リスト5コマンド
+| 項目 | 値 |
+|------|-----|
+| **チケットID** | BETA-A-003 |
+| **タイトル** | フロント実装: Intent解析 + Executor + リスト5コマンド |
+| **見積もり** | 6h |
+| **優先度** | P0 (ブロッカー) |
+| **担当** | Frontend |
+| **依存** | BETA-A-002 (API) |
 
-**優先度**: P0（Blocker）
+### C-2. 目的
 
-**見積**: 8h
+UIはカード補助、チャットテキストのみで完結。送信確認は3語固定。
 
-**ファイル**:
-- `frontend/src/services/intentParser.ts` (修正)
-- `frontend/src/services/chatExecutor.ts` (修正)
-- `frontend/src/components/chat/ConfirmCard.tsx` (新規)
+### C-3. Intent一覧（ルールベース）
 
-### C-2. Intent一覧（Beta A必須）
+| 入力パターン | Intent | API呼び出し |
+|--------------|--------|-------------|
+| メールアドレス含む（thread未選択） | `thread.send.prepare` | POST /threads/prepare-send |
+| メールアドレス含む（thread選択中） | `thread.invite.prepare.add` | POST /threads/:id/invites/prepare |
+| 「〇〇リストに招待」（thread未選択） | `thread.send.prepare.list` | POST /threads/prepare-send (list_id) |
+| 「〇〇リストに招待」（thread選択中） | `thread.invite.prepare.add.list` | POST /threads/:id/invites/prepare (list_id) |
+| 「送る」 | `pending.confirm.send` | POST /pending-actions/:token/confirm + execute |
+| 「キャンセル」 | `pending.confirm.cancel` | POST /pending-actions/:token/confirm |
+| 「別スレッドで」 | `pending.confirm.new_thread` | POST /pending-actions/:token/confirm + execute |
 
-| Intent | トリガー | API呼び出し |
-|--------|---------|------------|
-| `thread.send.prepare` | メール入力 + スレッド未選択 | `POST /threads/prepare-send` |
-| `thread.invite.prepare.add` | メール入力 + スレッド選択中 | `POST /threads/:id/invites/prepare` |
-| `pending.confirm` | 「送る」「キャンセル」「別スレッドで」 | `POST /pending-actions/:token/confirm` → `execute` |
-| `lists.create` | 「〇〇リスト作って」 | `POST /lists` |
-| `lists.list` | 「リスト見せて」 | `GET /lists` |
-| `listMembers.list` | 「〇〇リストのメンバー」 | `GET /lists/:id/members` |
-| `contacts.upsert` + `listMembers.add` | 「〇〇を△△リストに追加」 | `POST /contacts` → `POST /lists/:id/members` |
-| `thread.invite.fromList` | 「〇〇リストに招待」 | `prepare` → `confirm` → `execute` |
+### C-4. リスト5コマンド
 
-### C-3. 状態管理
+| コマンド | Intent | API |
+|----------|--------|-----|
+| 「〇〇リストを作って」 | `lists.create` | POST /api/lists |
+| 「リスト見せて」 | `lists.list` | GET /api/lists |
+| 「〇〇リストのメンバー」 | `listMembers.list` | GET /api/lists/:id/members |
+| 「〇〇を〇〇リストに追加」 | `contacts.upsert` + `listMembers.add` | POST /contacts + POST /lists/:id/members |
+| 「〇〇リストに招待」 | `thread.send.prepare.list` | (上記参照) |
 
-```typescript
-// frontend/src/stores/pendingActionStore.ts
-interface PendingActionState {
-  confirm_token: string | null;
-  expires_at: string | null;
-  summary: PendingActionSummary | null;
-  mode: 'new_thread' | 'add_to_thread' | null;
-}
-
-// リロード対策（Beta A任意、Beta B必須）
-// localStorage に保存し、15分以内なら復元
-```
-
-### C-4. 確認カードUI
-
-```tsx
-// frontend/src/components/chat/ConfirmCard.tsx
-export function ConfirmCard({ 
-  summary, 
-  onConfirm 
-}: { 
-  summary: PendingActionSummary;
-  onConfirm: (decision: 'send' | 'cancel' | 'new_thread') => void;
-}) {
-  return (
-    <div className="bg-blue-50 p-4 rounded-lg">
-      <h3 className="font-bold">送信確認</h3>
-      <p>{summary.source_description}</p>
-      <p>{summary.valid_count}名に送信します</p>
-      {summary.skipped_count > 0 && (
-        <p className="text-yellow-600">
-          {summary.skipped_count}件スキップ
-        </p>
-      )}
-      <div className="mt-4 flex gap-2">
-        <button onClick={() => onConfirm('send')} className="btn-primary">
-          送る
-        </button>
-        <button onClick={() => onConfirm('cancel')} className="btn-secondary">
-          キャンセル
-        </button>
-        <button onClick={() => onConfirm('new_thread')} className="btn-outline">
-          別スレッドで
-        </button>
-      </div>
-    </div>
-  );
-}
-```
-
-### C-5. リスト5コマンド実装
+### C-5. 状態管理
 
 ```typescript
-// Intent: lists.create
-// Input: "営業部リスト作って"
-async function handleListsCreate(params: { name: string }) {
-  const res = await api.post('/lists', { name: params.name });
-  return `「${res.data.list.name}」リストを作成しました。`;
-}
-
-// Intent: lists.list
-// Input: "リスト見せて"
-async function handleListsList() {
-  const res = await api.get('/lists');
-  const names = res.data.lists.map(l => `• ${l.name} (${l.member_count}名)`);
-  return `リスト一覧:\n${names.join('\n')}`;
-}
-
-// Intent: listMembers.list
-// Input: "営業部リストのメンバー"
-async function handleListMembersList(params: { list_name: string }) {
-  const list = await findListByName(params.list_name);
-  const res = await api.get(`/lists/${list.id}/members`);
-  const members = res.data.members.map(m => `• ${m.contact_display_name || m.contact_email}`);
-  return `${list.name}のメンバー (${res.data.total}名):\n${members.slice(0, 10).join('\n')}`;
-}
-
-// Intent: contacts.upsert + listMembers.add
-// Input: "tanaka@example.com を営業部リストに追加"
-async function handleAddToList(params: { email: string; list_name: string }) {
-  const list = await findListByName(params.list_name);
-  const contact = await api.post('/contacts', { email: params.email });
-  await api.post(`/lists/${list.id}/members`, { contact_id: contact.data.contact.id });
-  return `${params.email} を ${list.name} に追加しました。`;
-}
-
-// Intent: thread.invite.fromList
-// Input: "営業部リストに招待"
-async function handleInviteFromList(params: { list_name: string }) {
-  const list = await findListByName(params.list_name);
-  const res = await api.post('/threads/prepare-send', {
-    source_type: 'list',
-    list_id: list.id,
-  });
-  // ConfirmCard表示へ
-  setPendingAction(res.data);
-  return null; // UIカードで表示
+interface ChatState {
+  // 現在選択中のスレッド（null = 新規作成モード）
+  selectedThreadId: string | null;
+  
+  // 確認待ちの pending_action
+  pendingAction: {
+    confirm_token: string;
+    expires_at: string;
+    summary: PendingActionSummary;
+  } | null;
 }
 ```
+
+### C-6. UI表示
+
+#### サマリカード（prepare レスポンス後）
+
+```
+┌─────────────────────────────────────┐
+│ 📨 送信確認                          │
+├─────────────────────────────────────┤
+│ 3名に招待を送信します:               │
+│                                     │
+│ • tanaka@example.com               │
+│ • suzuki@example.com (アプリユーザー) │
+│ • yamada@example.com               │
+│                                     │
+│ ⚠️ 1件スキップ（無効なメール形式）    │
+├─────────────────────────────────────┤
+│ [送る] [キャンセル] [別スレッドで]    │
+└─────────────────────────────────────┘
+```
+
+### C-7. DoD（完了条件）
+
+- [ ] メール入力 → prepare → サマリ表示
+- [ ] 「送る」→ confirm + execute → 成功メッセージ
+- [ ] 「キャンセル」→ confirm → キャンセルメッセージ
+- [ ] 「別スレッドで」→ confirm + execute → 新規thread作成
+- [ ] リスト5コマンドがチャットで動作
+- [ ] thread選択中/未選択で正しく分岐
 
 ---
 
-## D) E2E チェックリスト
+## チケット D: E2E テスト + 監視
 
-### D-1. チケット詳細
+### D-1. 基本情報
 
-**タイトル**: [Test] Beta A E2Eシナリオ3本完走
+| 項目 | 値 |
+|------|-----|
+| **チケットID** | BETA-A-004 |
+| **タイトル** | E2Eテスト: Beta A 完走確認 |
+| **見積もり** | 4h |
+| **優先度** | P1 |
+| **担当** | QA / Backend |
+| **依存** | BETA-A-003 (フロント) |
 
-**優先度**: P0（Blocker）
+### D-2. E2Eシナリオ
 
-**見積**: 4h
-
-### D-2. シナリオ1: 新規スレッド（メール入力）
+#### シナリオ1: 新規スレッド（メール入力→送信）
 
 ```
 1. /chat を開く
-2. 「alice@example.com, bob@example.com に招待」と入力
-3. → サマリカード表示: "2名に送信します"
-4. 「送る」をクリック
-5. → pending_actions.status = 'executed'
-6. → thread_invites に2件INSERT
-7. → invite_deliveries に2件INSERT (channel='email')
-8. → EMAIL_QUEUE に2件投入
-9. → アプリユーザーなら inbox + invite_deliveries(in_app)も
-10. → "2名に招待を送信しました" メッセージ表示
+2. 「tanaka@example.com, suzuki@example.com」と入力
+3. サマリカードが表示される（2名、スキップなし）
+4. 「送る」と入力
+5. 「2名に招待を送信しました」メッセージ
+6. pending_actions.status = 'executed'
+7. invite_deliveries に2件（channel='email'）
+8. EMAIL_QUEUE にジョブ2件
 ```
 
-**確認ポイント**:
-- [ ] 二重送信されない（同じconfirm_tokenでexecute 2回 → 同じ結果）
-- [ ] 期限切れ後は execute 失敗（410）
-- [ ] キャンセル後は execute 不可（409）
+**確認項目:**
+- [ ] pending_actions レコード作成
+- [ ] confirm_token が32文字
+- [ ] expires_at が15分後
+- [ ] execute 後に thread_invites 2件
+- [ ] invite_deliveries 2件（status='queued'）
 
-### D-3. シナリオ2: 追加招待（スレッド選択中）
-
-```
-1. 既存スレッドを選択
-2. 「charlie@example.com を追加」と入力
-3. → サマリカード表示（既存inviteとの重複チェック含む）
-4. 「送る」をクリック
-5. → thread_invites に追加INSERT
-6. → invite_deliveries 記録
-```
-
-**確認ポイント**:
-- [ ] 重複メールは skipped_reasons に含まれる
-- [ ] 「別スレッドで」選択時は新規スレッド作成
-
-### D-4. シナリオ3: 確定→通知→カレンダー追加
+#### シナリオ2: 追加招待（スレッド選択中）
 
 ```
-1. 外部ユーザーが /i/:token にアクセス
-2. 候補を選択 → 回答送信
-3. 主催者がチャットで「1番で確定」
-4. → Google Calendar + Meet 作成
-5. → 確定通知送信（全員）
-6. → invite_deliveries (delivery_type='finalized_notice')
-7. 外部ユーザーの /i/:token/result 画面
-   - Meetリンク表示
-   - Google Calendar追加ボタン
-   - ICSダウンロード
+1. 既存 thread を選択
+2. 「yamada@example.com」と入力
+3. サマリカード（1名、追加招待）
+4. 「送る」
+5. thread_invites に1件追加
 ```
 
-**確認ポイント**:
-- [ ] 確定通知が全員に届く（メール＋アプリユーザーはInbox）
-- [ ] Meetリンクが正しく表示
-- [ ] ICSファイルのUID = `{thread_id}@tomoniwao.com`
+**確認項目:**
+- [ ] action_type = 'add_invites'
+- [ ] 既存 invite と重複なら skipped
 
-### D-5. リスト体験シナリオ
+#### シナリオ3: 確定通知（外部回答→主催者確定）
 
 ```
-1. 「営業部リスト作って」 → リスト作成
-2. 「リスト見せて」 → 一覧表示
-3. 「tanaka@example.com を営業部に追加」 → メンバー追加
-4. 「営業部リストのメンバー」 → メンバー表示
-5. 「営業部リストに招待」 → サマリ → 送る → 送信完了
+1. 外部ユーザーが /i/:token で候補選択
+2. 主催者が「1番で確定」
+3. Google Calendar + Meet 作成
+4. 全員に確定通知
+5. 外部ユーザーの結果画面にカレンダー追加ボタン
 ```
 
-### D-6. 監視・デバッグ
+**確認項目:**
+- [ ] thread_finalize 作成
+- [ ] invite_deliveries(finalized_notice) 作成
+- [ ] inbox_items（アプリユーザーのみ）
+- [ ] /i/:token/result に Meet リンク表示
+
+### D-3. エッジケーステスト
+
+| ケース | 期待動作 |
+|--------|----------|
+| 期限切れ confirm_token | 410 Gone |
+| 二重 execute (同じ request_id) | 同じ結果を返す（冪等） |
+| 無効なメール100件中95件 | 5件だけ送信、95件 skipped |
+| 1001件リスト | 400 エラー（上限1000） |
+| 認証なしアクセス | 401 Unauthorized |
+
+### D-4. 監視設定
 
 ```bash
-# request_id でログ追跡
-wrangler tail | grep "request_id=xxx"
+# Workers logs で確認
+wrangler tail --format pretty | grep -E "(pending_action|invite_delivery|EMAIL_QUEUE)"
 
-# EMAIL_QUEUE 状況
-wrangler queues messages list EMAIL_QUEUE
-
-# invite_deliveries 状態確認
-wrangler d1 execute tomoniwao --command="SELECT status, COUNT(*) FROM invite_deliveries GROUP BY status;"
-
-# pending_actions 期限切れチェック
-wrangler d1 execute tomoniwao --command="SELECT COUNT(*) FROM pending_actions WHERE status='pending' AND expires_at < datetime('now');"
+# DLQ 確認
+wrangler queues list
+wrangler queues messages EMAIL_DLQ --limit 10
 ```
+
+### D-5. DoD（完了条件）
+
+- [ ] シナリオ1〜3 が手動で完走
+- [ ] エッジケース5件が期待動作
+- [ ] request_id で二重送信なし確認
+- [ ] Workers logs で pending_action 追跡可能
 
 ---
 
@@ -652,46 +445,50 @@ wrangler d1 execute tomoniwao --command="SELECT COUNT(*) FROM pending_actions WH
 
 ```
 Week 1:
-├── A-1: Migration 0065/0066 作成・適用 (2h)
-├── B-1: prepare-send API (3h)
-├── B-2: confirm API (2h)
-└── B-3: execute API (3h)
+  Day 1-2: チケットA（Migration適用）
+  Day 3-5: チケットB（API実装）
 
 Week 2:
-├── C-1: Intent追加 (2h)
-├── C-2: ConfirmCard UI (2h)
-├── C-3: リスト5コマンド (4h)
-└── D-1: E2Eテスト3本 (4h)
+  Day 1-3: チケットC（フロント実装）
+  Day 4-5: チケットD（E2Eテスト）
 ```
-
-**合計: 22h**
 
 ---
 
-## Beta Aで「やらない」と決めた事項
+## チェックリスト（全体）
 
-| 項目 | 理由 | 将来フェーズ |
-|------|------|-------------|
-| 自然文での送信確認 | 3語固定で事故防止、AI会話化で吸収 | Beta B |
-| Slack/Chatwork送信 | Beta Aはメール＋Inboxのみ | Beta C |
-| work/family/代理登録 | Relationshipは別軸 | Beta B/C |
-| フレンド承認UI | Viral流入後に検討 | 後年 |
-| 未読バッジ | Inbox最小仕様で十分 | Beta B |
-| リロード復元 | localStorage対応は任意 | Beta B |
+### Migration
+- [ ] 0065_create_pending_actions.sql 適用
+- [ ] 0066_create_invite_deliveries.sql 適用
+- [ ] 型定義 pendingAction.ts 確認
+- [ ] 型定義 inviteDelivery.ts 確認
+
+### API
+- [ ] POST /api/threads/prepare-send
+- [ ] POST /api/threads/:id/invites/prepare
+- [ ] POST /api/pending-actions/:token/confirm
+- [ ] POST /api/pending-actions/:token/execute
+- [ ] POST /api/threads/:id/finalize（確定通知追加）
+
+### フロント
+- [ ] Intent: メール入力 → prepare
+- [ ] Intent: 「送る/キャンセル/別スレッドで」
+- [ ] Intent: リスト5コマンド
+- [ ] サマリカード表示
+- [ ] 状態管理（pendingAction保持）
+
+### E2E
+- [ ] シナリオ1: 新規スレッド送信
+- [ ] シナリオ2: 追加招待
+- [ ] シナリオ3: 確定通知
+- [ ] 冪等性確認（二重execute）
+- [ ] 期限切れ確認（410）
 
 ---
 
 ## 関連ドキュメント
 
-- `docs/ADR/ADR-0006-invite-confirmation.md` (新規作成)
-- `docs/ADR/ADR-0007-external-viral-flow.md` (既存更新)
-- `docs/EXTERNAL_INVITE_FLOW.md`
-- `docs/CALENDAR_INTEGRATION_PLAN.md`
-
----
-
-## 変更履歴
-
-| 日付 | 変更内容 | 担当 |
-|------|----------|------|
-| 2026-01-09 | 初版作成 | AI Assistant |
+- [BETA_A_FINAL_PLAN_V2.md](./BETA_A_FINAL_PLAN_V2.md) - 詳細設計
+- [ADR-0006](./ADR/ADR-0006-invite-confirmation.md) - 送信確認フロー
+- [ADR-0007](./ADR/ADR-0007-external-viral-flow.md) - 外部ユーザーフロー
+- [API_SPECIFICATION.md](./API_SPECIFICATION.md) - API仕様
