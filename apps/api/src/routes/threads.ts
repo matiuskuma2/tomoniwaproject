@@ -827,4 +827,142 @@ ${inviteUrl}
   }
 });
 
+/**
+ * Add bulk invites to existing thread from list
+ * 
+ * @route POST /threads/:id/invites/batch
+ * @body { target_list_id: string }
+ * 
+ * Phase P0-4: Chat-driven bulk invite
+ * Use case: "リスト「営業部」に招待メールを送って"
+ */
+app.post('/:id/invites/batch', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+  const threadId = c.req.param('id');
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    const body = await c.req.json();
+    const { target_list_id } = body;
+
+    if (!target_list_id || typeof target_list_id !== 'string') {
+      return c.json({ error: 'Missing or invalid field: target_list_id' }, 400);
+    }
+
+    // Step 1: Verify thread exists and user has access (P0-1: tenant isolation)
+    const threadsRepo = new ThreadsRepository(env.DB);
+    const thread = await env.DB.prepare(`
+      SELECT id, title, status FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found or access denied' }, 404);
+    }
+
+    // Step 2: Verify list exists and user has access (P0-1: tenant isolation)
+    const listsRepo = new ListsRepository(env.DB);
+    const list = await listsRepo.getById(target_list_id, workspaceId, ownerUserId);
+
+    if (!list) {
+      return c.json({ error: 'List not found or access denied' }, 404);
+    }
+
+    // Step 3: Get list members (max 1000)
+    const { members, total } = await listsRepo.getMembers(target_list_id, workspaceId, 1001, 0);
+
+    if (total > 1000) {
+      return c.json({
+        error: 'List size exceeds 1000 contacts. Please split into smaller lists.',
+        total,
+        limit: 1000
+      }, 400);
+    }
+
+    if (members.length === 0) {
+      return c.json({ error: 'List is empty. Add contacts first.' }, 400);
+    }
+
+    console.log(`[Threads] Adding ${members.length} bulk invites to thread ${threadId}`);
+
+    // Step 4: Filter valid members (must have email)
+    const validMembers = members.filter((m) => m.contact_email);
+    const skippedCount = members.length - validMembers.length;
+
+    if (skippedCount > 0) {
+      console.warn(`[Threads] Skipped ${skippedCount} contacts without email`);
+    }
+
+    // Step 5: Create invites in batch (P0-1: Transaction for performance)
+    const batchResult = await threadsRepo.createInvitesBatch(
+      validMembers.map((member) => ({
+        thread_id: threadId,
+        email: member.contact_email!,
+        candidate_name: member.contact_display_name || member.contact_email!,
+        candidate_reason: `From list: ${list.name}`,
+        expires_in_hours: 72, // 3 days
+      }))
+    );
+
+    console.log('[Threads] Batch invite result:', batchResult);
+
+    // Step 6: Fetch inserted invites for email queue
+    let invites: any[] = [];
+    if (batchResult.insertedIds.length > 0) {
+      const placeholders = batchResult.insertedIds.map(() => '?').join(',');
+      const inviteList = await env.DB.prepare(
+        `SELECT * FROM thread_invites WHERE id IN (${placeholders}) ORDER BY created_at DESC`
+      ).bind(...batchResult.insertedIds).all();
+
+      invites = inviteList.results as any[];
+    }
+
+    // Step 7: Send invite emails via queue
+    for (const invite of invites) {
+      const member = validMembers.find((m) => m.contact_email === invite.email);
+      if (!member) continue;
+
+      const emailJob: EmailJob = {
+        job_id: `invite-${invite.id}`,
+        type: 'invite',
+        to: member.contact_email!,
+        subject: `${thread.title} - You're invited to join a conversation`,
+        created_at: Date.now(),
+        data: {
+          token: invite.token,
+          inviter_name: 'Tomoniwao',
+          relation_type: 'thread_invite',
+        },
+      };
+
+      await env.EMAIL_QUEUE.send(emailJob);
+      console.log('[Threads] Queued email for:', member.contact_email);
+    }
+
+    return c.json({
+      success: true,
+      thread_id: threadId,
+      list_name: list.name,
+      inserted: batchResult.insertedIds.length,
+      skipped: batchResult.skipped + skippedCount,
+      failed: 0, // Currently no failed tracking
+      total_invited: batchResult.insertedIds.length,
+      message: `${batchResult.insertedIds.length}名に招待メールを送信しました。`,
+    });
+
+  } catch (error) {
+    console.error('[Threads] Error adding bulk invites:', error);
+    return c.json(
+      {
+        error: 'Failed to add bulk invites',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
 export default app;

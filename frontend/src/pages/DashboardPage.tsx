@@ -98,36 +98,6 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Phase Next-1: Chat UI Beta Link */}
-      <div className="mb-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg shadow-sm">
-        <div className="flex items-start">
-          <div className="flex-shrink-0">
-            <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
-          </div>
-          <div className="ml-3 flex-1">
-            <h3 className="text-sm font-semibold text-blue-900">
-              🚀 新しいチャットUIを試す（Phase Next-1 Beta）
-            </h3>
-            <p className="mt-1 text-sm text-blue-800">
-              音声操作に向けた新しいチャット画面が利用できます。スレッドを選択してカード形式で確認できます。
-            </p>
-            <div className="mt-4">
-              <Link
-                to="/chat"
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-              >
-                <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                Chat（β）を開く
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {threads.length === 0 ? (
           <div className="text-center py-12">

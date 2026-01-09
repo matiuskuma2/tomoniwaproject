@@ -5,6 +5,7 @@
 
 import { threadsApi } from '../api/threads';
 import { calendarApi } from '../api/calendar';
+import { listsApi } from '../api/lists';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 
@@ -16,6 +17,7 @@ export type ExecutionResultData =
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
   | { kind: 'thread.create'; payload: any }
   | { kind: 'thread.finalize'; payload: any }
+  | { kind: 'thread.invites.batch'; payload: any }
   | { kind: 'auto_propose.generated'; payload: { 
       source: 'initial' | 'additional'; // Phase Next-5 Day3: 明示フラグ
       threadId?: string; // Phase Next-5 Day3: 提案生成時のスレッドID
@@ -168,6 +170,9 @@ export async function executeIntent(
     
     case 'schedule.finalize':
       return executeFinalize(intentResult);
+    
+    case 'schedule.invite.list':
+      return executeInviteList(intentResult);
     
     case 'unknown':
       return {
@@ -1430,6 +1435,84 @@ async function executeFinalize(
         payload: response,
       },
     };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P0-4: schedule.invite.list
+ * リストの全員に招待メールを送信
+ */
+async function executeInviteList(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { listName, threadId } = intentResult.params;
+
+  try {
+    // Step 1: Get all lists
+    const listsResponse = await listsApi.list();
+    const lists = listsResponse.items || [];
+
+    // Step 2: Find list by name
+    const targetList = lists.find((list) => list.name === listName);
+
+    if (!targetList) {
+      return {
+        success: false,
+        message: `❌ リスト「${listName}」が見つかりませんでした。\n\n利用可能なリスト:\n${lists.map((l) => `- ${l.name}`).join('\n')}`,
+      };
+    }
+
+    // Step 3: Check if thread is selected
+    if (!threadId) {
+      return {
+        success: false,
+        message: `⚠️ スレッドを選択してください。\n左のスレッド一覧からスレッドを選択してから、再度実行してください。`,
+      };
+    }
+
+    // Step 4: Get list members count
+    const membersResponse = await listsApi.getMembers(targetList.id);
+    const membersCount = membersResponse.items?.length || 0;
+
+    if (membersCount === 0) {
+      return {
+        success: false,
+        message: `❌ リスト「${listName}」にメンバーがいません。\n先にメンバーを追加してください。`,
+      };
+    }
+
+    // Step 6: Add bulk invites to existing thread
+    const result = await threadsApi.addBulkInvites(threadId, {
+      target_list_id: targetList.id,
+    });
+
+    // Build success message
+    let message = `✅ 招待メールを送信しました\n\n`;
+    message += `📋 リスト: ${result.list_name}\n`;
+    message += `📧 送信: ${result.inserted}名\n`;
+    
+    if (result.skipped > 0) {
+      message += `⚠️ スキップ: ${result.skipped}名（メールアドレス不足など）\n`;
+    }
+    
+    if (result.failed > 0) {
+      message += `❌ 失敗: ${result.failed}名\n`;
+    }
+
+    message += `\n💡 招待リンクがメールで送信されました。`;
+
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'thread.invites.batch',
+        payload: result,
+      },
+    };
+
   } catch (error) {
     return {
       success: false,

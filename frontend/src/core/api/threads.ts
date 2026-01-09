@@ -80,4 +80,24 @@ export const threadsApi = {
   ): Promise<FinalizeResponse> {
     return api.post(`/api/threads/${threadId}/finalize`, data);
   },
+
+  /**
+   * Add bulk invites from list to existing thread
+   * Phase P0-4: Chat-driven bulk invite
+   */
+  async addBulkInvites(
+    threadId: string,
+    data: { target_list_id: string }
+  ): Promise<{
+    success: boolean;
+    thread_id: string;
+    list_name: string;
+    inserted: number;
+    skipped: number;
+    failed: number;
+    total_invited: number;
+    message: string;
+  }> {
+    return api.post(`/api/threads/${threadId}/invites/batch`, data);
+  },
 };

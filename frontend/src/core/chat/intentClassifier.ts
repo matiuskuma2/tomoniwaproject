@@ -7,6 +7,7 @@ export type IntentType =
   | 'schedule.external.create'
   | 'schedule.status.check'
   | 'schedule.finalize'
+  | 'schedule.invite.list'  // P0-4: リスト全員に招待メール送信
   | 'schedule.today'      // Phase Next-3 (P1)
   | 'schedule.week'       // Phase Next-3 (P1)
   | 'schedule.freebusy'   // Phase Next-3 (P1)
@@ -341,6 +342,35 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       params: {
         rawInput: input,
         emails,
+      },
+    };
+  }
+
+  // P0-4: schedule.invite.list
+  // Keywords: リスト○○に送って、○○リストに招待、リスト全員に
+  if (/(リスト.*送|リスト.*招待|リスト.*全員)/.test(normalizedInput)) {
+    // Extract list name from input
+    const listNameMatch = input.match(/リスト[「『]?(.+?)[」』]?に|[「『](.+?)[」』]リスト/);
+    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[2]).trim() : undefined;
+    
+    if (!listName) {
+      return {
+        intent: 'schedule.invite.list',
+        confidence: 0.9,
+        params: {},
+        needsClarification: {
+          field: 'listName',
+          message: 'どのリストに招待メールを送りますか？\n\n例: 「リスト「営業部」に招待メールを送って」',
+        },
+      };
+    }
+    
+    return {
+      intent: 'schedule.invite.list',
+      confidence: 0.9,
+      params: {
+        listName,
+        threadId: context?.selectedThreadId,
       },
     };
   }

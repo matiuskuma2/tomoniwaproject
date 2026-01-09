@@ -97,7 +97,7 @@ function App() {
         />
 
         {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </BrowserRouter>
     </ErrorBoundary>
