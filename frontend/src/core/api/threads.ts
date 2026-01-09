@@ -1,9 +1,28 @@
 /**
  * Threads API
+ * Beta A: Added prepareSend/prepareInvites for pending action flow
  */
 
 import { api } from './client';
 import type { Thread, ThreadStatus_API, FinalizeResponse } from '../models';
+import type { PrepareSendResponse } from './pendingActions';
+
+// ============================================================
+// Types for Beta A
+// ============================================================
+
+export interface PrepareSendInput {
+  source_type: 'emails' | 'list';
+  emails?: string[];
+  list_id?: string;
+  title?: string;
+}
+
+export interface PrepareInvitesInput {
+  source_type: 'emails' | 'list';
+  emails?: string[];
+  list_id?: string;
+}
 
 export const threadsApi = {
   /**
@@ -99,5 +118,33 @@ export const threadsApi = {
     message: string;
   }> {
     return api.post(`/api/threads/${threadId}/invites/batch`, data);
+  },
+
+  // ============================================================
+  // Beta A: Pending Action Flow (prepare → confirm → execute)
+  // ============================================================
+
+  /**
+   * 新規スレッド送信準備
+   * POST /api/threads/prepare-send
+   * 
+   * スレッド未選択時にメール/リストを入力した場合に呼ばれる
+   * → pending_action を作成し、confirm_token を返す
+   * → サマリを表示して「送る/キャンセル/別スレッドで」の入力待ち
+   */
+  async prepareSend(data: PrepareSendInput): Promise<PrepareSendResponse> {
+    return api.post('/api/threads/prepare-send', data);
+  },
+
+  /**
+   * 追加招待準備
+   * POST /api/threads/:threadId/invites/prepare
+   * 
+   * スレッド選択中にメール/リストを入力した場合に呼ばれる
+   * → pending_action を作成し、confirm_token を返す
+   * → サマリを表示して「送る/キャンセル/別スレッドで」の入力待ち
+   */
+  async prepareInvites(threadId: string, data: PrepareInvitesInput): Promise<PrepareSendResponse> {
+    return api.post(`/api/threads/${threadId}/invites/prepare`, data);
   },
 };

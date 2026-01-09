@@ -6,6 +6,8 @@
 import { threadsApi } from '../api/threads';
 import { calendarApi } from '../api/calendar';
 import { listsApi } from '../api/lists';
+import { contactsApi } from '../api/contacts';
+import { pendingActionsApi, type PendingDecision, type PrepareSendResponse } from '../api/pendingActions';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 
@@ -50,7 +52,31 @@ export type ExecutionResultData =
       threadId: string; // Phase Next-6 Day2: 提案生成時のスレッドID
       voteSummary: Array<{ label: string; votes: number }>;
     } }
-  | { kind: 'split.propose.cancelled'; payload: {} };
+  | { kind: 'split.propose.cancelled'; payload: {} }
+  // Beta A: 送信確認フロー
+  | { kind: 'pending.action.created'; payload: {
+      confirmToken: string;
+      expiresAt: string;
+      summary: any;
+      mode: 'new_thread' | 'add_to_thread';
+      threadId?: string;
+      threadTitle?: string;
+    } }
+  | { kind: 'pending.action.decided'; payload: {
+      decision: 'send' | 'cancel' | 'new_thread';
+      canExecute: boolean;
+    } }
+  | { kind: 'pending.action.executed'; payload: {
+      threadId: string;
+      inserted: number;
+      emailQueued: number;
+    } }
+  | { kind: 'pending.action.cleared'; payload: {} }
+  // Beta A: リスト5コマンド
+  | { kind: 'list.created'; payload: { listId: string; listName: string } }
+  | { kind: 'list.listed'; payload: { lists: any[] } }
+  | { kind: 'list.members'; payload: { listName: string; members: any[] } }
+  | { kind: 'list.member_added'; payload: { listName: string; email: string } };
 
 export interface ExecutionResult {
   success: boolean;
@@ -91,6 +117,15 @@ export interface ExecutionContext {
   pendingSplit?: {
     threadId: string;
   } | null;
+  // Beta A: pending action state for 3-word decision
+  pendingAction?: {
+    confirmToken: string;
+    expiresAt: string;
+    summary: any;
+    mode: 'new_thread' | 'add_to_thread';
+    threadId?: string;
+    threadTitle?: string;
+  } | null;
 }
 
 /**
@@ -112,6 +147,31 @@ export async function executeIntent(
   }
 
   switch (intentResult.intent) {
+    // ============================================================
+    // Beta A: 送信確認フロー
+    // ============================================================
+    case 'pending.action.decide':
+      return executePendingDecision(intentResult, context);
+    
+    case 'invite.prepare.emails':
+      return executeInvitePrepareEmails(intentResult);
+    
+    case 'invite.prepare.list':
+      return executeInvitePrepareList(intentResult);
+    
+    // Beta A: リスト5コマンド
+    case 'list.create':
+      return executeListCreate(intentResult);
+    
+    case 'list.list':
+      return executeListList();
+    
+    case 'list.members':
+      return executeListMembers(intentResult);
+    
+    case 'list.add_member':
+      return executeListAddMember(intentResult);
+    
     // Phase Next-5 (P2): Auto-propose
     case 'schedule.auto_propose':
       return executeAutoPropose(intentResult);
@@ -188,6 +248,517 @@ export async function executeIntent(
         success: false,
         message: 'この機能はまだ実装されていません。',
       };
+  }
+}
+
+// ============================================================
+// Beta A: 送信確認フロー (prepare → confirm → execute)
+// ============================================================
+
+/**
+ * Beta A: メール入力 → prepare API
+ * - スレッド未選択: prepareSend (新規スレッド)
+ * - スレッド選択中: prepareInvites (追加招待)
+ */
+async function executeInvitePrepareEmails(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { emails, threadId, mode } = intentResult.params;
+  
+  if (!emails || emails.length === 0) {
+    return {
+      success: false,
+      message: '送信先のメールアドレスを入力してください。',
+      needsClarification: {
+        field: 'emails',
+        message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
+      },
+    };
+  }
+  
+  try {
+    let response: PrepareSendResponse;
+    
+    if (threadId && mode === 'add_to_thread') {
+      // スレッド選択中: 追加招待
+      response = await threadsApi.prepareInvites(threadId, {
+        source_type: 'emails',
+        emails,
+      });
+    } else {
+      // スレッド未選択: 新規作成
+      response = await threadsApi.prepareSend({
+        source_type: 'emails',
+        emails,
+        title: '日程調整',
+      });
+    }
+    
+    // Build message from response
+    const message = response.message_for_chat || buildPrepareMessage(response);
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'pending.action.created',
+        payload: {
+          confirmToken: response.confirm_token,
+          expiresAt: response.expires_at,
+          summary: response.summary,
+          mode: threadId ? 'add_to_thread' : 'new_thread',
+          threadId: response.thread_id,
+          threadTitle: response.thread_title,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Beta A: リスト選択 → prepare API
+ */
+async function executeInvitePrepareList(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { listName, threadId } = intentResult.params;
+  
+  if (!listName) {
+    return {
+      success: false,
+      message: 'リスト名を指定してください。',
+      needsClarification: {
+        field: 'listName',
+        message: 'どのリストに招待を送りますか？\n\n例: 「営業部リストに招待」',
+      },
+    };
+  }
+  
+  try {
+    // リストIDを取得
+    const listsResponse = await listsApi.list();
+    const lists = listsResponse.items || [];
+    const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
+    
+    if (!targetList) {
+      return {
+        success: false,
+        message: `❌ リスト「${listName}」が見つかりませんでした。\n\n利用可能なリスト:\n${lists.map((l: any) => `- ${l.name}`).join('\n')}`,
+      };
+    }
+    
+    let response: PrepareSendResponse;
+    
+    if (threadId) {
+      // スレッド選択中: 追加招待
+      response = await threadsApi.prepareInvites(threadId, {
+        source_type: 'list',
+        list_id: targetList.id,
+      });
+    } else {
+      // スレッド未選択: 新規作成
+      response = await threadsApi.prepareSend({
+        source_type: 'list',
+        list_id: targetList.id,
+        title: '日程調整',
+      });
+    }
+    
+    const message = response.message_for_chat || buildPrepareMessage(response);
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'pending.action.created',
+        payload: {
+          confirmToken: response.confirm_token,
+          expiresAt: response.expires_at,
+          summary: response.summary,
+          mode: threadId ? 'add_to_thread' : 'new_thread',
+          threadId: response.thread_id,
+          threadTitle: response.thread_title,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Beta A: 3語固定決定 (送る/キャンセル/別スレッドで)
+ */
+async function executePendingDecision(
+  intentResult: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const { decision, confirmToken } = intentResult.params;
+  const pending = context?.pendingAction;
+  
+  if (!pending && !confirmToken) {
+    return {
+      success: false,
+      message: '❌ 確認中の送信がありません。\n先にメールアドレスまたはリストを入力してください。',
+    };
+  }
+  
+  const token = confirmToken || pending?.confirmToken;
+  if (!token) {
+    return {
+      success: false,
+      message: '❌ 確認トークンが見つかりません。',
+    };
+  }
+  
+  try {
+    // Map Japanese decision to API decision
+    const apiDecision: PendingDecision = 
+      decision === '送る' ? 'send' :
+      decision === 'キャンセル' ? 'cancel' :
+      decision === '別スレッドで' ? 'new_thread' :
+      decision;
+    
+    // Step 1: Confirm
+    const confirmResponse = await pendingActionsApi.confirm(token, apiDecision);
+    
+    // キャンセルの場合は終了
+    if (confirmResponse.decision === 'cancel') {
+      return {
+        success: true,
+        message: confirmResponse.message_for_chat || '✅ キャンセルしました。',
+        data: {
+          kind: 'pending.action.cleared',
+          payload: {},
+        },
+      };
+    }
+    
+    // 送る or 別スレッドで の場合は execute
+    if (confirmResponse.can_execute) {
+      const executeResponse = await pendingActionsApi.execute(token);
+      
+      let message = executeResponse.message_for_chat || 
+        `✅ ${executeResponse.result.inserted}名に招待を送信しました。`;
+      
+      return {
+        success: true,
+        message,
+        data: {
+          kind: 'pending.action.executed',
+          payload: {
+            threadId: executeResponse.thread_id,
+            inserted: executeResponse.result.inserted,
+            emailQueued: executeResponse.result.deliveries.email_queued,
+          },
+        },
+      };
+    }
+    
+    // can_execute が false の場合（異常系）
+    return {
+      success: false,
+      message: confirmResponse.message_for_chat || '❌ 実行できませんでした。',
+      data: {
+        kind: 'pending.action.decided',
+        payload: {
+          decision: confirmResponse.decision,
+          canExecute: confirmResponse.can_execute,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Build prepare message from response
+ */
+function buildPrepareMessage(response: PrepareSendResponse): string {
+  const summary = response.summary;
+  let message = `📧 送信先: ${summary.valid_count}件\n`;
+  
+  if (summary.preview && summary.preview.length > 0) {
+    message += '\n送信先プレビュー:\n';
+    summary.preview.forEach((p: any) => {
+      message += `- ${p.email}${p.is_app_user ? ' (アプリユーザー)' : ''}\n`;
+    });
+    if (summary.valid_count > summary.preview.length) {
+      message += `... 他 ${summary.valid_count - summary.preview.length}名\n`;
+    }
+  }
+  
+  if (summary.skipped && Object.values(summary.skipped).some((v: any) => v > 0)) {
+    message += '\n⚠️ スキップ: ';
+    const reasons = [];
+    if (summary.skipped.invalid_email > 0) reasons.push(`無効なメール ${summary.skipped.invalid_email}件`);
+    if (summary.skipped.duplicate_input > 0) reasons.push(`重複 ${summary.skipped.duplicate_input}件`);
+    if (summary.skipped.already_invited > 0) reasons.push(`招待済み ${summary.skipped.already_invited}件`);
+    message += reasons.join(', ') + '\n';
+  }
+  
+  message += '\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。';
+  
+  return message;
+}
+
+// ============================================================
+// Beta A: リスト5コマンド
+// ============================================================
+
+/**
+ * Beta A: list.create - リスト作成
+ */
+async function executeListCreate(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { listName } = intentResult.params;
+  
+  if (!listName) {
+    return {
+      success: false,
+      message: 'リスト名を指定してください。',
+      needsClarification: {
+        field: 'listName',
+        message: '作成するリストの名前を入力してください。\n\n例: 「営業部リストを作って」',
+      },
+    };
+  }
+  
+  try {
+    const response = await listsApi.create({
+      name: listName,
+      description: 'チャットから作成',
+    });
+    
+    return {
+      success: true,
+      message: `✅ リスト「${listName}」を作成しました。\n\nメンバーを追加するには「tanaka@example.comを${listName}に追加」と入力してください。`,
+      data: {
+        kind: 'list.created',
+        payload: {
+          listId: response.id,
+          listName: response.name,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ リスト作成に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Beta A: list.list - リスト一覧
+ */
+async function executeListList(): Promise<ExecutionResult> {
+  try {
+    const response = await listsApi.list();
+    const lists = response.items || [];
+    
+    if (lists.length === 0) {
+      return {
+        success: true,
+        message: '📋 リストがありません。\n\n「〇〇リストを作って」でリストを作成できます。',
+        data: {
+          kind: 'list.listed',
+          payload: { lists: [] },
+        },
+      };
+    }
+    
+    let message = `📋 リスト一覧（${lists.length}件）\n\n`;
+    lists.forEach((list: any, index: number) => {
+      message += `${index + 1}. ${list.name}`;
+      if (list.description) message += ` - ${list.description}`;
+      message += '\n';
+    });
+    
+    message += '\n💡 「〇〇リストのメンバー」でメンバーを確認できます。';
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'list.listed',
+        payload: { lists },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ リスト取得に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Beta A: list.members - リストメンバー表示
+ */
+async function executeListMembers(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { listName } = intentResult.params;
+  
+  if (!listName) {
+    return {
+      success: false,
+      message: 'リスト名を指定してください。',
+      needsClarification: {
+        field: 'listName',
+        message: 'どのリストのメンバーを表示しますか？\n\n例: 「営業部リストのメンバー」',
+      },
+    };
+  }
+  
+  try {
+    // リストIDを取得
+    const listsResponse = await listsApi.list();
+    const lists = listsResponse.items || [];
+    const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
+    
+    if (!targetList) {
+      return {
+        success: false,
+        message: `❌ リスト「${listName}」が見つかりませんでした。`,
+      };
+    }
+    
+    const membersResponse = await listsApi.getMembers(targetList.id);
+    const members = membersResponse.items || [];
+    
+    if (members.length === 0) {
+      return {
+        success: true,
+        message: `📋 リスト「${targetList.name}」にはメンバーがいません。\n\n「tanaka@example.comを${targetList.name}に追加」でメンバーを追加できます。`,
+        data: {
+          kind: 'list.members',
+          payload: { listName: targetList.name, members: [] },
+        },
+      };
+    }
+    
+    let message = `📋 「${targetList.name}」のメンバー（${members.length}名）\n\n`;
+    members.forEach((member: any, index: number) => {
+      message += `${index + 1}. ${member.contact_display_name || member.contact_email || '名前なし'}`;
+      if (member.contact_email) message += ` <${member.contact_email}>`;
+      message += '\n';
+    });
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'list.members',
+        payload: { listName: targetList.name, members },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ メンバー取得に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * Beta A: list.add_member - リストにメンバー追加
+ */
+async function executeListAddMember(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { emails, listName } = intentResult.params;
+  
+  if (!emails || emails.length === 0) {
+    return {
+      success: false,
+      message: 'メールアドレスを指定してください。',
+      needsClarification: {
+        field: 'emails',
+        message: '追加するメールアドレスを入力してください。\n\n例: 「tanaka@example.comを営業部リストに追加」',
+      },
+    };
+  }
+  
+  if (!listName) {
+    return {
+      success: false,
+      message: 'リスト名を指定してください。',
+      needsClarification: {
+        field: 'listName',
+        message: 'どのリストに追加しますか？\n\n例: 「営業部リストに追加」',
+      },
+    };
+  }
+  
+  try {
+    // リストIDを取得
+    const listsResponse = await listsApi.list();
+    const lists = listsResponse.items || [];
+    const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
+    
+    if (!targetList) {
+      return {
+        success: false,
+        message: `❌ リスト「${listName}」が見つかりませんでした。`,
+      };
+    }
+    
+    // 各メールアドレスに対してコンタクト作成 → リストに追加
+    let addedCount = 0;
+    const errors: string[] = [];
+    
+    for (const email of emails) {
+      try {
+        // コンタクト作成（既存の場合は既存を使用）
+        let contact;
+        try {
+          contact = await contactsApi.create({
+            kind: 'external_person',
+            email,
+            display_name: email.split('@')[0],
+          });
+        } catch (e: any) {
+          // 既存コンタクトの場合はリストから検索
+          const contactsResponse = await contactsApi.list({ q: email });
+          contact = (contactsResponse.items || []).find((c: any) => c.email === email);
+          if (!contact) throw e;
+        }
+        
+        // リストに追加
+        await listsApi.addMember(targetList.id, { contact_id: contact.id });
+        addedCount++;
+      } catch (e: any) {
+        errors.push(`${email}: ${e.message || '追加失敗'}`);
+      }
+    }
+    
+    let message = `✅ ${addedCount}名をリスト「${targetList.name}」に追加しました。`;
+    
+    if (errors.length > 0) {
+      message += `\n\n⚠️ エラー:\n${errors.join('\n')}`;
+    }
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'list.member_added',
+        payload: {
+          listName: targetList.name,
+          email: emails[0],
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ メンバー追加に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
   }
 }
 

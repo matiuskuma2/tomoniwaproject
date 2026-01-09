@@ -258,3 +258,37 @@ export interface ApiError {
   message?: string;
   details?: any;
 }
+
+// ============================================================
+// Beta A: Pending Actions
+// ============================================================
+
+export type PendingActionStatus = 
+  | 'pending' 
+  | 'confirmed_send' 
+  | 'confirmed_cancel' 
+  | 'confirmed_new_thread' 
+  | 'executed' 
+  | 'expired';
+
+export type PendingActionSourceType = 'emails' | 'list';
+
+export interface PendingActionSummary {
+  total_count: number;
+  valid_count: number;
+  preview: Array<{
+    email: string;
+    display_name?: string;
+    is_app_user: boolean;
+  }>;
+  preview_count: number;
+  skipped: {
+    invalid_email: number;
+    duplicate_input: number;
+    missing_email: number;
+    already_invited: number;
+  };
+  app_users_count: number;
+  external_count: number;
+  source_label: string;
+}

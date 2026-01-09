@@ -85,6 +85,16 @@ interface ChatPaneProps {
   pendingSplit?: {
     threadId: string;
   } | null;
+  
+  // Beta A: pending action for 3-word decision
+  pendingAction?: {
+    confirmToken: string;
+    expiresAt: string;
+    summary: any;
+    mode: 'new_thread' | 'add_to_thread';
+    threadId?: string;
+    threadTitle?: string;
+  } | null;
 }
 
 export function ChatPane({ 
@@ -101,7 +111,8 @@ export function ChatPane({
   pendingRemind = null,
   remindCount = 0,
   pendingNotify = null,
-  pendingSplit = null
+  pendingSplit = null,
+  pendingAction = null
 }: ChatPaneProps) {
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -153,11 +164,13 @@ export function ChatPane({
     try {
       // Classify intent
       // Phase P0-5: threadId が無い場合でも Intent 分類は実行
+      // Beta A: pendingAction をコンテキストに渡す（3語決定フロー用）
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId || undefined,
         pendingRemind,
         pendingNotify,
         pendingSplit,
+        pendingAction,
       });
       
       console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
@@ -171,6 +184,7 @@ export function ChatPane({
         remindCount,
         pendingNotify,
         pendingSplit,
+        pendingAction,
       });
       console.log('[API] Result:', result.success, result.message);
 
@@ -417,6 +431,14 @@ export function ChatPane({
             {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : '送信'}
           </button>
         </div>
+        {/* Beta A: pending action インジケーター */}
+        {pendingAction && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mt-2">
+            <p className="text-xs text-yellow-800">
+              ⚠️ 送信確認待ち: 「送る」「キャンセル」「別スレッドで」のいずれかを入力
+            </p>
+          </div>
+        )}
         <p className="text-xs text-gray-500 mt-2">
           💡 使い方: 「〇〇さんに日程調整送って」「状況教えて」「1番で確定して」
         </p>

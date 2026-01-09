@@ -10,3 +10,13 @@ export { listsApi } from './lists';
 export { inboxApi } from './inbox';
 export { calendarApi } from './calendar';
 export { voiceApi } from './voice';
+
+// Beta A: Pending Actions API
+export { pendingActionsApi } from './pendingActions';
+export type { 
+  PendingDecision, 
+  PendingActionSummary, 
+  PrepareSendResponse, 
+  ConfirmResponse, 
+  ExecuteResponse 
+} from './pendingActions';

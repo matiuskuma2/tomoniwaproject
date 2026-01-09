@@ -40,6 +40,16 @@ interface PendingAutoPropose {
   proposals: Array<{ start_at: string; end_at: string; label: string }>;
 }
 
+// Beta A: Pending action state for 3-word decision
+interface PendingActionState {
+  confirmToken: string;
+  expiresAt: string;
+  summary: any;
+  mode: 'new_thread' | 'add_to_thread';
+  threadId?: string;
+  threadTitle?: string;
+}
+
 export function ChatLayout() {
   const navigate = useNavigate();
   const { threadId } = useParams<{ threadId: string }>();
@@ -106,6 +116,9 @@ export function ChatLayout() {
     threadId: string;
   }
   const [pendingSplitByThreadId, setPendingSplitByThreadId] = useState<Record<string, PendingSplit | null>>({});
+  
+  // Beta A: Pending action state for 3-word decision (per thread or global)
+  const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null);
 
   // Phase P0-3: Track seeded threads to prevent double-seeding
   const [seededThreads, setSeededThreads] = useState<Set<string>>(new Set());
@@ -352,6 +365,27 @@ export function ChatLayout() {
         [threadId]: null,
       }));
     }
+    
+    // Beta A: Handle pending action state updates
+    else if (kind === 'pending.action.created') {
+      setPendingAction({
+        confirmToken: payload.confirmToken,
+        expiresAt: payload.expiresAt,
+        summary: payload.summary,
+        mode: payload.mode,
+        threadId: payload.threadId,
+        threadTitle: payload.threadTitle,
+      });
+    } else if (kind === 'pending.action.cleared' || kind === 'pending.action.executed') {
+      setPendingAction(null);
+      
+      // If executed with threadId, navigate to that thread
+      if (kind === 'pending.action.executed' && payload.threadId) {
+        setTimeout(() => {
+          navigate(`/chat/${payload.threadId}`);
+        }, 100);
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -445,6 +479,7 @@ export function ChatLayout() {
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
               pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
+              pendingAction={pendingAction}
             />
           </div>
 
@@ -477,6 +512,7 @@ export function ChatLayout() {
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
               pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
+              pendingAction={pendingAction}
             />
           )}
           {mobileTab === 'cards' && (

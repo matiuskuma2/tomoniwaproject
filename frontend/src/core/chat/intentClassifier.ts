@@ -25,6 +25,15 @@ export type IntentType =
   | 'schedule.propose_for_split'        // Phase Next-6 Day2 - 票割れ通知提案
   | 'schedule.propose_for_split.confirm' // Phase Next-6 Day2 - 票割れ提案確定
   | 'schedule.propose_for_split.cancel'  // Phase Next-6 Day2 - 票割れ提案キャンセル
+  // Beta A: 送信確認フロー
+  | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
+  | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API
+  | 'invite.prepare.list'      // Beta A: リスト選択 → prepare API
+  // Beta A: リスト5コマンド
+  | 'list.create'              // Beta A: リスト作成
+  | 'list.list'                // Beta A: リスト一覧
+  | 'list.members'             // Beta A: リストメンバー表示
+  | 'list.add_member'          // Beta A: リストにメンバー追加
   | 'unknown';
 
 export interface IntentResult {
@@ -42,6 +51,7 @@ export interface IntentResult {
  * Phase Next-6 Day1: Added pendingRemind
  * Phase Next-6 Day3: Added pendingNotify
  * Phase Next-6 Day2: Added pendingSplit
+ * Beta A: Added pendingAction for 3-word decision flow
  */
 export interface IntentContext {
   selectedThreadId?: string;
@@ -60,15 +70,174 @@ export interface IntentContext {
   pendingSplit?: {
     threadId: string;
   } | null;
+  // Beta A: pending action state for 3-word decision
+  pendingAction?: {
+    confirmToken: string;
+    expiresAt: string;
+    summary: any;
+    mode: 'new_thread' | 'add_to_thread';
+    threadId?: string;
+    threadTitle?: string;
+  } | null;
 }
 
 /**
  * Classify user input into one of the P0 intents
  * Phase Next-2: Rule-based only (no LLM)
  * Phase Next-6 Day1: Added pendingRemind support
+ * Beta A: Added 3-word decision and invite.prepare flows
  */
 export function classifyIntent(input: string, context?: IntentContext): IntentResult {
   const normalizedInput = input.toLowerCase().trim();
+
+  // ============================================================
+  // Beta A: 3語固定決定フロー（最優先）
+  // pendingAction が存在する場合、3語のみ受け付け
+  // ============================================================
+  if (context?.pendingAction) {
+    // 「送る」「send」
+    if (/^(送る|送って|send|送信)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pending.action.decide',
+        confidence: 1.0,
+        params: {
+          decision: '送る',
+          confirmToken: context.pendingAction.confirmToken,
+        },
+      };
+    }
+    // 「キャンセル」「cancel」
+    if (/^(キャンセル|やめる|cancel|取り消し|取消)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pending.action.decide',
+        confidence: 1.0,
+        params: {
+          decision: 'キャンセル',
+          confirmToken: context.pendingAction.confirmToken,
+        },
+      };
+    }
+    // 「別スレッドで」「new_thread」
+    if (/^(別スレッドで|別スレッド|新規スレッド|new.?thread)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pending.action.decide',
+        confidence: 1.0,
+        params: {
+          decision: '別スレッドで',
+          confirmToken: context.pendingAction.confirmToken,
+        },
+      };
+    }
+    // 3語以外の入力は案内メッセージを返す
+    return {
+      intent: 'unknown',
+      confidence: 0,
+      params: {},
+      needsClarification: {
+        field: 'decision',
+        message: '現在、送信確認待ちです。\n\n「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。',
+      },
+    };
+  }
+
+  // ============================================================
+  // Beta A: リスト5コマンド
+  // ============================================================
+  
+  // list.create: 「営業部リストを作って」「リスト作成」
+  if (/(リスト|list).*(作|つく|作成|create)/i.test(normalizedInput) || 
+      /(作|つく).*(リスト|list)/i.test(normalizedInput)) {
+    const listNameMatch = input.match(/[「『](.+?)[」』]|(.+?)(リスト|list).*(作|つく)/i);
+    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[2])?.trim() : undefined;
+    
+    return {
+      intent: 'list.create',
+      confidence: 0.9,
+      params: {
+        listName,
+        rawInput: input,
+      },
+      needsClarification: !listName ? {
+        field: 'listName',
+        message: '作成するリストの名前を入力してください。\n\n例: 「営業部リストを作って」',
+      } : undefined,
+    };
+  }
+  
+  // list.list: 「リスト見せて」「リスト一覧」
+  if (/^(リスト|list).*(見せ|見て|一覧|表示|show|list)$/i.test(normalizedInput) ||
+      /^(リスト|list)$/i.test(normalizedInput)) {
+    return {
+      intent: 'list.list',
+      confidence: 0.9,
+      params: {},
+    };
+  }
+  
+  // list.members: 「営業部リストのメンバー」「〇〇リストの中身」
+  if (/(リスト|list).*(メンバー|中身|内容|members)/i.test(normalizedInput)) {
+    const listNameMatch = input.match(/[「『](.+?)[」』]|(.*?)(リスト|list)/i);
+    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[2])?.trim() : undefined;
+    
+    return {
+      intent: 'list.members',
+      confidence: 0.9,
+      params: {
+        listName,
+        rawInput: input,
+      },
+      needsClarification: !listName ? {
+        field: 'listName',
+        message: 'どのリストのメンバーを表示しますか？\n\n例: 「営業部リストのメンバー」',
+      } : undefined,
+    };
+  }
+  
+  // list.add_member: 「tanaka@example.comを営業部リストに追加」
+  if (/(リスト|list).*(追加|add)/i.test(normalizedInput) ||
+      /(追加|add).*(リスト|list)/i.test(normalizedInput)) {
+    const emails = extractEmails(input);
+    const listNameMatch = input.match(/[「『](.+?)[」』](リスト|list)?に|(.*?)(リスト|list)に/i);
+    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[3])?.trim() : undefined;
+    
+    return {
+      intent: 'list.add_member',
+      confidence: 0.9,
+      params: {
+        emails,
+        listName,
+        rawInput: input,
+      },
+      needsClarification: emails.length === 0 ? {
+        field: 'emails',
+        message: '追加するメールアドレスを入力してください。\n\n例: 「tanaka@example.comを営業部リストに追加」',
+      } : !listName ? {
+        field: 'listName',
+        message: 'どのリストに追加しますか？\n\n例: 「営業部リストに追加」',
+      } : undefined,
+    };
+  }
+  
+  // invite.prepare.list: 「営業部リストに招待」「〇〇リストに送って」
+  // NOTE: schedule.invite.list より優先（Beta A フローを使用）
+  if (/(リスト|list).*(招待|送|invite)/i.test(normalizedInput)) {
+    const listNameMatch = input.match(/[「『](.+?)[」』](リスト)?に|(.+?)(リスト|list)に/i);
+    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[3])?.trim() : undefined;
+    
+    return {
+      intent: 'invite.prepare.list',
+      confidence: 0.95,
+      params: {
+        listName,
+        threadId: context?.selectedThreadId,
+        rawInput: input,
+      },
+      needsClarification: !listName ? {
+        field: 'listName',
+        message: 'どのリストに招待を送りますか？\n\n例: 「営業部リストに招待」',
+      } : undefined,
+    };
+  }
 
   // ============================================================
   // Phase Next-3 (P1): Calendar Read-only
@@ -326,18 +495,26 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
 
-  // P0-1: schedule.external.create
-  // PRIORITY: Email extraction first!
+  // ============================================================
+  // Beta A: メール入力 → invite.prepare.emails
+  // NOTE: schedule.external.create を置き換え
+  // ============================================================
+  
+  // P0-1: Email extraction
   const emails = extractEmails(input);
   
-  // If emails are found, always treat as schedule.external.create
+  // Beta A: If emails are found, route to invite.prepare.emails
+  // - スレッド選択中: 追加招待（invites/prepare）
+  // - スレッド未選択: 新規作成（prepare-send）
   if (emails.length > 0) {
     return {
-      intent: 'schedule.external.create',
+      intent: 'invite.prepare.emails',
       confidence: 0.95,
       params: {
         rawInput: input,
         emails,
+        threadId: context?.selectedThreadId,
+        mode: context?.selectedThreadId ? 'add_to_thread' : 'new_thread',
       },
     };
   }
