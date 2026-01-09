@@ -330,31 +330,32 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   // PRIORITY: Email extraction first!
   const emails = extractEmails(input);
   
+  // If emails are found, always treat as schedule.external.create
+  if (emails.length > 0) {
+    return {
+      intent: 'schedule.external.create',
+      confidence: 0.95,
+      params: {
+        rawInput: input,
+        emails,
+      },
+    };
+  }
+  
+  // If keywords are present but no emails, ask for clarification
   if (
     /送(って|る)|調整|案内|招待/.test(normalizedInput) &&
     !/(状況|進捗|確認|教えて|候補.*出して)/.test(normalizedInput)
   ) {
-    // Check if emails are provided
-    if (emails.length === 0) {
-      return {
-        intent: 'schedule.external.create',
-        confidence: 0.8,
-        params: {
-          rawInput: input,
-        },
-        needsClarification: {
-          field: 'emails',
-          message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
-        },
-      };
-    }
-    
     return {
       intent: 'schedule.external.create',
-      confidence: 0.9,
+      confidence: 0.8,
       params: {
         rawInput: input,
-        emails,
+      },
+      needsClarification: {
+        field: 'emails',
+        message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
       },
     };
   }

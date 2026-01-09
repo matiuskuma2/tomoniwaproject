@@ -144,9 +144,9 @@ export function ChatPane({
       timestamp: new Date(),
     };
 
-    if (threadId) {
-      onAppend(threadId, userMessage);
-    }
+    // Phase P0-5: threadId が無い場合は 'temp' を使う
+    const targetThreadId = threadId || 'temp';
+    onAppend(targetThreadId, userMessage);
     setMessage('');
     setIsProcessing(true);
 
@@ -200,9 +200,8 @@ export function ChatPane({
         timestamp: new Date(),
       };
 
-      if (threadId) {
-        onAppend(threadId, assistantMessage);
-      }
+      // Phase P0-5: threadId が無い場合は 'temp' を使う
+      onAppend(targetThreadId, assistantMessage);
 
       // Phase Next-5 Day2.1: Unified execution result handler
       if (result.data && onExecutionResult) {
@@ -222,9 +221,8 @@ export function ChatPane({
         content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
         timestamp: new Date(),
       };
-      if (threadId) {
-        onAppend(threadId, errorMessage);
-      }
+      // Phase P0-5: threadId が無い場合は 'temp' を使う
+      onAppend(targetThreadId, errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -341,7 +339,7 @@ export function ChatPane({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="メッセージを入力..."
+            placeholder={threadId ? "メッセージを入力..." : "メールアドレスを入力してスレッドを作成 (例: tanaka@example.com)"}
             disabled={isProcessing}
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
           />
