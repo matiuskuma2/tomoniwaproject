@@ -14,9 +14,9 @@ export function LoginPage() {
 
   // Check if already authenticated OR try to exchange cookie for token
   useEffect(() => {
-    // すでにtokenがあるなら即ダッシュボード
+    // すでにtokenがあるなら即チャット画面へ
     if (isAuthenticated()) {
-      navigate('/dashboard', { replace: true });
+      navigate('/chat', { replace: true });
       return;
     }
 
@@ -48,7 +48,7 @@ export function LoginPage() {
         // ★ここが最重要: token保存（関数を使う）
         setToken(data.access_token);
         
-        navigate('/dashboard', { replace: true });
+        navigate('/chat', { replace: true });
       } catch (e: any) {
         setError(`Token取得中に例外: ${e?.message || String(e)}`);
       }

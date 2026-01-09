@@ -106,10 +106,10 @@ export function ThreadDetailPage() {
       {/* Header */}
       <div className="mb-8">
         <button
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/chat')}
           className="text-sm text-gray-500 hover:text-gray-700 mb-4"
         >
-          ← 一覧に戻る
+          ← チャットに戻る
         </button>
         <h2 className="text-2xl font-bold text-gray-900">{status.thread.title}</h2>
         <span className="mt-2 inline-block px-3 py-1 text-sm font-semibold rounded-full bg-blue-100 text-blue-800">
