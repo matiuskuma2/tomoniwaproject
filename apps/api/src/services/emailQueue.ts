@@ -28,6 +28,7 @@ export interface InviteEmailJob extends EmailJobBase {
     token: string;
     inviter_name: string;
     relation_type: string;
+    thread_title?: string;  // Beta A: スレッドタイトル（メール本文に表示）
   };
 }
 
@@ -124,24 +125,28 @@ export class EmailQueueService {
 
   /**
    * Send invite email
+   * Beta A: thread_title を追加（メール本文に表示）
    */
   async sendInviteEmail(options: {
     to: string;
     token: string;
     inviterName: string;
     relationType: string;
+    threadTitle?: string;  // Beta A: スレッドタイトル
   }): Promise<string> {
     const jobId = crypto.randomUUID();
+    const displayTitle = options.threadTitle || '日程調整';
     const job: InviteEmailJob = {
       job_id: jobId,
       type: 'invite',
       to: options.to,
-      subject: `${options.inviterName} wants to connect with you`,
+      subject: `【日程調整】${options.inviterName}さんより「${displayTitle}」のご依頼`,
       created_at: Date.now(),
       data: {
         token: options.token,
         inviter_name: options.inviterName,
         relation_type: options.relationType,
+        thread_title: options.threadTitle,
       },
     };
 

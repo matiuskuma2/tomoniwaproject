@@ -358,17 +358,19 @@ app.post('/:token/execute', async (c) => {
       const inviteUrl = `https://${host}/i/${invite.token}`;
 
       // メール送信（全員）
+      // Beta A: thread_title を追加してメール本文に表示
       const emailJobId = `invite-${invite.id}`;
       const emailJob: EmailJob = {
         job_id: emailJobId,
         type: 'invite',
         to: invite.email,
-        subject: `${threadTitle} - 日程調整のお願い`,
+        subject: `【日程調整】「${threadTitle}」のご依頼`,
         created_at: Date.now(),
         data: {
           token: invite.token,
           inviter_name: 'Tomoniwao',
           relation_type: 'thread_invite',
+          thread_title: threadTitle,
         },
       };
 

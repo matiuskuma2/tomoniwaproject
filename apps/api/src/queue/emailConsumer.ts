@@ -269,42 +269,83 @@ AI Secretary Scheduler
 }
 
 /**
+ * Production base URL for email links
+ */
+const APP_BASE_URL = 'https://app.tomoniwao.jp';
+
+/**
  * Generate invite email content
+ * Beta A: 日程調整招待メール（日本語・丁寧な文面）
  */
 function generateInviteEmail(job: EmailJob & { type: 'invite' }): { html: string; text: string } {
-  const { token, inviter_name, relation_type } = job.data;
-  const acceptUrl = `https://app.example.com/i/${token}`;
+  const { token, inviter_name, thread_title } = job.data;
+  const acceptUrl = `${APP_BASE_URL}/i/${token}`;
+  const displayTitle = thread_title || '日程調整';
 
   const html = `
     <!DOCTYPE html>
-    <html>
+    <html lang="ja">
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px 24px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px 24px; }
+        .message { background: #f8fafc; border-left: 4px solid #2563eb; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+        .button-container { text-align: center; margin: 32px 0; }
+        .button { display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+        .button:hover { background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%); }
+        .link-fallback { margin-top: 24px; padding: 16px; background: #f1f5f9; border-radius: 8px; font-size: 13px; color: #64748b; word-break: break-all; }
+        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>${inviter_name} wants to connect with you</h1>
-        <p>${inviter_name} has invited you to connect as ${relation_type}.</p>
-        <a href="${acceptUrl}" class="button">Accept Invitation</a>
-        <p>Or copy this link: ${acceptUrl}</p>
+        <div class="header">
+          <h1>📅 日程調整のご依頼</h1>
+        </div>
+        <div class="content">
+          <p>こんにちは。</p>
+          <div class="message">
+            <strong>${inviter_name}</strong> さんより、<br>
+            「<strong>${displayTitle}</strong>」の日程調整依頼が届きました。
+          </div>
+          <p>下のボタンから、ご都合の良い日時をお選びください。<br>回答は数分で完了します。</p>
+          <div class="button-container">
+            <a href="${acceptUrl}" class="button">日程を回答する</a>
+          </div>
+          <div class="link-fallback">
+            ボタンが表示されない場合は、以下のURLをコピーしてブラウザに貼り付けてください：<br>
+            <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
+          </div>
+        </div>
+        <div class="footer">
+          このメールは Tomoniwao（トモニワオ）から送信されています。<br>
+          ご不明な点がございましたら、${inviter_name} さんに直接お問い合わせください。
+        </div>
       </div>
     </body>
     </html>
   `;
 
   const text = `
-${inviter_name} wants to connect with you
+【日程調整のご依頼】
 
-${inviter_name} has invited you to connect as ${relation_type}.
+こんにちは。
 
-Accept invitation: ${acceptUrl}
+${inviter_name} さんより、「${displayTitle}」の日程調整依頼が届きました。
 
-AI Secretary Scheduler
+以下のリンクから、ご都合の良い日時をお選びください：
+${acceptUrl}
+
+回答は数分で完了します。
+
+---
+このメールは Tomoniwao（トモニワオ）から送信されています。
+ご不明な点がございましたら、${inviter_name} さんに直接お問い合わせください。
   `;
 
   return { html, text };
@@ -352,7 +393,7 @@ AI Secretary Scheduler
  */
 function generateThreadMessageEmail(job: EmailJob & { type: 'thread_message' }): { html: string; text: string } {
   const { message, sender_name, thread_id } = job.data;
-  const threadUrl = `https://app.example.com/scheduling/${thread_id}`;
+  const threadUrl = `${APP_BASE_URL}/scheduling/${thread_id}`;
 
   const html = `
     <!DOCTYPE html>

@@ -414,6 +414,7 @@ app.post(
       }
 
       // Step 4: Send invite emails via queue (共通)
+      // Beta A: thread_title を追加してメール本文に表示
       for (const invite of invites) {
         const candidate = candidates.find((c) => c.email === invite.email);
         if (!candidate) continue;
@@ -422,12 +423,13 @@ app.post(
           job_id: `invite-${invite.id}`,
           type: 'invite',
           to: candidate.email,
-          subject: `${title} - You're invited to join a conversation`,
+          subject: `【日程調整】「${title}」のご依頼`,
           created_at: Date.now(),
           data: {
             token: invite.token,
             inviter_name: 'Tomoniwao',
             relation_type: 'thread_invite',
+            thread_title: title,
           },
         };
 
@@ -925,16 +927,18 @@ app.post('/:id/invites/batch', async (c) => {
       const member = validMembers.find((m) => m.contact_email === invite.email);
       if (!member) continue;
 
+      // Beta A: thread_title を追加してメール本文に表示
       const emailJob: EmailJob = {
         job_id: `invite-${invite.id}`,
         type: 'invite',
         to: member.contact_email!,
-        subject: `${thread.title} - You're invited to join a conversation`,
+        subject: `【日程調整】「${thread.title}」のご依頼`,
         created_at: Date.now(),
         data: {
           token: invite.token,
           inviter_name: 'Tomoniwao',
           relation_type: 'thread_invite',
+          thread_title: thread.title,
         },
       };
 
