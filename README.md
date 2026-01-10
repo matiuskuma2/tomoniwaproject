@@ -1,4 +1,4 @@
-# AI Secretary Scheduler
+# AI Secretary Scheduler (Tomoniwao)
 
 AI秘書スケジューラー - チャット中心のスケジューリングシステム
 
@@ -36,56 +36,92 @@ AI秘書スケジューラー - チャット中心のスケジューリングシ
 
 ---
 
-## 📊 現在の状況（2026-01-03）
+## 📊 現在の状況（2026-01-10）
 
-### ✅ 完了
-- **P0 土台固め**:
-  - Tenant Isolation（全 API で workspace_id/owner_user_id 強制）
-  - Cursor Pagination Only（OFFSET 完全禁止）
-  - Migration 不変性（CI で過去 migration 編集を検知）
-  - TypeScript Build 必須化
-- **Day4 Billing Gate**:
-  - checkBillingGate 実装（status=2/4 → 402）
-  - 実行系のみ制御（finalize/remind）
-  - reason フィールド（運用インシデント切り分け）
-  - normalizeEmail 共通化
-- **本番環境**:
-  - コードデプロイ完了
-  - DB Migration 適用完了（0001-0062）
-  - フロントエンド正常動作確認
+### ✅ Beta A 完了項目
 
-### 🔄 進行中
-- ドキュメント整備
-- Beta 公開準備
+#### チャット → メール送信フロー
+- **Intent 分類**: メールアドレス入力を `invite.prepare.emails` として認識
+- **prepare API**: `/api/threads/prepare-send` でサマリ提示 + `pending_actions` 生成
+- **3語決定フロー**: 「送る」「キャンセル」「別スレッドで」の3語固定コマンド
+- **メール送信**: Cloudflare Queue 経由で招待メール送信
+- **メール本文**: 日本語で丁寧な文面、正しいリンク（app.tomoniwao.jp）
 
-### 📅 次の予定
-- Beta ユーザー招待
-- UI/UX 改善
-- Phase2 マルチテナント対応
+#### 回答フロー
+- **回答ページ**: `/i/:token` で日程選択可能
+- **カード更新**: 回答後にリアルタイムでカード反映
+
+### 🔄 進行中・次の予定
+
+| 優先度 | 項目 | 状況 |
+|--------|------|------|
+| P0 | デフォルト3人削除 | 保留（現状維持でOK） |
+| P1 | リスト5コマンド テスト | 未着手 |
+| P1 | 確定通知フロー テスト | 未着手 |
+| P2 | apiExecutor 分割（2235行→6ファイル） | 設計済み・未実装 |
+| P2 | intentClassifier 分割（662行→5ファイル） | 設計済み・未実装 |
+| P2 | Zustand 状態管理 | 一時ロールバック |
+
+### 🐛 解決済みの問題
+
+| 問題 | 原因 | 解決策 |
+|------|------|--------|
+| FOREIGN KEY constraint failed | 本番DBに `ws-default` ワークスペースが存在しなかった | `INSERT INTO workspaces` で作成 |
+| メールリンクが app.example.com | emailConsumer.ts にハードコード | `app.tomoniwao.jp` に修正 |
+| Intent が unknown | デバッグ済み、正常動作確認 | - |
+| React Error #185 | Zustand 導入時の無限ループ | ロールバックで解決 |
 
 ---
 
-## 📂 ドキュメント構成
+## 🔗 本番環境 URL
 
-### ルートドキュメント
-- `README.md`: プロジェクト全体概要（このファイル）
-- `docs/STATUS.md`: 最新の実装状況・次の一手
-- `docs/KNOWN_ISSUES.md`: 既知の問題一覧
+| サービス | URL |
+|----------|-----|
+| **フロントエンド** | https://app.tomoniwao.jp |
+| **API** | https://webapp.snsrilarc.workers.dev |
+| **ヘルスチェック** | https://app.tomoniwao.jp/health |
 
-### 設計ドキュメント（docs/）
-- `ARCHITECTURE.md`: システムアーキテクチャ
-- `DATABASE_SCHEMA.md`: DB スキーマ設計
-- `API_SPECIFICATION.md`: API 仕様
-- `P0_STABILIZATION_RULES.md`: P0 安定化ルール
+---
 
-### ADR（Architecture Decision Record）
-- `docs/ADR/ADR-0001-tenant-isolation.md`: Tenant Isolation 設計
-- `docs/ADR/ADR-0002-cursor-pagination.md`: Cursor Pagination 設計
-- `docs/ADR/ADR-0003-billing-gate.md`: Billing Gate 設計
+## 📂 主要ファイル構成
 
-### 運用ドキュメント
-- `docs/DEPLOYMENT.md`: デプロイ手順
-- `docs/DEVELOPMENT.md`: 開発環境セットアップ
+### フロントエンド (`frontend/src/`)
+```
+core/
+├── api/client.ts          # API クライアント（認証付き）
+├── auth/index.ts          # 認証管理（sessionStorage）
+├── chat/
+│   ├── intentClassifier.ts  # Intent 分類（662行）
+│   └── apiExecutor.ts       # API 実行（2235行）★技術負債
+└── models/index.ts        # 型定義
+
+components/chat/
+├── ChatLayout.tsx         # 3カラムレイアウト（529行）
+├── ChatPane.tsx           # チャット入力・表示
+├── CardsPane.tsx          # 右カード表示
+└── ThreadsList.tsx        # スレッド一覧
+```
+
+### バックエンド (`apps/api/src/`)
+```
+routes/
+├── threads.ts             # スレッド CRUD + prepare-send
+├── pendingActions.ts      # Beta A: 確認→実行フロー
+├── auth.ts                # Google OAuth + セッション
+└── invite.ts              # 招待トークン処理
+
+queue/
+└── emailConsumer.ts       # メール送信 Queue Consumer
+
+middleware/
+└── auth.ts                # 認証ミドルウェア（ws-default）
+```
+
+### データベース (`db/migrations/`)
+```
+0065_create_pending_actions.sql   # Beta A: 送信確認テーブル
+0066_create_invite_deliveries.sql # 配信追跡テーブル
+```
 
 ---
 
@@ -102,9 +138,10 @@ AI秘書スケジューラー - チャット中心のスケジューリングシ
 ```bash
 # 依存関係インストール
 npm install
+cd frontend && npm install
 
 # DB Migration 適用（ローカル）
-npm run db:reset:local
+npm run db:migrate:local
 
 # 開発サーバー起動
 npm run dev:sandbox
@@ -113,51 +150,43 @@ npm run dev:sandbox
 ### 本番デプロイ
 
 ```bash
-# ビルド
-npm run build
+# バックエンド
+npx wrangler deploy
 
-# 本番 DB Migration 適用
-npm run db:migrate:prod
-
-# デプロイ
-npm run deploy:prod
+# フロントエンド
+cd frontend && npm run build
+npx wrangler pages deploy dist --project-name webapp
 ```
 
 ---
 
-## 📋 主要コマンド
+## 📋 主要 API エンドポイント
 
-### 開発
-- `npm run dev:sandbox`: PM2 で開発サーバー起動（sandbox 用）
-- `npm run build`: TypeScript ビルドチェック
-- `npm test`: テスト実行
+### Beta A フロー
 
-### データベース
-- `npm run db:reset:local`: ローカル DB リセット & Migration 適用
-- `npm run db:migrate:local`: ローカル DB Migration 適用
-- `npm run db:migrate:prod`: 本番 DB Migration 適用
-- `npm run db:seed:local`: ローカル DB Seed データ投入
+| メソッド | パス | 説明 |
+|----------|------|------|
+| POST | `/api/threads/prepare-send` | 新規スレッド + 招待準備 |
+| POST | `/api/threads/:id/invites/prepare` | 既存スレッドへ追加招待準備 |
+| POST | `/api/pending-actions/:token/decide` | 3語決定（送る/キャンセル/別スレッドで） |
+| POST | `/api/pending-actions/:token/execute` | 実行（メール送信） |
 
-### デプロイ
-- `npm run deploy:prod`: 本番環境デプロイ
+### 認証
 
-### Git
-- `npm run git:status`: Git 状態確認
-- `npm run git:log`: Git ログ確認
-
----
-
-## 🔗 リンク
-
-- **本番環境**: https://webapp.snsrilarc.workers.dev
-- **フロントエンド**: https://app.tomoniwao.jp
-- **GitHub**: https://github.com/matiuskuma2/tomoniwaproject
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | `/auth/google/start` | Google OAuth 開始 |
+| GET | `/auth/google/callback` | OAuth コールバック |
+| POST | `/auth/token` | Cookie → Bearer トークン変換 |
+| GET | `/auth/me` | 現在のユーザー情報 |
 
 ---
 
-## 📝 ライセンス
+## 📝 設計ドキュメント
 
-Private
+- `docs/architecture/FRONTEND_REFACTOR_PLAN.md` - フロントエンドリファクタリング計画
+- `docs/STATUS.md` - 実装状況
+- `docs/ADR/` - アーキテクチャ決定記録
 
 ---
 
@@ -167,3 +196,9 @@ Private
 - Location: Dubai
 - X: @aitanoshimu
 - Vision: 「まだ見たことのない欲しかったを形にする」
+
+---
+
+## 📝 ライセンス
+
+Private

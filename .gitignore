@@ -87,3 +87,4 @@ secrets/
 .cloudflare-credentials
 .env.cloudflare
 .wrangler/
+core
