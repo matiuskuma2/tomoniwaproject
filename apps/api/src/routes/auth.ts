@@ -355,23 +355,29 @@ auth.post('/token', async (c) => {
   let sessionToken: string | null = null;
   const cookieHeader = c.req.header('Cookie');
   
+  console.log('[auth/token] Cookie header:', cookieHeader ? `present (${cookieHeader.length} chars)` : 'missing');
+  
   if (cookieHeader) {
     const parts = cookieHeader.split(';').map(s => s.trim());
     for (const part of parts) {
       if (part.startsWith('session=')) {
         sessionToken = decodeURIComponent(part.slice(8));
+        console.log('[auth/token] Session token found:', sessionToken ? `${sessionToken.slice(0, 10)}...` : 'null');
         break;
       }
     }
   }
   
   if (!sessionToken) {
+    console.log('[auth/token] No session token in cookie');
     return c.json({ error: 'No active session. Please login first.' }, 401);
   }
 
   const tokenHash = await hashToken(sessionToken);
   const sessionRepo = new SessionRepository(env.DB);
   const session = await sessionRepo.findByTokenHash(tokenHash);
+
+  console.log('[auth/token] Session lookup result:', session ? `found (user: ${session.user_id})` : 'not found');
 
   if (!session) {
     return c.json({ error: 'Invalid or expired session' }, 401);

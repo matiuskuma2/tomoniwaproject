@@ -34,7 +34,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  timestamp: Date;
+  timestamp: Date | string | number;
 }
 
 interface ChatPaneProps {

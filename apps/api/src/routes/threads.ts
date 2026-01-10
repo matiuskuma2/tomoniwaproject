@@ -987,16 +987,33 @@ import {
 app.post('/prepare-send', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
-  const userId = await getUserIdFromContext(c as any);
-
-  if (!userId) {
-    return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
-  }
-
-  const { workspaceId, ownerUserId } = getTenant(c);
-
+  
+  console.log('[prepare-send] Starting request:', requestId);
+  
   try {
+    // Get authentication context (may throw)
+    let userId: string;
+    let workspaceId: string;
+    let ownerUserId: string;
+    
+    try {
+      userId = getUserIdFromContext(c as any);
+      const tenant = getTenant(c);
+      workspaceId = tenant.workspaceId;
+      ownerUserId = tenant.ownerUserId;
+      console.log('[prepare-send] Auth context:', { userId, workspaceId, ownerUserId });
+    } catch (authError) {
+      console.error('[prepare-send] Auth error:', authError);
+      return c.json({ 
+        error: 'Unauthorized', 
+        message: authError instanceof Error ? authError.message : 'Authentication failed',
+        request_id: requestId 
+      }, 401);
+    }
+    
     const body = await c.req.json().catch(() => ({} as any));
+    console.log('[prepare-send] Request body:', JSON.stringify(body));
+    
     const sourceType = body.source_type as 'emails' | 'list';
     const title = body.title || '日程調整';
 
@@ -1146,9 +1163,14 @@ app.post('/prepare-send', async (c) => {
 
   } catch (error) {
     console.error('[Threads] prepare-send error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('[Threads] prepare-send stack:', errorStack);
     return c.json({
       error: 'internal_error',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      message: `サーバーエラー: ${errorMessage}`,  // message フィールドを追加
+      details: errorMessage,
+      stack: errorStack,
       request_id: requestId,
     }, 500);
   }
@@ -1161,16 +1183,30 @@ app.post('/prepare-send', async (c) => {
 app.post('/:id/invites/prepare', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
-  const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
-
-  if (!userId) {
-    return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
-  }
-
-  const { workspaceId, ownerUserId } = getTenant(c);
-
+  
+  console.log('[invites/prepare] Starting request:', requestId, 'threadId:', threadId);
+  
   try {
+    // Get authentication context (may throw)
+    let userId: string;
+    let workspaceId: string;
+    let ownerUserId: string;
+    
+    try {
+      userId = getUserIdFromContext(c as any);
+      const tenant = getTenant(c);
+      workspaceId = tenant.workspaceId;
+      ownerUserId = tenant.ownerUserId;
+      console.log('[invites/prepare] Auth context:', { userId, workspaceId, ownerUserId });
+    } catch (authError) {
+      console.error('[invites/prepare] Auth error:', authError);
+      return c.json({ 
+        error: 'Unauthorized', 
+        message: authError instanceof Error ? authError.message : 'Authentication failed',
+        request_id: requestId 
+      }, 401);
+    }
     // スレッド存在確認
     const thread = await env.DB.prepare(`
       SELECT id, title, status FROM scheduling_threads
