@@ -7,7 +7,7 @@
 
 export interface EmailJobBase {
   job_id: string;
-  type: 'otp' | 'invite' | 'broadcast' | 'thread_message' | 'reminder' | 'finalized';
+  type: 'otp' | 'invite' | 'broadcast' | 'thread_message' | 'reminder' | 'finalized' | 'additional_slots';
   to: string;
   subject: string;
   created_at: number;
@@ -77,7 +77,20 @@ export interface FinalizedEmailJob extends EmailJobBase {
   };
 }
 
-export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob | ReminderEmailJob | FinalizedEmailJob;
+// Phase2: 追加候補通知メール
+export interface AdditionalSlotsEmailJob extends EmailJobBase {
+  type: 'additional_slots';
+  data: {
+    token: string;
+    thread_title: string;
+    slot_count: number;
+    slot_description: string;
+    invite_url: string;
+    proposal_version: number;
+  };
+}
+
+export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob | ReminderEmailJob | FinalizedEmailJob | AdditionalSlotsEmailJob;
 
 export class EmailQueueService {
   constructor(

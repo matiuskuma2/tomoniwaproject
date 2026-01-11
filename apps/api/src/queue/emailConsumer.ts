@@ -215,6 +215,8 @@ function generateEmailContent(job: EmailJob): { html: string; text: string } {
       return generateBroadcastEmail(job);
     case 'thread_message':
       return generateThreadMessageEmail(job);
+    case 'additional_slots':
+      return generateAdditionalSlotsEmail(job as any);
     default:
       throw new Error(`Unknown email type: ${(job as any).type}`);
   }
@@ -437,6 +439,103 @@ ${sender_name}からのお知らせ
 ${message}
 
 詳細はこちら: ${threadUrl}
+
+---
+Tomoniwao（トモニワオ）
+  `;
+
+  return { html, text };
+}
+
+/**
+ * Phase2: 追加候補通知メール
+ * 既存の回答は保持されていることを明記
+ */
+function generateAdditionalSlotsEmail(job: EmailJob & { 
+  type: 'additional_slots';
+  data: {
+    token: string;
+    thread_title: string;
+    slot_count: number;
+    slot_description: string;
+    invite_url: string;
+    proposal_version: number;
+  };
+}): { html: string; text: string } {
+  const { token, thread_title, slot_count, slot_description, invite_url, proposal_version } = job.data;
+  const displayTitle = thread_title || '日程調整';
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; padding: 30px 24px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px 24px; }
+        .highlight { background: #ecfdf5; border-left: 4px solid #059669; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+        .highlight h3 { margin: 0 0 8px 0; color: #059669; }
+        .info-box { background: #f0f9ff; border: 1px solid #bae6fd; padding: 16px 20px; margin: 20px 0; border-radius: 8px; }
+        .info-box p { margin: 0; color: #0369a1; }
+        .button-container { text-align: center; margin: 32px 0; }
+        .button { display: inline-block; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3); }
+        .button:hover { transform: translateY(-2px); }
+        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>📅 追加候補のお知らせ</h1>
+        </div>
+        <div class="content">
+          <p>「<strong>${displayTitle}</strong>」の日程調整に、新しい候補日が追加されました。</p>
+          
+          <div class="highlight">
+            <h3>追加された候補（${slot_count}件）</h3>
+            <p>${slot_description}</p>
+          </div>
+          
+          <div class="info-box">
+            <p>💡 <strong>ご安心ください</strong>：既にご回答いただいた内容はそのまま保持されています。<br>
+            追加された候補についてのみ、ご都合をお知らせいただければ幸いです。</p>
+          </div>
+          
+          <div class="button-container">
+            <a href="${invite_url}" class="button">追加候補を確認する</a>
+          </div>
+          
+          <p style="color: #64748b; font-size: 14px; text-align: center;">
+            このリンクは72時間有効です。
+          </p>
+        </div>
+        <div class="footer">
+          このメールは Tomoniwao（トモニワオ）から自動送信されています。
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+📅 追加候補のお知らせ
+
+「${displayTitle}」の日程調整に、新しい候補日が追加されました。
+
+【追加された候補（${slot_count}件）】
+${slot_description}
+
+💡 ご安心ください：既にご回答いただいた内容はそのまま保持されています。
+追加された候補についてのみ、ご都合をお知らせいただければ幸いです。
+
+▼ 追加候補を確認する
+${invite_url}
+
+このリンクは72時間有効です。
 
 ---
 Tomoniwao（トモニワオ）

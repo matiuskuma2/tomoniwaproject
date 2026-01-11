@@ -54,23 +54,36 @@ export type ExecutionResultData =
       voteSummary: Array<{ label: string; votes: number }>;
     } }
   | { kind: 'split.propose.cancelled'; payload: {} }
-  // Beta A: 送信確認フロー
+  // Beta A / Phase2: 送信確認フロー
   | { kind: 'pending.action.created'; payload: {
       confirmToken: string;
       expiresAt: string;
       summary: any;
-      mode: 'new_thread' | 'add_to_thread';
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
       threadId?: string;
       threadTitle?: string;
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
+      proposalVersion?: number; // Phase2: 次の proposal_version
+      remainingProposals?: number; // Phase2: 残り提案回数
     } }
   | { kind: 'pending.action.decided'; payload: {
-      decision: 'send' | 'cancel' | 'new_thread';
+      decision: 'send' | 'cancel' | 'new_thread' | 'add'; // Phase2: add 追加
       canExecute: boolean;
     } }
   | { kind: 'pending.action.executed'; payload: {
       threadId: string;
-      inserted: number;
-      emailQueued: number;
+      inserted?: number;
+      emailQueued?: number;
+      // Phase2: add_slots の場合
+      actionType?: 'add_slots';
+      slotsAdded?: number;
+      proposalVersion?: number;
+      remainingProposals?: number;
+      notifications?: {
+        email_queued: number;
+        in_app_created: number;
+        total_recipients: number;
+      };
     } }
   | { kind: 'pending.action.cleared'; payload: {} }
   // Beta A: リスト5コマンド
@@ -120,14 +133,15 @@ export interface ExecutionContext {
   pendingSplit?: {
     threadId: string;
   } | null;
-  // Beta A: pending action state for 3-word decision
+  // Beta A / Phase2: pending action state for decision flow
   pendingAction?: {
     confirmToken: string;
     expiresAt: string;
     summary: any;
-    mode: 'new_thread' | 'add_to_thread';
+    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
     threadId?: string;
     threadTitle?: string;
+    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
   } | null;
 }
 
@@ -394,7 +408,9 @@ async function executeInvitePrepareList(intentResult: IntentResult): Promise<Exe
 }
 
 /**
- * Beta A: 3語固定決定 (送る/キャンセル/別スレッドで)
+ * Beta A / Phase2: 決定処理
+ * - 通常: 3語固定 (送る/キャンセル/別スレッドで)
+ * - 追加候補: 2語固定 (追加/キャンセル)
  */
 async function executePendingDecision(
   intentResult: IntentResult,
@@ -420,9 +436,13 @@ async function executePendingDecision(
   
   try {
     // Map Japanese decision to API decision
+    // Phase2: 「追加」を「send」として扱う
     const apiDecision: PendingDecision = 
       decision === '送る' ? 'send' :
+      decision === '追加' ? 'send' :    // Phase2: 追加候補用
+      decision === '追加する' ? 'send' : // Phase2: 追加候補用
       decision === 'キャンセル' ? 'cancel' :
+      decision === 'やめる' ? 'cancel' : // Phase2: 追加候補用
       decision === '別スレッドで' ? 'new_thread' :
       decision;
     
@@ -445,6 +465,31 @@ async function executePendingDecision(
     if (confirmResponse.can_execute) {
       const executeResponse = await pendingActionsApi.execute(token);
       
+      // Phase2: add_slots の場合は別のレスポンス形式
+      const isAddSlots = (executeResponse as any).proposal_version !== undefined;
+      
+      if (isAddSlots) {
+        // Phase2: 追加候補の実行結果
+        const addSlotsResponse = executeResponse as any;
+        return {
+          success: true,
+          message: addSlotsResponse.message_for_chat || 
+            `✅ ${addSlotsResponse.result.slots_added}件の追加候補を追加しました。`,
+          data: {
+            kind: 'pending.action.executed',
+            payload: {
+              threadId: addSlotsResponse.thread_id,
+              actionType: 'add_slots',
+              slotsAdded: addSlotsResponse.result.slots_added,
+              proposalVersion: addSlotsResponse.proposal_version,
+              remainingProposals: addSlotsResponse.remaining_proposals,
+              notifications: addSlotsResponse.result.notifications,
+            },
+          },
+        };
+      }
+      
+      // 通常の招待送信
       let message = executeResponse.message_for_chat || 
         `✅ ${executeResponse.result.inserted}名に招待を送信しました。`;
       
@@ -1392,17 +1437,20 @@ async function executeAdditionalProposeByThreadId(
  * 5. 「この候補を追加しますか？」を表示
  * 6. 「はい」で confirm フローに乗る（POST は confirm 時のみ）
  */
+/**
+ * Phase2: schedule.additional_propose
+ * 追加候補機能（Sprint 2-A 実装）
+ * 
+ * フロー:
+ *   1. 候補を生成
+ *   2. POST /api/threads/:id/proposals/prepare で pending_action 作成
+ *   3. 「追加/キャンセル」の入力待ち
+ *   4. confirm → execute
+ */
 async function executeAdditionalPropose(
-  _intentResult: IntentResult,
+  intentResult: IntentResult,
   _context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  // Beta A: 追加候補機能は一時無効化（設計見直し中）
-  return {
-    success: false,
-    message: '🚧 この機能は現在準備中です。\n\n候補日の追加は、次回のアップデートで対応予定です。',
-  };
-
-  /* 以下、Phase 2 で再実装予定
   const { threadId } = intentResult.params;
   
   if (!threadId) {
@@ -1416,20 +1464,11 @@ async function executeAdditionalPropose(
     };
   }
   
-  // Phase Next-5 Day3: 実行回数チェック（最大2回まで）
-  const executionCount = context?.additionalProposeCount || 0;
-  if (executionCount >= 2) {
-    return {
-      success: false,
-      message: '❌ 追加候補の提案は最大2回までです。\n\nこれ以上は手動で候補を追加してください。',
-    };
-  }
-  
   try {
-    // Get thread status
+    // (1) スレッド状態を取得
     const status = await threadsApi.getStatus(threadId);
     
-    // Analyze if additional proposals are needed
+    // (2) 追加候補が必要か判定
     const needsMoreProposals = analyzeStatusForPropose(status);
     
     if (!needsMoreProposals) {
@@ -1439,13 +1478,15 @@ async function executeAdditionalPropose(
       };
     }
     
-    // Generate 3 additional proposals (30 minutes, next week)
-    const duration = 30; // Default 30 minutes
+    // (3) 候補を生成（30分、来週分）
+    const duration = 30;
     const allProposals = generateProposalsWithoutBusy(duration);
     
-    // Phase Next-5 Day3: 既存スロットと重複回避（ラベルで判定）
-    const existingLabels = status.slots.map((slot) => slot.label || '').filter(Boolean);
-    const newProposals = allProposals.filter((p) => !existingLabels.includes(p.label)).slice(0, 3);
+    // 既存スロットと重複回避
+    const existingTimes = status.slots.map((slot) => `${slot.start_at}|${slot.end_at}`);
+    const newProposals = allProposals.filter((p) => 
+      !existingTimes.includes(`${p.start_at}|${p.end_at}`)
+    ).slice(0, 3);
     
     if (newProposals.length === 0) {
       return {
@@ -1454,39 +1495,60 @@ async function executeAdditionalPropose(
       };
     }
     
-    // Build message with proposals
-    let message = `✅ 追加候補を${newProposals.length}本生成しました:\n\n`;
-    newProposals.forEach((proposal, index) => {
-      message += `${index + 1}. ${proposal.label}\n`;
-    });
-    message += '\n📌 注意: この候補はまだスレッドに追加されていません。';
-    message += '\n「はい」と入力すると、候補をスレッドに追加できます。';
-    message += '\n「いいえ」でキャンセルします。';
-    message += `\n\n⚠️ 残り提案回数: ${2 - executionCount - 1}回`;
+    // (4) POST /api/threads/:id/proposals/prepare
+    const response = await threadsApi.prepareAdditionalSlots(
+      threadId,
+      newProposals.map((p) => ({
+        start_at: p.start_at,
+        end_at: p.end_at,
+        label: p.label,
+      }))
+    );
     
-    // Return as auto_propose.generated (reuse Day2 confirm flow)
+    // (5) pending_action.created として返す
     return {
       success: true,
-      message,
+      message: response.message_for_chat,
       data: {
-        kind: 'auto_propose.generated',
+        kind: 'pending.action.created',
         payload: {
-          source: 'additional', // Phase Next-5 Day3: 明示フラグ（追加提案）
-          threadId, // Phase Next-5 Day3: 提案生成時のスレッドID
-          emails: [], // No emails needed for additional proposals
-          duration,
-          range: 'next_week',
-          proposals: newProposals,
+          actionType: 'add_slots',
+          confirmToken: response.confirm_token,
+          expiresAt: response.expires_at,
+          summary: response.summary,
+          mode: 'add_slots',
+          threadId: response.thread_id,
+          threadTitle: response.thread_title,
+          proposalVersion: response.next_proposal_version,
+          remainingProposals: response.remaining_proposals,
         },
       },
     };
-  } catch (error) {
+  } catch (error: any) {
+    // エラーレスポンスの処理
+    if (error?.error === 'invalid_status') {
+      return {
+        success: false,
+        message: `❌ ${error.message || '追加候補を出せない状態です。'}`,
+      };
+    }
+    if (error?.error === 'max_proposals_reached') {
+      return {
+        success: false,
+        message: `❌ ${error.message || '追加候補は最大2回までです。'}`,
+      };
+    }
+    if (error?.error === 'all_duplicates') {
+      return {
+        success: false,
+        message: `❌ ${error.message || '全ての候補が既存と重複しています。'}`,
+      };
+    }
     return {
       success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
     };
   }
-  Phase 2 で再実装予定 ここまで */
 }
 
 /**

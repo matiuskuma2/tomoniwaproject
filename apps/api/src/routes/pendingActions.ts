@@ -48,32 +48,61 @@ app.post('/:token/confirm', async (c) => {
   const token = c.req.param('token');
   const body = await c.req.json().catch(() => ({} as any));
 
-  // 3語固定の decision マッピング
-  const rawDecision = String(body.decision || '').trim();
-  const decisionMap: Record<string, ConfirmDecision> = {
-    '送る': 'send',
-    'send': 'send',
-    'キャンセル': 'cancel',
-    'cancel': 'cancel',
-    '別スレッドで': 'new_thread',
-    'new_thread': 'new_thread',
-  };
-
-  const decision = decisionMap[rawDecision];
-  if (!decision) {
-    return c.json({
-      error: 'invalid_decision',
-      message: 'decision は「送る」「キャンセル」「別スレッドで」のいずれかを指定してください',
-      request_id: requestId,
-    }, 400);
-  }
-
   try {
     const repo = new PendingActionsRepository(env.DB);
     const pa = await repo.getByToken(token);
 
     if (!pa) {
       return c.json({ error: 'not_found', request_id: requestId }, 404);
+    }
+
+    // decision マッピング（action_type によって異なる）
+    const rawDecision = String(body.decision || '').trim();
+    
+    // Phase2: add_slots の場合は2語（追加/キャンセル）
+    let decisionMap: Record<string, ConfirmDecision>;
+    let errorMessage: string;
+    
+    if (pa.action_type === 'add_slots') {
+      decisionMap = {
+        '追加': 'send',        // 追加 → send として扱う
+        'add': 'send',
+        '追加する': 'send',
+        'キャンセル': 'cancel',
+        'cancel': 'cancel',
+        'やめる': 'cancel',
+      };
+      errorMessage = 'decision は「追加」「キャンセル」のいずれかを指定してください';
+    } else {
+      // 既存: 3語固定（送る/キャンセル/別スレッドで）
+      decisionMap = {
+        '送る': 'send',
+        'send': 'send',
+        'キャンセル': 'cancel',
+        'cancel': 'cancel',
+        '別スレッドで': 'new_thread',
+        'new_thread': 'new_thread',
+      };
+      errorMessage = 'decision は「送る」「キャンセル」「別スレッドで」のいずれかを指定してください';
+    }
+
+    const decision = decisionMap[rawDecision];
+    if (!decision) {
+      return c.json({
+        error: 'invalid_decision',
+        message: errorMessage,
+        action_type: pa.action_type,
+        request_id: requestId,
+      }, 400);
+    }
+
+    // add_slots では new_thread は使用不可
+    if (pa.action_type === 'add_slots' && decision === 'new_thread') {
+      return c.json({
+        error: 'invalid_decision',
+        message: '追加候補では「別スレッドで」は使用できません',
+        request_id: requestId,
+      }, 400);
     }
 
     // オーナーチェック（越境防止）
@@ -195,7 +224,12 @@ app.post('/:token/execute', async (c) => {
       }, 409);
     }
 
-    // ====== Payload 解析 ======
+    // ====== Phase2: add_slots の場合は別処理 ======
+    if (pa.action_type === 'add_slots') {
+      return await executeAddSlots(c, env, pa, pendingRepo, requestId, workspaceId, ownerUserId);
+    }
+
+    // ====== Payload 解析（招待送信用） ======
     const payload: PendingActionPayload = JSON.parse(pa.payload_json || '{}');
     let emails: string[] = payload.emails || [];
 
@@ -446,5 +480,242 @@ app.post('/:token/execute', async (c) => {
     }, 500);
   }
 });
+
+// ============================================================
+// Phase2: 追加候補実行ロジック
+// ============================================================
+
+interface AddSlotsPayload {
+  action_type: 'add_slots';
+  slots: Array<{ start_at: string; end_at: string; label?: string }>;
+  next_proposal_version: number;
+}
+
+/**
+ * executeAddSlots: 追加候補の実行
+ * 
+ * 処理:
+ *   1. スロット追加（proposal_version 付き）
+ *   2. スレッドの proposal_version / additional_propose_count を更新
+ *   3. 全員に再通知（declined 除外）
+ *   4. pending_action を executed に更新
+ */
+async function executeAddSlots(
+  c: any,
+  env: Env,
+  pa: any,
+  pendingRepo: PendingActionsRepository,
+  requestId: string,
+  workspaceId: string,
+  ownerUserId: string
+) {
+  const threadId = pa.thread_id;
+  
+  if (!threadId) {
+    return c.json({
+      error: 'no_thread',
+      message: 'スレッドが指定されていません',
+      request_id: requestId,
+    }, 400);
+  }
+
+  // ====== (1) Payload 解析 ======
+  const payload: AddSlotsPayload = JSON.parse(pa.payload_json || '{}');
+  const slots = payload.slots || [];
+  const nextVersion = payload.next_proposal_version || 2;
+
+  if (slots.length === 0) {
+    return c.json({
+      error: 'no_slots',
+      message: '追加するスロットがありません',
+      request_id: requestId,
+    }, 400);
+  }
+
+  // ====== (2) スレッド状態の再確認（collecting のみ） ======
+  const thread = await env.DB.prepare(`
+    SELECT 
+      id, 
+      title,
+      status,
+      COALESCE(proposal_version, 1) as proposal_version,
+      COALESCE(additional_propose_count, 0) as additional_propose_count
+    FROM scheduling_threads
+    WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+  `).bind(threadId, workspaceId, ownerUserId).first<{
+    id: string;
+    title: string;
+    status: string;
+    proposal_version: number;
+    additional_propose_count: number;
+  }>();
+
+  if (!thread) {
+    return c.json({
+      error: 'thread_not_found',
+      message: 'スレッドが見つかりません',
+      request_id: requestId,
+    }, 404);
+  }
+
+  if (thread.status !== 'sent') {
+    return c.json({
+      error: 'invalid_status',
+      message: '現在のステータスでは追加候補を実行できません',
+      current_status: thread.status,
+      request_id: requestId,
+    }, 400);
+  }
+
+  if (thread.additional_propose_count >= 2) {
+    return c.json({
+      error: 'max_proposals_reached',
+      message: '追加候補は最大2回までです',
+      request_id: requestId,
+    }, 400);
+  }
+
+  // ====== (3) スロット追加（トランザクション） ======
+  const slotIds: string[] = [];
+  const timezone = 'Asia/Tokyo';
+
+  for (const slot of slots) {
+    const slotId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label, proposal_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      slotId,
+      threadId,
+      slot.start_at,
+      slot.end_at,
+      timezone,
+      slot.label || null,
+      nextVersion
+    ).run();
+    slotIds.push(slotId);
+  }
+
+  console.log(`[AddSlots] Added ${slotIds.length} slots (v${nextVersion}) to thread ${threadId}`);
+
+  // ====== (4) スレッド更新 ======
+  await env.DB.prepare(`
+    UPDATE scheduling_threads
+    SET proposal_version = ?,
+        additional_propose_count = additional_propose_count + 1,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(nextVersion, threadId).run();
+
+  console.log(`[AddSlots] Updated thread ${threadId}: proposal_version=${nextVersion}, additional_propose_count=${thread.additional_propose_count + 1}`);
+
+  // ====== (5) 再通知対象を取得（declined 除外） ======
+  const invites = await env.DB.prepare(`
+    SELECT 
+      ti.id,
+      ti.token,
+      ti.email,
+      ti.candidate_name,
+      ts.status as selection_status,
+      ts.proposal_version_at_response
+    FROM thread_invites ti
+    LEFT JOIN thread_selections ts ON ts.invite_id = ti.id
+    WHERE ti.thread_id = ?
+      AND (ts.status IS NULL OR ts.status != 'declined')
+  `).bind(threadId).all<{
+    id: string;
+    token: string;
+    email: string;
+    candidate_name: string;
+    selection_status: string | null;
+    proposal_version_at_response: number | null;
+  }>();
+
+  const recipients = invites.results || [];
+  console.log(`[AddSlots] Notify targets: ${recipients.length} (declined excluded)`);
+
+  // ====== (6) 通知送信（Email + Inbox） ======
+  const inboxRepo = new InboxRepository(env.DB);
+  const host = c.req.header('host') || 'app.tomoniwao.jp';
+  let emailQueuedCount = 0;
+  let inAppCreatedCount = 0;
+
+  // スロットラベル生成
+  const slotLabels = slots.slice(0, 3).map((s) =>
+    s.label || new Date(s.start_at).toLocaleString('ja-JP', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+    })
+  );
+  const slotDescription = slotLabels.join('、') + (slots.length > 3 ? ` 他${slots.length - 3}件` : '');
+
+  for (const invite of recipients) {
+    const inviteUrl = `https://${host}/i/${invite.token}`;
+
+    // メール送信（追加候補通知）
+    const emailJobId = `add-slots-${invite.id}-v${nextVersion}`;
+    const emailJob: EmailJob = {
+      job_id: emailJobId,
+      type: 'additional_slots',
+      to: invite.email,
+      subject: `【追加候補】「${thread.title}」に新しい候補日が追加されました`,
+      created_at: Date.now(),
+      data: {
+        token: invite.token,
+        thread_title: thread.title,
+        slot_count: slots.length,
+        slot_description: slotDescription,
+        invite_url: inviteUrl,
+        proposal_version: nextVersion,
+      },
+    };
+
+    await env.EMAIL_QUEUE.send(emailJob);
+    emailQueuedCount++;
+
+    // アプリユーザーには Inbox 通知も
+    const appUser = await env.DB.prepare(`
+      SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
+    `).bind(invite.email).first<{ id: string }>();
+
+    if (appUser) {
+      await inboxRepo.create({
+        user_id: appUser.id,
+        type: 'system_message',
+        title: `【追加候補】${thread.title}`,
+        message: `新しい候補日が追加されました: ${slotDescription}\n既存の回答はそのまま保持されています。`,
+        action_type: 'view_invite',
+        action_target_id: invite.id,
+        action_url: `/i/${invite.token}`,
+        priority: 'high',
+      });
+      inAppCreatedCount++;
+    }
+  }
+
+  // ====== (7) pending_action を executed に更新 ======
+  await pendingRepo.markExecuted(pa.id, threadId);
+
+  // ====== (8) レスポンス ======
+  return c.json({
+    request_id: requestId,
+    success: true,
+    thread_id: threadId,
+    proposal_version: nextVersion,
+    remaining_proposals: 2 - (thread.additional_propose_count + 1),
+    result: {
+      slots_added: slotIds.length,
+      slot_ids: slotIds,
+      notifications: {
+        email_queued: emailQueuedCount,
+        in_app_created: inAppCreatedCount,
+        total_recipients: recipients.length,
+      },
+    },
+    message_for_chat: `✅ ${slots.length}件の追加候補を追加しました。\n${recipients.length}名に通知を送信しました。\n\n既存の回答は保持されています。残り追加回数: ${2 - (thread.additional_propose_count + 1)}回`,
+  });
+}
 
 export default app;

@@ -27,7 +27,7 @@ export interface PendingActionRow {
   workspace_id: string;
   owner_user_id: string;
   thread_id: string | null;
-  action_type: 'send_invites' | 'add_invites' | 'send_finalize_notice';
+  action_type: 'send_invites' | 'add_invites' | 'send_finalize_notice' | 'add_slots';
   source_type: PendingActionSource;
   payload_json: string;
   summary_json: string;

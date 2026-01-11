@@ -15,12 +15,13 @@ import { api } from './client';
 // ============================================================
 
 /**
- * 3語固定の決定タイプ
- * - 送る: 送信実行
- * - キャンセル: キャンセル
- * - 別スレッドで: 新規スレッド作成して送信
+ * 決定タイプ
+ * 通常: 3語固定（送る/キャンセル/別スレッドで）
+ * 追加候補: 2語固定（追加/キャンセル）
  */
-export type PendingDecision = '送る' | 'キャンセル' | '別スレッドで' | 'send' | 'cancel' | 'new_thread';
+export type PendingDecision = 
+  | '送る' | 'キャンセル' | '別スレッドで' | 'send' | 'cancel' | 'new_thread'
+  | '追加' | '追加する' | 'add' | 'やめる';  // Phase2: 追加候補用
 
 /**
  * 送信先のサマリ情報
@@ -86,6 +87,25 @@ export interface ExecuteResponse {
     deliveries: {
       email_queued: number;
       in_app_created: number;
+    };
+  };
+  message_for_chat: string;
+}
+
+// Phase2: 追加候補の execute レスポンス
+export interface ExecuteAddSlotsResponse {
+  request_id: string;
+  success: boolean;
+  thread_id: string;
+  proposal_version: number;
+  remaining_proposals: number;
+  result: {
+    slots_added: number;
+    slot_ids: string[];
+    notifications: {
+      email_queued: number;
+      in_app_created: number;
+      total_recipients: number;
     };
   };
   message_for_chat: string;

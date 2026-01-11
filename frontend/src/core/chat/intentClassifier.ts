@@ -70,14 +70,15 @@ export interface IntentContext {
   pendingSplit?: {
     threadId: string;
   } | null;
-  // Beta A: pending action state for 3-word decision
+  // Beta A / Phase2: pending action state for decision flow
   pendingAction?: {
     confirmToken: string;
     expiresAt: string;
     summary: any;
-    mode: 'new_thread' | 'add_to_thread';
+    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
     threadId?: string;
     threadTitle?: string;
+    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
   } | null;
 }
 
@@ -92,21 +93,24 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
 
   // ============================================================
   // Beta A: 3語固定決定フロー（最優先）
-  // pendingAction が存在する場合、3語のみ受け付け
+  // pendingAction が存在する場合、決定語のみ受け付け
+  // Phase2: add_slots の場合は「追加/キャンセル」、それ以外は「送る/キャンセル/別スレッドで」
   // ============================================================
   if (context?.pendingAction) {
-    // 「送る」「send」
-    if (/^(送る|送って|send|送信)$/i.test(normalizedInput)) {
+    const isAddSlots = (context.pendingAction as any).mode === 'add_slots';
+    
+    // 「送る」「send」「追加」「add」
+    if (/^(送る|送って|send|送信|追加|追加する|add)$/i.test(normalizedInput)) {
       return {
         intent: 'pending.action.decide',
         confidence: 1.0,
         params: {
-          decision: '送る',
+          decision: isAddSlots ? '追加' : '送る',
           confirmToken: context.pendingAction.confirmToken,
         },
       };
     }
-    // 「キャンセル」「cancel」
+    // 「キャンセル」「cancel」「やめる」
     if (/^(キャンセル|やめる|cancel|取り消し|取消)$/i.test(normalizedInput)) {
       return {
         intent: 'pending.action.decide',
@@ -117,8 +121,8 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
         },
       };
     }
-    // 「別スレッドで」「new_thread」
-    if (/^(別スレッドで|別スレッド|新規スレッド|new.?thread)$/i.test(normalizedInput)) {
+    // 「別スレッドで」「new_thread」（add_slots では使用不可）
+    if (!isAddSlots && /^(別スレッドで|別スレッド|新規スレッド|new.?thread)$/i.test(normalizedInput)) {
       return {
         intent: 'pending.action.decide',
         confidence: 1.0,
@@ -128,14 +132,17 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
         },
       };
     }
-    // 3語以外の入力は案内メッセージを返す
+    // 決定語以外の入力は案内メッセージを返す
+    const helpMessage = isAddSlots
+      ? '現在、追加候補の確認待ちです。\n\n「追加」または「キャンセル」を入力してください。'
+      : '現在、送信確認待ちです。\n\n「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。';
     return {
       intent: 'unknown',
       confidence: 0,
       params: {},
       needsClarification: {
         field: 'decision',
-        message: '現在、送信確認待ちです。\n\n「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。',
+        message: helpMessage,
       },
     };
   }

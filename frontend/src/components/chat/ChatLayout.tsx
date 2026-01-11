@@ -40,14 +40,15 @@ interface PendingAutoPropose {
   proposals: Array<{ start_at: string; end_at: string; label: string }>;
 }
 
-// Beta A: Pending action state for 3-word decision
+// Beta A / Phase2: Pending action state for decision flow
 interface PendingActionState {
   confirmToken: string;
   expiresAt: string;
   summary: any;
-  mode: 'new_thread' | 'add_to_thread';
+  mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
   threadId?: string;
   threadTitle?: string;
+  actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
 }
 
 export function ChatLayout() {

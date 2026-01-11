@@ -162,4 +162,42 @@ export const threadsApi = {
   async prepareInvites(threadId: string, data: PrepareInvitesInput): Promise<PrepareSendResponse> {
     return api.post(`/api/threads/${threadId}/invites/prepare`, data);
   },
+
+  // ============================================================
+  // Phase2: 追加候補機能 (Sprint 2-A)
+  // ============================================================
+
+  /**
+   * 追加候補準備
+   * POST /api/threads/:threadId/proposals/prepare
+   * 
+   * 安全装置:
+   *   1. collecting (status = 'sent') のみ実行可
+   *   2. 最大2回まで
+   *   3. 既存回答は消さない
+   *   4. 重複候補は除外
+   */
+  async prepareAdditionalSlots(
+    threadId: string,
+    slots: Array<{ start_at: string; end_at: string; label?: string }>
+  ): Promise<{
+    request_id: string;
+    confirm_token: string;
+    expires_at: string;
+    expires_in_seconds: number;
+    thread_id: string;
+    thread_title: string;
+    next_proposal_version: number;
+    summary: {
+      total_slots: number;
+      new_slots: number;
+      duplicate_slots: number;
+      preview_labels: string[];
+    };
+    remaining_proposals: number;
+    default_decision: string;
+    message_for_chat: string;
+  }> {
+    return api.post(`/api/threads/${threadId}/proposals/prepare`, { slots });
+  },
 };

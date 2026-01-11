@@ -86,14 +86,15 @@ interface ChatPaneProps {
     threadId: string;
   } | null;
   
-  // Beta A: pending action for 3-word decision
+  // Beta A / Phase2: pending action for decision flow
   pendingAction?: {
     confirmToken: string;
     expiresAt: string;
     summary: any;
-    mode: 'new_thread' | 'add_to_thread';
+    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
     threadId?: string;
     threadTitle?: string;
+    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
   } | null;
 }
 
