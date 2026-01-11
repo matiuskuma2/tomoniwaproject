@@ -279,8 +279,8 @@ app.post('/:id/finalize', async (c) => {
     try {
       const inboxId = crypto.randomUUID();
       const inboxMessage = meetingUrl 
-        ? `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)\n\nGoogle Meet: ${meetingUrl}`
-        : `Selected slot: ${slot.start_at} - ${slot.end_at} (${finalParticipants.length} participants)`;
+        ? `📅 日程確定: ${slot.start_at} - ${slot.end_at}（${finalParticipants.length}名参加）\n\n🎥 Google Meet: ${meetingUrl}`
+        : `📅 日程確定: ${slot.start_at} - ${slot.end_at}（${finalParticipants.length}名参加）`;
       
       await env.DB.prepare(`
         INSERT INTO inbox (
@@ -296,7 +296,7 @@ app.post('/:id/finalize', async (c) => {
         inboxId,
         userId,
         INBOX_TYPE.SYSTEM_MESSAGE,
-        `Thread finalized: ${thread.title}`,
+        `【確定】${thread.title}`,
         inboxMessage,
         INBOX_PRIORITY.HIGH
       ).run();
@@ -324,15 +324,16 @@ app.post('/:id/finalize', async (c) => {
     for (const invite of invites) {
       if (finalParticipants.includes(invite.invitee_key)) {
         try {
+          // Beta A: 日本語で確定通知メール
           const emailMessage = meetingUrl
-            ? `Your scheduling has been confirmed.\n\nTime: ${slot.start_at} - ${slot.end_at}\n\nGoogle Meet: ${meetingUrl}`
-            : `Your scheduling has been confirmed.\n\nTime: ${slot.start_at} - ${slot.end_at}`;
+            ? `日程が確定しました。\n\n📅 日時: ${slot.start_at} - ${slot.end_at}\n\n🎥 Google Meet: ${meetingUrl}\n\nご参加お待ちしております。`
+            : `日程が確定しました。\n\n📅 日時: ${slot.start_at} - ${slot.end_at}\n\nご参加お待ちしております。`;
           
           const emailJob = {
             job_id: `finalize-${invite.id}-${Date.now()}`,
             type: 'thread_message' as const,  // Use existing EmailJob type
             to: String(invite.email),
-            subject: `Confirmed: ${thread.title}`,
+            subject: `【確定】${thread.title}`,
             created_at: Date.now(),
             data: {
               thread_id: String(threadId),

@@ -859,7 +859,7 @@ app.post('/:id/invites/batch', async (c) => {
     const thread = await env.DB.prepare(`
       SELECT id, title, status FROM scheduling_threads
       WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
-    `).bind(threadId, workspaceId, ownerUserId).first();
+    `).bind(threadId, workspaceId, ownerUserId).first<{ id: string; title: string; status: string }>();
 
     if (!thread) {
       return c.json({ error: 'Thread not found or access denied' }, 404);

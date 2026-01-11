@@ -390,41 +390,56 @@ AI Secretary Scheduler
 
 /**
  * Generate thread message email content
+ * Beta A: 日本語で確定通知メール
  */
 function generateThreadMessageEmail(job: EmailJob & { type: 'thread_message' }): { html: string; text: string } {
   const { message, sender_name, thread_id } = job.data;
-  const threadUrl = `${APP_BASE_URL}/scheduling/${thread_id}`;
+  const threadUrl = `${APP_BASE_URL}/chat/${thread_id}`;
+
+  // メッセージ内容をHTMLエスケープしつつ改行を<br>に変換
+  const htmlMessage = message.replace(/\n/g, '<br>');
 
   const html = `
     <!DOCTYPE html>
-    <html>
+    <html lang="ja">
     <head>
       <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .message { background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 20px 0; }
-        .button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px 24px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px 24px; }
+        .message { background: #f0fdf4; border-left: 4px solid #10b981; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; white-space: pre-wrap; }
+        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>New message from ${sender_name}</h1>
-        <div class="message">${message}</div>
-        <a href="${threadUrl}" class="button">View Conversation</a>
+        <div class="header">
+          <h1>✅ ${sender_name}からのお知らせ</h1>
+        </div>
+        <div class="content">
+          <div class="message">${htmlMessage}</div>
+        </div>
+        <div class="footer">
+          このメールは Tomoniwao（トモニワオ）から送信されています。
+        </div>
       </div>
     </body>
     </html>
   `;
 
   const text = `
-New message from ${sender_name}
+${sender_name}からのお知らせ
 
 ${message}
 
-View conversation: ${threadUrl}
+詳細はこちら: ${threadUrl}
 
-AI Secretary Scheduler
+---
+Tomoniwao（トモニワオ）
   `;
 
   return { html, text };
