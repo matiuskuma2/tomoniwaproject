@@ -71,11 +71,37 @@ AI秘書スケジューラー - チャット中心のスケジューリングシ
 3. 「テストリストのメンバー」→ メンバー一覧を確認
 4. 「テストリストに招待」→ リスト全員に招待メールを送信
 
-### 🔄 Phase 2 以降の予定
+### 🔄 Phase 2 実装（Sprint 2-A 完了）
+
+#### 追加候補機能（実装完了）
+
+| 項目 | 状況 |
+|------|------|
+| DB: proposal_version / additional_propose_count | ✅ 完了 |
+| DB: slots.proposal_version / location_id | ✅ 完了 |
+| DB: selections.proposal_version_at_response | ✅ 完了 |
+| API: POST /threads/:id/proposals/prepare | ✅ 完了 |
+| API: POST /pending-actions/:token/execute (add_slots) | ✅ 完了 |
+| 通知: Email + Inbox（declined除外） | ✅ 完了 |
+| Frontend: 「追加/キャンセル」2語決定フロー | ✅ 完了 |
+
+**安全装置**:
+- collecting (status = 'sent') のみ追加候補可
+- 最大2回まで
+- 既存回答は消さない（絶対条件）
+- 重複候補は除外（同一 start_at/end_at）
+
+**使い方**:
+1. スレッドを選択して「追加候補を出して」
+2. 候補が生成される（3件、30分、既存と重複除外）
+3. 「追加」で候補をスレッドに追加 → 全員に再通知
+4. 「キャンセル」でキャンセル
+
+### 🔜 Phase 2-B / 2-C の予定
 
 | 優先度 | 項目 | 状況 |
 |--------|------|------|
-| P1 | 追加候補機能（設計見直し） | **一時無効化中** |
+| P1 | E2E テスト（8本） | 未着手 |
 | P2 | apiExecutor 分割（2235行→6ファイル） | 設計済み・未実装 |
 | P2 | intentClassifier 分割（662行→5ファイル） | 設計済み・未実装 |
 | P2 | Zustand 状態管理 | 一時ロールバック |
