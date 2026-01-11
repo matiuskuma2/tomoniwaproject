@@ -424,14 +424,33 @@ app.post('/:token/respond', async (c) => {
     const newStatus = status === 'selected' ? 'accepted' : 'declined';
     await threadsRepo.updateInviteStatus(invite.id, newStatus);
 
+    // Phase2: Get current proposal_version from thread
+    const threadResult = await env.DB.prepare(`
+      SELECT COALESCE(proposal_version, 1) as proposal_version FROM scheduling_threads WHERE id = ?
+    `).bind(invite.thread_id).first<{ proposal_version: number }>();
+    const currentProposalVersion = threadResult?.proposal_version ?? 1;
+
     // Record slot selection if accepted
     if (status === 'selected' && selected_slot_id) {
       const selectionId = `sel-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      // Phase2: proposal_version_at_response を書き込む
       await env.DB.prepare(`
         INSERT OR REPLACE INTO thread_selections (
-          selection_id, thread_id, invite_id, invitee_key, selected_slot_id, status, responded_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, 'selected', datetime('now'), datetime('now'))
-      `).bind(selectionId, invite.thread_id, invite.id, invite.invitee_key, selected_slot_id).run();
+          selection_id, thread_id, invite_id, invitee_key, selected_slot_id, status, 
+          proposal_version_at_response, responded_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'selected', ?, datetime('now'), datetime('now'))
+      `).bind(selectionId, invite.thread_id, invite.id, invite.invitee_key, selected_slot_id, currentProposalVersion).run();
+    }
+
+    // Phase2: Record decline with proposal_version_at_response
+    if (status === 'declined') {
+      const selectionId = `sel-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      await env.DB.prepare(`
+        INSERT OR REPLACE INTO thread_selections (
+          selection_id, thread_id, invite_id, invitee_key, selected_slot_id, status, 
+          proposal_version_at_response, responded_at, created_at
+        ) VALUES (?, ?, ?, ?, NULL, 'declined', ?, datetime('now'), datetime('now'))
+      `).bind(selectionId, invite.thread_id, invite.id, invite.invitee_key, currentProposalVersion).run();
     }
 
     // Send notification to organizer (via inbox)

@@ -42,6 +42,7 @@ app.get('/:id/status', async (c) => {
     const threadId = c.req.param('id');
     
     // ====== (1) Load Thread (P0-1: tenant isolation) ======
+    // Phase2: proposal_version / additional_propose_count を追加
     const thread = await env.DB.prepare(`
       SELECT 
         id,
@@ -51,7 +52,9 @@ app.get('/:id/status', async (c) => {
         status,
         mode,
         created_at,
-        updated_at
+        updated_at,
+        COALESCE(proposal_version, 1) as proposal_version,
+        COALESCE(additional_propose_count, 0) as additional_propose_count
       FROM scheduling_threads
       WHERE id = ?
         AND workspace_id = ?
@@ -93,13 +96,15 @@ app.get('/:id/status', async (c) => {
     const ruleObj = JSON.parse(ruleRow.rule_json as string);
     
     // ====== (3) Load Slots ======
+    // Phase2: proposal_version を追加（v1/v2/v3 混在表示用）
     const slotsResult = await env.DB.prepare(`
       SELECT 
         slot_id,
         start_at,
         end_at,
         timezone,
-        label
+        label,
+        COALESCE(proposal_version, 1) as proposal_version
       FROM scheduling_slots
       WHERE thread_id = ?
       ORDER BY start_at ASC
@@ -149,13 +154,15 @@ app.get('/:id/status', async (c) => {
     const invites = invitesResult.results || [];
     
     // ====== (5) Load Selections ======
+    // Phase2: proposal_version_at_response を追加（再回答必要判定用）
     const selectionsResult = await env.DB.prepare(`
       SELECT 
         selection_id,
         invitee_key,
         status,
         selected_slot_id,
-        responded_at
+        responded_at,
+        proposal_version_at_response
       FROM thread_selections
       WHERE thread_id = ?
       ORDER BY responded_at ASC
@@ -224,6 +231,19 @@ app.get('/:id/status', async (c) => {
     // ====== (8) Response ======
     const host = c.req.header('host') || 'webapp.snsrilarc.workers.dev';
     
+    // Phase2: 再回答必要な invitee を計算
+    const currentProposalVersion = (thread as any).proposal_version || 1;
+    const inviteesNeedingResponse = invites.filter((inv: any) => {
+      // declined は対象外
+      const sel = selections.find((s: any) => s.invitee_key === inv.invitee_key);
+      if (sel?.status === 'declined') return false;
+      // 未回答 or 古い世代で回答済み
+      if (!sel) return true;
+      const versionAtResponse = sel.proposal_version_at_response;
+      if (versionAtResponse === null || versionAtResponse === undefined) return true;
+      return versionAtResponse < currentProposalVersion;
+    });
+
     return c.json({
       thread: {
         id: thread.id,
@@ -233,7 +253,11 @@ app.get('/:id/status', async (c) => {
         status: thread.status,
         mode: thread.mode,
         created_at: thread.created_at,
-        updated_at: thread.updated_at
+        updated_at: thread.updated_at,
+        // Phase2: proposal_version 情報
+        proposal_version: (thread as any).proposal_version || 1,
+        additional_propose_count: (thread as any).additional_propose_count || 0,
+        remaining_proposals: 2 - ((thread as any).additional_propose_count || 0),
       },
       rule: {
         version: ruleRow.version,
@@ -264,6 +288,18 @@ app.get('/:id/status', async (c) => {
           expires_at: inv.expires_at
         })),
         required_missing: requiredMissing
+      },
+      // Phase2: 追加候補関連情報
+      proposal_info: {
+        current_version: currentProposalVersion,
+        additional_propose_count: (thread as any).additional_propose_count || 0,
+        remaining_proposals: 2 - ((thread as any).additional_propose_count || 0),
+        invitees_needing_response: inviteesNeedingResponse.map((inv: any) => ({
+          invitee_key: inv.invitee_key,
+          email: inv.email,
+          name: inv.candidate_name,
+        })),
+        invitees_needing_response_count: inviteesNeedingResponse.length,
       }
     });
     
