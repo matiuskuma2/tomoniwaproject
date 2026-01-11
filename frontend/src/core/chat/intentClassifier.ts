@@ -164,9 +164,10 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
   
-  // list.list: 「リスト見せて」「リスト一覧」
-  if (/^(リスト|list).*(見せ|見て|一覧|表示|show|list)$/i.test(normalizedInput) ||
-      /^(リスト|list)$/i.test(normalizedInput)) {
+  // list.list: 「リスト見せて」「リスト一覧」「リスト」
+  const listListInput = normalizedInput.trim();
+  if (/^(リスト|list)(見せ|見て|一覧|表示|show)?$/i.test(listListInput) ||
+      /^(リスト|list).*(見せて|見て|一覧|表示)/i.test(listListInput)) {
     return {
       intent: 'list.list',
       confidence: 0.9,
@@ -174,10 +175,15 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
   
-  // list.members: 「営業部リストのメンバー」「〇〇リストの中身」
+  // list.members: 「営業部リストのメンバー」「〇〇リストの中身」「テストリストのメンバー」
   if (/(リスト|list).*(メンバー|中身|内容|members)/i.test(normalizedInput)) {
-    const listNameMatch = input.match(/[「『](.+?)[」』]|(.*?)(リスト|list)/i);
-    const listName = listNameMatch ? (listNameMatch[1] || listNameMatch[2])?.trim() : undefined;
+    // 「テストリストのメンバー」→「テストリスト」を抽出
+    const listNameMatch = input.match(/[「『](.+?)[」』]|(.+?)(リスト|list)/i);
+    let listName = listNameMatch ? (listNameMatch[1] || listNameMatch[2])?.trim() : undefined;
+    // 「テスト」だけでなく「テストリスト」全体を保持
+    if (listName && !listName.endsWith('リスト') && input.includes(listName + 'リスト')) {
+      listName = listName + 'リスト';
+    }
     
     return {
       intent: 'list.members',

@@ -30,6 +30,7 @@ export type ExecutionResultData =
     } }
   | { kind: 'auto_propose.cancelled'; payload: {} }
   | { kind: 'auto_propose.created'; payload: any }
+  | { kind: 'auto_propose.slots_added'; payload: { thread_id: string; slots_added: number; slot_ids: string[] } }
   | { kind: 'remind.pending.generated'; payload: {
       source: 'remind'; // Phase Next-6 Day1: 明示フラグ
       threadId: string; // Phase Next-6 Day1: 提案生成時のスレッドID
@@ -94,7 +95,9 @@ export interface ExecutionContext {
     emails: string[];
     duration: number;
     range: string;
-    proposals: Array<{ start_at: string; end_at: string; label: string }>;
+    proposals: Array<{ start: string; end: string; label: string }>;
+    source?: 'initial' | 'additional';  // Phase Next-5 Day3: 追加候補フラグ
+    threadId?: string;  // Phase Next-5 Day3: 追加候補時のスレッドID
   } | null;
   // Phase Next-5 Day3: additional propose execution count (max 2)
   additionalProposeCount?: number;
@@ -846,8 +849,41 @@ async function executeAutoProposeConfirm(
   }
   
   try {
-    const { emails, duration, proposals } = pending;
+    const { emails, duration, proposals, source, threadId } = pending;
     
+    // Phase Next-5 Day3: 追加候補の場合は既存スレッドにスロットを追加
+    if (source === 'additional' && threadId) {
+      // Convert proposals to slots format
+      const slots = proposals.map((proposal: any) => ({
+        start_at: proposal.start,
+        end_at: proposal.end,
+        label: proposal.label,
+      }));
+      
+      // Add slots to existing thread
+      const response = await threadsApi.addSlots(threadId, slots);
+      
+      let message = `✅ ${response.slots_added}件の候補を追加しました:\n\n`;
+      proposals.forEach((proposal: any, index: number) => {
+        message += `${index + 1}. ${proposal.label}\n`;
+      });
+      message += '\n💡 既存の回答は保持されています。新しい候補について再回答を依頼してください。';
+      
+      return {
+        success: true,
+        message,
+        data: {
+          kind: 'auto_propose.slots_added',
+          payload: {
+            thread_id: threadId,
+            slots_added: response.slots_added,
+            slot_ids: response.slot_ids,
+          },
+        },
+      };
+    }
+    
+    // Default: 新規スレッド作成
     // Build candidates from emails
     const candidates = emails.map((email: string) => ({
       email,

@@ -91,6 +91,21 @@ export const threadsApi = {
   },
 
   /**
+   * Add slots to existing thread
+   * Phase Next-5 Day3: 追加候補機能
+   */
+  async addSlots(
+    threadId: string,
+    slots: Array<{ start_at: string; end_at: string; label?: string }>
+  ): Promise<{
+    success: boolean;
+    slots_added: number;
+    slot_ids: string[];
+  }> {
+    return api.post(`/api/threads/${threadId}/slots`, { slots });
+  },
+
+  /**
    * Finalize thread (confirm schedule + generate Meet)
    */
   async finalize(

@@ -701,6 +701,86 @@ app.post('/i/:token/accept', async (c) => {
 });
 
 /**
+ * POST /threads/:id/slots
+ * Add new scheduling slots to an existing thread
+ * 
+ * @route POST /threads/:id/slots
+ * @body slots: Array<{ start_at: string, end_at: string, label?: string }>
+ * @returns { success: true, slots_added: number, slot_ids: string[] }
+ */
+app.post('/:id/slots', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+  const threadId = c.req.param('id');
+
+  // P0-1: Get tenant context
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    // Verify thread exists and user has access
+    const thread = await env.DB.prepare(`
+      SELECT id, organizer_user_id, status FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first<{ id: string; organizer_user_id: string; status: string }>();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found or access denied' }, 404);
+    }
+
+    // Parse request body
+    const body = await c.req.json<{ 
+      slots: Array<{ start_at: string; end_at: string; label?: string }> 
+    }>();
+
+    if (!body.slots || !Array.isArray(body.slots) || body.slots.length === 0) {
+      return c.json({ error: 'Missing or invalid field: slots' }, 400);
+    }
+
+    if (body.slots.length > 10) {
+      return c.json({ error: 'Maximum 10 slots allowed per request' }, 400);
+    }
+
+    const slotIds: string[] = [];
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo';
+
+    for (const slot of body.slots) {
+      if (!slot.start_at || !slot.end_at) {
+        return c.json({ error: 'Each slot must have start_at and end_at' }, 400);
+      }
+
+      const slotId = crypto.randomUUID();
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(
+        slotId,
+        threadId,
+        slot.start_at,
+        slot.end_at,
+        timezone,
+        slot.label || null
+      ).run();
+
+      slotIds.push(slotId);
+    }
+
+    console.log(`[Threads] Added ${slotIds.length} slots to thread ${threadId}`);
+
+    return c.json({
+      success: true,
+      slots_added: slotIds.length,
+      slot_ids: slotIds,
+    });
+  } catch (error) {
+    console.error('[Threads] Error adding slots:', error);
+    return c.json(
+      { error: 'Failed to add slots', details: error instanceof Error ? error.message : 'Unknown error' },
+      500
+    );
+  }
+});
+
+/**
  * POST /threads/:id/remind
  * Phase Next-6 Day1.5: Send reminder to pending invites
  * 
