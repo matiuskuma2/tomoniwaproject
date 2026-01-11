@@ -337,8 +337,8 @@ async function executeInvitePrepareList(intentResult: IntentResult): Promise<Exe
   
   try {
     // リストIDを取得
-    const listsResponse = await listsApi.list();
-    const lists = listsResponse.items || [];
+    const listsResponse = await listsApi.list() as any;
+    const lists = listsResponse.lists || listsResponse.items || [];
     const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
     
     if (!targetList) {
@@ -561,8 +561,8 @@ async function executeListCreate(intentResult: IntentResult): Promise<ExecutionR
  */
 async function executeListList(): Promise<ExecutionResult> {
   try {
-    const response = await listsApi.list();
-    const lists = response.items || [];
+    const response = await listsApi.list() as any;
+    const lists = response.lists || response.items || [];
     
     if (lists.length === 0) {
       return {
@@ -619,8 +619,8 @@ async function executeListMembers(intentResult: IntentResult): Promise<Execution
   
   try {
     // リストIDを取得
-    const listsResponse = await listsApi.list();
-    const lists = listsResponse.items || [];
+    const listsResponse = await listsApi.list() as any;
+    const lists = listsResponse.lists || listsResponse.items || [];
     const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
     
     if (!targetList) {
@@ -630,8 +630,8 @@ async function executeListMembers(intentResult: IntentResult): Promise<Execution
       };
     }
     
-    const membersResponse = await listsApi.getMembers(targetList.id);
-    const members = membersResponse.items || [];
+    const membersResponse = await listsApi.getMembers(targetList.id) as any;
+    const members = membersResponse.members || membersResponse.items || [];
     
     if (members.length === 0) {
       return {
@@ -697,8 +697,8 @@ async function executeListAddMember(intentResult: IntentResult): Promise<Executi
   
   try {
     // リストIDを取得
-    const listsResponse = await listsApi.list();
-    const lists = listsResponse.items || [];
+    const listsResponse = await listsApi.list() as any;
+    const lists = listsResponse.lists || listsResponse.items || [];
     const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
     
     if (!targetList) {
@@ -2075,16 +2075,16 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
 
   try {
     // Step 1: Get all lists
-    const listsResponse = await listsApi.list();
-    const lists = listsResponse.items || [];
+    const listsResponse = await listsApi.list() as any;
+    const lists = listsResponse.lists || listsResponse.items || [];
 
     // Step 2: Find list by name
-    const targetList = lists.find((list) => list.name === listName);
+    const targetList = lists.find((list: any) => list.name === listName);
 
     if (!targetList) {
       return {
         success: false,
-        message: `❌ リスト「${listName}」が見つかりませんでした。\n\n利用可能なリスト:\n${lists.map((l) => `- ${l.name}`).join('\n')}`,
+        message: `❌ リスト「${listName}」が見つかりませんでした。\n\n利用可能なリスト:\n${lists.map((l: any) => `- ${l.name}`).join('\n')}`,
       };
     }
 
@@ -2104,8 +2104,8 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
     }
 
     // Step 4: Get list members count
-    const membersResponse = await listsApi.getMembers(targetList.id);
-    const membersCount = membersResponse.items?.length || 0;
+    const membersResponse = await listsApi.getMembers(targetList.id) as any;
+    const membersCount = membersResponse.members?.length || membersResponse.items?.length || 0;
 
     if (membersCount === 0) {
       return {
