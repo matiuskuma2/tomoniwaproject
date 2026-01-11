@@ -537,7 +537,6 @@ async function executeListCreate(intentResult: IntentResult): Promise<ExecutionR
   try {
     const response = await listsApi.create({
       name: listName,
-      description: 'チャットから作成',
     });
     
     return {
@@ -1394,9 +1393,16 @@ async function executeAdditionalProposeByThreadId(
  * 6. 「はい」で confirm フローに乗る（POST は confirm 時のみ）
  */
 async function executeAdditionalPropose(
-  intentResult: IntentResult,
-  context?: ExecutionContext
+  _intentResult: IntentResult,
+  _context?: ExecutionContext
 ): Promise<ExecutionResult> {
+  // Beta A: 追加候補機能は一時無効化（設計見直し中）
+  return {
+    success: false,
+    message: '🚧 この機能は現在準備中です。\n\n候補日の追加は、次回のアップデートで対応予定です。',
+  };
+
+  /* 以下、Phase 2 で再実装予定
   const { threadId } = intentResult.params;
   
   if (!threadId) {
@@ -1480,6 +1486,7 @@ async function executeAdditionalPropose(
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+  Phase 2 で再実装予定 ここまで */
 }
 
 /**
@@ -2072,7 +2079,7 @@ async function executeThreadCreate(intentResult: IntentResult): Promise<Executio
 
     // まずは最小：タイトル固定でOK（後で抽出ロジック強化）
     const title = '日程調整';
-    const description = raw.length > 0 ? raw : 'チャットから作成';
+    const description = raw.length > 0 ? raw : '';
 
     const created: any = await threadsApi.create({ title, description });
 
