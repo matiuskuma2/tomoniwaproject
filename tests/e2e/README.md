@@ -75,6 +75,87 @@ tail -100 /tmp/wrangler_phase2_e2e.log
 npx wrangler d1 execute webapp-production --local --command="SELECT * FROM scheduling_threads LIMIT 5;"
 ```
 
+---
+
+## Ops / Incident Prevention（運用インシデント防止）
+
+Phase2 は「静かに死ぬ」を防ぐため、以下もCIゲート化する。
+
+### 不変条件（運用）
+- confirm なし execute を禁止（確認必須）
+- confirm/execute の二重実行で重複送信しない（冪等）
+- 期限切れ token は 410 で落とす
+- 誤ユーザーは 404/403 で隠す（越境防止）
+- add_slots は「追加/キャンセル」のみ（別スレッドで禁止）
+- pending_actions CHECK が add_slots を許可している
+- メールHTMLが XSS を起こさない（escapeHtml）
+
+### テストケース詳細（Ops）
+
+| Case | 内容 | 検証方法 |
+|------|------|----------|
+| 1 | confirm なし execute 拒否 | API error |
+| 2 | execute 二重実行で冪等 | 2回目 inserted=0 |
+| 3 | confirm 二重で decision 変更不可 | error or 元のまま |
+| 4 | 期限切れ token 拒否 | API expired error |
+| 5 | 別ユーザーは confirm 不可 | API 404/403 |
+| 6 | add_slots で「別スレッドで」拒否 | API invalid_decision |
+| 7 | CHECK制約に add_slots 含む | 静的検証（SQL） |
+| 8 | HTMLエスケープ適用 | 静的検証（grep） |
+
+### 実行
+```bash
+bash tests/e2e/phase2_ops_incident.sh
+```
+
+### 失敗時の確認
+- `/tmp/wrangler_ops_e2e.log` を参照（CIではartifactで回収）
+
+---
+
+## NeedResponse（再回答が必要な人の判定）
+
+追加候補後に「再回答が必要」が正しく判定されることを保証する。
+
+### 不変条件
+- 追加候補後、全員が「再回答必要」になる（declined除く）
+- declined は再回答必要から除外
+- status API の proposal_info に必要なフィールドが含まれる
+- slots に proposal_version が含まれる
+
+### テストケース詳細（NeedResponse）
+
+| Case | 内容 | 検証方法 |
+|------|------|----------|
+| 1 | add_slots 後に need_response 増加 | API proposal_info |
+| 2 | declined は need_response から除外 | need < total |
+| 3 | proposal_info 構造検証 | 必須フィールド存在 |
+| 4 | slots に proposal_version 含む | 全slots検証 |
+
+### 実行
+```bash
+bash tests/e2e/phase2_need_response.sh
+```
+
+### 失敗時の確認
+- `/tmp/wrangler_need_response_e2e.log` を参照
+
+---
+
+## 全テスト一括実行
+
+```bash
+# 依存関係インストール
+npm ci
+
+# 3つのE2Eを順番に実行
+bash tests/e2e/phase2_additional_slots.sh
+bash tests/e2e/phase2_ops_incident.sh
+bash tests/e2e/phase2_need_response.sh
+```
+
+---
+
 ## 関連ドキュメント
 - [docs/PHASE2_TICKETS.md](../../docs/PHASE2_TICKETS.md) - 実装チケット
 - [docs/PHASE2_SPRINT_PLAN.md](../../docs/PHASE2_SPRINT_PLAN.md) - スプリント計画

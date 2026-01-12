@@ -1,4 +1,4 @@
-name: Phase2 E2E (Additional Slots)
+name: Phase2 E2E (Additional Slots + Ops + NeedResponse)
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -32,7 +32,10 @@ jobs:
       - name: Apply D1 migrations (local)
         run: npx wrangler d1 migrations apply webapp-production --local
 
-      - name: Run Phase2 E2E (curl + sql + static guards)
+      # ============================================================
+      # E2E Test Suite 1: Additional Slots (8 cases)
+      # ============================================================
+      - name: Run Phase2 E2E - Additional Slots (8 cases)
         run: bash tests/e2e/phase2_additional_slots.sh
         env:
           API_PORT: "8787"
@@ -40,9 +43,49 @@ jobs:
           USER_ID: "test-user-001"
           WORKSPACE_ID: "ws-default"
 
-      - name: Upload wrangler log on failure
+      # ============================================================
+      # E2E Test Suite 2: Ops Incident Prevention (8 cases)
+      # ============================================================
+      - name: Run Phase2 E2E - Ops Incident Prevention (8 cases)
+        run: bash tests/e2e/phase2_ops_incident.sh
+        env:
+          API_PORT: "8787"
+          DB_NAME: "webapp-production"
+          USER_ID: "test-user-001"
+          USER_ID_2: "test-user-002"
+          WORKSPACE_ID: "ws-default"
+
+      # ============================================================
+      # E2E Test Suite 3: NeedResponse (4 cases)
+      # ============================================================
+      - name: Run Phase2 E2E - NeedResponse (4 cases)
+        run: bash tests/e2e/phase2_need_response.sh
+        env:
+          API_PORT: "8787"
+          DB_NAME: "webapp-production"
+          USER_ID: "test-user-001"
+          WORKSPACE_ID: "ws-default"
+
+      # ============================================================
+      # Artifact Upload on Failure
+      # ============================================================
+      - name: Upload additional_slots log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: wrangler_phase2_e2e_log
           path: /tmp/wrangler_phase2_e2e.log
+
+      - name: Upload ops_incident log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrangler_ops_e2e_log
+          path: /tmp/wrangler_ops_e2e.log
+
+      - name: Upload need_response log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrangler_need_response_e2e_log
+          path: /tmp/wrangler_need_response_e2e.log
