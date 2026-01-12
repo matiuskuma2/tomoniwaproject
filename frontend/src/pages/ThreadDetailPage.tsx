@@ -144,6 +144,38 @@ export function ThreadDetailPage() {
             </p>
           </div>
         </div>
+        
+        {/* Phase2: 再回答必要カウント */}
+        {status.proposal_info && status.proposal_info.current_version > 1 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">候補の世代:</span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                  v{status.proposal_info.current_version}
+                </span>
+              </div>
+              {status.proposal_info.remaining_proposals > 0 && (
+                <span className="text-xs text-gray-500">
+                  追加候補: あと{status.proposal_info.remaining_proposals}回
+                </span>
+              )}
+            </div>
+            {status.proposal_info.invitees_needing_response_count > 0 && (
+              <div className="mt-2 bg-orange-50 border border-orange-200 rounded-md p-3">
+                <div className="flex items-center">
+                  <span className="text-orange-500 mr-2">⚠️</span>
+                  <span className="text-sm text-orange-700 font-medium">
+                    再回答が必要: {status.proposal_info.invitees_needing_response_count}名
+                  </span>
+                </div>
+                <p className="text-xs text-orange-600 mt-1">
+                  追加候補（v{status.proposal_info.current_version}）に対して未回答の招待者がいます
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Google Meet (shown after finalization) */}
@@ -275,10 +307,20 @@ export function ThreadDetailPage() {
                     className="mr-3"
                   />
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900">
-                      {new Date(slot.start_at).toLocaleString('ja-JP')} 〜{' '}
-                      {new Date(slot.end_at).toLocaleString('ja-JP')}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900">
+                        {new Date(slot.start_at).toLocaleString('ja-JP')} 〜{' '}
+                        {new Date(slot.end_at).toLocaleString('ja-JP')}
+                      </p>
+                      {/* Phase2: バージョンバッジ（v2以上のみ表示） */}
+                      {(slot as any).proposal_version && (slot as any).proposal_version > 1 && (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          (slot as any).proposal_version === 2 ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          v{(slot as any).proposal_version}
+                        </span>
+                      )}
+                    </div>
                     {slot.label && (
                       <p className="text-sm text-gray-500">{slot.label}</p>
                     )}
@@ -368,6 +410,11 @@ export function ThreadDetailPage() {
                   ? status.slots.find((s: Slot) => s.slot_id === selection.selected_slot_id)
                   : null;
                 
+                // Phase2: 回答時の世代を取得
+                const responseVersion = selection?.proposal_version_at_response || 1;
+                const currentVersion = status.proposal_info?.current_version || (status.thread as any).proposal_version || 1;
+                const needsReresponse = currentVersion > responseVersion;
+                
                 return (
                   <li key={invite.invite_id} className="py-3">
                     <div className="flex justify-between">
@@ -391,6 +438,19 @@ export function ThreadDetailPage() {
                               minute: '2-digit',
                             })} を選択
                           </p>
+                        )}
+                        {/* Phase2: 回答時の世代表示 */}
+                        {currentVersion > 1 && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500">
+                              v{responseVersion} 時点の回答
+                            </span>
+                            {needsReresponse && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                再回答必要
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                       <span className="text-sm text-green-600 ml-4">承諾</span>

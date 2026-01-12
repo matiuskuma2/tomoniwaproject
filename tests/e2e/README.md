@@ -157,6 +157,7 @@ bash tests/e2e/phase2_need_response.sh
 ---
 
 ## 関連ドキュメント
+- [RUNBOOK.md](./RUNBOOK.md) - **CI失敗時のトラブルシューティング**
 - [docs/PHASE2_TICKETS.md](../../docs/PHASE2_TICKETS.md) - 実装チケット（P2-B1/B2/C1 含む）
 - [docs/PHASE2_SPRINT_PLAN.md](../../docs/PHASE2_SPRINT_PLAN.md) - スプリント計画
 - [docs/PHASE2_ARCHITECTURE.md](../../docs/PHASE2_ARCHITECTURE.md) - アーキテクチャ・運用ルール

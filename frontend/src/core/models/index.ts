@@ -41,6 +41,7 @@ export interface Slot {
   timezone: string;
   label?: string;
   votes?: number; // Phase Next-6 Day2: Server-side vote count
+  proposal_version?: number; // Phase2: どの世代で追加された候補か
   created_at: string;
 }
 
@@ -57,6 +58,22 @@ export interface ThreadInvite {
 
 export type InviteStatus = 'pending' | 'accepted' | 'declined';
 
+// Phase2: 再回答が必要な invitee 情報
+export interface InviteeNeedingResponse {
+  invitee_key: string;
+  email: string;
+  name?: string;
+}
+
+// Phase2: 追加候補関連情報
+export interface ProposalInfo {
+  current_version: number;
+  additional_propose_count: number;
+  remaining_proposals: number;
+  invitees_needing_response: InviteeNeedingResponse[];
+  invitees_needing_response_count: number;
+}
+
 export interface ThreadStatus_API {
   thread: {
     id: string;
@@ -67,6 +84,10 @@ export interface ThreadStatus_API {
     mode?: string;
     created_at: string;
     updated_at: string;
+    // Phase2: proposal_version 情報
+    proposal_version?: number;
+    additional_propose_count?: number;
+    remaining_proposals?: number;
   };
   rule: {
     version: number;
@@ -98,6 +119,8 @@ export interface ThreadStatus_API {
     invites: any[];
     required_missing: string[];
   };
+  // Phase2: 追加候補関連情報
+  proposal_info?: ProposalInfo;
 }
 
 export interface Meeting {

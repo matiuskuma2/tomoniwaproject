@@ -56,6 +56,36 @@ export function ThreadStatusCard({ status }: ThreadStatusCardProps) {
             <p className="text-lg font-semibold text-orange-600">{status.pending.count}</p>
           </div>
         </div>
+        
+        {/* Phase2: 再回答必要カウントと世代情報 */}
+        {status.proposal_info && status.proposal_info.current_version > 1 && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-500">候補の世代</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                v{status.proposal_info.current_version}
+              </span>
+            </div>
+            {status.proposal_info.invitees_needing_response_count > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-md p-2">
+                <div className="flex items-center">
+                  <span className="text-orange-500 mr-2">⚠️</span>
+                  <span className="text-sm text-orange-700 font-medium">
+                    再回答が必要: {status.proposal_info.invitees_needing_response_count}名
+                  </span>
+                </div>
+                <p className="text-xs text-orange-600 mt-1">
+                  追加候補に対して未回答の招待者がいます
+                </p>
+              </div>
+            )}
+            {status.proposal_info.remaining_proposals > 0 && (
+              <div className="text-xs text-gray-500 mt-2">
+                追加候補: あと{status.proposal_info.remaining_proposals}回可能
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

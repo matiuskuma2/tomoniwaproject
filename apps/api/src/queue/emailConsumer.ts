@@ -521,8 +521,12 @@ function generateAdditionalSlotsEmail(job: EmailJob & {
           </div>
           
           <div class="info-box">
-            <p>💡 <strong>ご安心ください</strong>：既にご回答いただいた内容はそのまま保持されています。<br>
-            追加された候補についてのみ、ご都合をお知らせいただければ幸いです。</p>
+            <p>📌 <strong>重要なお知らせ</strong></p>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #0369a1;">
+              <li>これまでの回答は<strong>保持されています</strong></li>
+              <li>追加された候補についてのみ、ご回答をお願いします</li>
+              <li>辞退された方にはこのメールは送信されていません</li>
+            </ul>
           </div>
           
           <div class="button-container">
@@ -549,8 +553,10 @@ function generateAdditionalSlotsEmail(job: EmailJob & {
 【追加された候補（${slot_count}件）】
 ${slot_description}
 
-💡 ご安心ください：既にご回答いただいた内容はそのまま保持されています。
-追加された候補についてのみ、ご都合をお知らせいただければ幸いです。
+📌 重要なお知らせ
+・これまでの回答は保持されています
+・追加された候補についてのみ、ご回答をお願いします
+・辞退された方にはこのメールは送信されていません
 
 ▼ 追加候補を確認する
 ${invite_url}

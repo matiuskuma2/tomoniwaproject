@@ -681,11 +681,12 @@ async function executeAddSlots(
     `).bind(invite.email).first<{ id: string }>();
 
     if (appUser) {
+      // P2-B2: 必須3要素を含むInbox通知文面
       await inboxRepo.create({
         user_id: appUser.id,
         type: 'system_message',
-        title: `【追加候補】${thread.title}`,
-        message: `新しい候補日が追加されました: ${slotDescription}\n既存の回答はそのまま保持されています。`,
+        title: `📅【追加候補】${thread.title}`,
+        message: `新しい候補日が追加されました: ${slotDescription}\n\n📌 重要なお知らせ\n・これまでの回答は保持されています\n・追加された候補についてのみ、ご回答をお願いします\n・辞退された方にはこの通知は送信されていません`,
         action_type: 'view_invite',
         action_target_id: invite.id,
         action_url: `/i/${invite.token}`,
