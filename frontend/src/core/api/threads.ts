@@ -91,6 +91,39 @@ export const threadsApi = {
   },
 
   /**
+   * Send reminder with target specification (Phase2 P2-D1)
+   * 対象を指定してリマインドを送信
+   * 
+   * @param threadId - スレッドID
+   * @param options - オプション
+   * @param options.target_invitee_keys - 送信対象の invitee_key 配列（指定しない場合は全未返信者）
+   * @param options.message - カスタムメッセージ（省略可）
+   */
+  async remind(
+    threadId: string,
+    options?: {
+      target_invitee_keys?: string[];
+      message?: string;
+    }
+  ): Promise<{
+    thread_id: string;
+    reminded_count: number;
+    results: Array<{
+      invitee_key: string;
+      email: string;
+      status: string;
+    }>;
+    warnings?: Array<{
+      invitee_key?: string;
+      email?: string;
+      error: string;
+    }>;
+    next_reminder_available_at: string;
+  }> {
+    return api.post(`/api/threads/${threadId}/remind`, options || {});
+  },
+
+  /**
    * Add slots to existing thread
    * Phase Next-5 Day3: 追加候補機能
    */

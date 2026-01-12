@@ -26,7 +26,10 @@ export type IntentType =
   | 'schedule.propose_for_split.confirm' // Phase Next-6 Day2 - 票割れ提案確定
   | 'schedule.propose_for_split.cancel'  // Phase Next-6 Day2 - 票割れ提案キャンセル
   | 'schedule.need_response.list'        // Phase2 P2-D0 - 再回答必要者リスト表示
-  // Beta A: 送信確認フロー
+  | 'schedule.remind.need_response'       // Phase2 P2-D1 - 再回答必要者にリマインド
+  | 'schedule.remind.need_response.confirm' // Phase2 P2-D1 - リマインド確定
+  | 'schedule.remind.need_response.cancel'  // Phase2 P2-D1 - リマインドキャンセル
+  // Beta A: 送信フロー
   | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
   | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API
   | 'invite.prepare.list'      // Beta A: リスト選択 → prepare API
@@ -80,6 +83,12 @@ export interface IntentContext {
     threadId?: string;
     threadTitle?: string;
     actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
+  } | null;
+  // Phase2 P2-D1: 再回答必要者へのリマインド確認状態
+  pendingRemindNeedResponse?: {
+    threadId: string;
+    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+    count: number;
   } | null;
 }
 
@@ -458,6 +467,55 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     return {
       intent: 'schedule.need_response.list',
       confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+      },
+    };
+  }
+
+  // ============================================================
+  // Phase2 P2-D1: 再回答必要者だけにリマインド
+  // ============================================================
+  
+  // P2-D1: pendingRemindNeedResponse がある場合、confirm/cancel を優先判定
+  if (context?.pendingRemindNeedResponse) {
+    // 「はい」「送る」→ confirm
+    if (/(はい|yes|送る|送って|send|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
+      return {
+        intent: 'schedule.remind.need_response.confirm',
+        confidence: 1.0,
+        params: {},
+      };
+    }
+    // 「いいえ」「キャンセル」→ cancel
+    if (/(いいえ|no|キャンセル|やめ|cancel)/i.test(normalizedInput) && normalizedInput.length < 10) {
+      return {
+        intent: 'schedule.remind.need_response.cancel',
+        confidence: 1.0,
+        params: {},
+      };
+    }
+  }
+  
+  // P2-D1: schedule.remind.need_response
+  // Keywords: 再回答必要な人にリマインド、再回答の人だけ、要回答者にリマインド
+  if (/(再回答.*リマインド|要回答.*リマインド|回答必要.*リマインド|再回答.*送|要回答.*送|回答必要.*人.*送)/.test(normalizedInput)) {
+    // Require threadId context
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.remind.need_response',
+        confidence: 0.95,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message: 'どのスレッドの再回答必要者にリマインドを送りますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+    
+    return {
+      intent: 'schedule.remind.need_response',
+      confidence: 0.95,
       params: {
         threadId: context.selectedThreadId,
       },

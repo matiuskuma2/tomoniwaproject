@@ -99,7 +99,20 @@ export type ExecutionResultData =
       inviteesNeedingResponse: Array<{ email: string; name?: string; respondedVersion?: number }>;
       inviteesNeedingResponseCount: number;
       remainingProposals: number;
-    } };
+    } }
+  // Phase2 P2-D1: 再回答必要者へのリマインド
+  | { kind: 'remind.need_response.generated'; payload: {
+      threadId: string;
+      threadTitle: string;
+      targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+      count: number;
+    } }
+  | { kind: 'remind.need_response.sent'; payload: {
+      threadId: string;
+      remindedCount: number;
+      results: Array<{ email: string; status: string }>;
+    } }
+  | { kind: 'remind.need_response.cancelled'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;
@@ -151,6 +164,12 @@ export interface ExecutionContext {
     threadId?: string;
     threadTitle?: string;
     actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
+  } | null;
+  // Phase2 P2-D1: 再回答必要者へのリマインド確認状態
+  pendingRemindNeedResponse?: {
+    threadId: string;
+    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+    count: number;
   } | null;
 }
 
@@ -220,6 +239,16 @@ export async function executeIntent(
     
     case 'schedule.remind.pending.cancel':
       return executeRemindPendingCancel();
+    
+    // Phase2 P2-D1: 再回答必要者へのリマインド
+    case 'schedule.remind.need_response':
+      return executeRemindNeedResponse(intentResult);
+    
+    case 'schedule.remind.need_response.confirm':
+      return executeRemindNeedResponseConfirm(context);
+    
+    case 'schedule.remind.need_response.cancel':
+      return executeRemindNeedResponseCancel();
     
     case 'schedule.notify.confirmed':
       return executeNotifyConfirmed(intentResult);
@@ -2491,6 +2520,212 @@ async function executeNeedResponseList(
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+}
+
+// ============================================================
+// Phase2 P2-D1: 再回答必要者へのリマインド
+// ============================================================
+
+/**
+ * P2-D1: schedule.remind.need_response
+ * 再回答が必要な人だけにリマインドを送る（確認必須）
+ * 
+ * 対象:
+ * - declined は除外
+ * - 未回答 または proposal_version_at_response < current_version
+ */
+async function executeRemindNeedResponse(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが選択されていません。',
+      needsClarification: {
+        field: 'threadId',
+        message: 'どのスレッドの再回答必要者にリマインドを送りますか？\n左のスレッド一覧から選択してください。',
+      },
+    };
+  }
+  
+  try {
+    // Get thread status
+    const status = await threadsApi.getStatus(threadId);
+    
+    // Check if thread is active
+    if (status.thread.status === 'confirmed' || status.thread.status === 'cancelled') {
+      return {
+        success: false,
+        message: `❌ このスレッドは既に ${status.thread.status === 'confirmed' ? '確定' : 'キャンセル'} されています。\nリマインドは送れません。`,
+      };
+    }
+    
+    // Get proposal info with fallback
+    const proposalInfo = (status as any).proposal_info || null;
+    const currentVersion = proposalInfo?.current_version || 1;
+    
+    // Build selections map
+    const selectionsMap = new Map<string, any>();
+    if (status.selections) {
+      status.selections.forEach((sel: any) => {
+        selectionsMap.set(sel.invitee_key, sel);
+      });
+    }
+    
+    // Filter: need response only (declined excluded)
+    const targetInvitees = status.invites
+      .filter((inv: any) => {
+        // declined は除外
+        if (inv.status === 'declined') return false;
+        
+        const selection = selectionsMap.get(inv.invitee_key);
+        if (!selection) {
+          // 未回答
+          return true;
+        }
+        
+        // proposal_version_at_response < currentVersion なら再回答必要
+        const respondedVersion = selection.proposal_version_at_response || 1;
+        return respondedVersion < currentVersion;
+      })
+      .map((inv: any) => ({
+        email: inv.email,
+        name: inv.candidate_name,
+        inviteeKey: inv.invitee_key,
+      }));
+    
+    if (targetInvitees.length === 0) {
+      return {
+        success: true,
+        message: '✅ 全員が最新の候補に回答済みです。\nリマインドを送る必要はありません。',
+      };
+    }
+    
+    // Build confirmation message
+    let message = `📩 **再回答必要者へのリマインド確認**\n\n`;
+    message += `📋 スレッド: ${status.thread.title}\n`;
+    message += `📊 候補バージョン: v${currentVersion}\n`;
+    message += `📬 送信対象: ${targetInvitees.length}名\n\n`;
+    
+    message += `**対象者:**\n`;
+    targetInvitees.forEach((inv, index) => {
+      message += `${index + 1}. ${inv.email}`;
+      if (inv.name) {
+        message += ` (${inv.name})`;
+      }
+      message += `\n`;
+    });
+    
+    message += `\n⚠️ この ${targetInvitees.length}名 にリマインドを送りますか？\n\n`;
+    message += `「はい」で送信\n`;
+    message += `「いいえ」でキャンセル`;
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.need_response.generated',
+        payload: {
+          threadId,
+          threadTitle: status.thread.title,
+          targetInvitees,
+          count: targetInvitees.length,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-D1: schedule.remind.need_response.confirm
+ * 再回答必要者へのリマインドを実行
+ */
+async function executeRemindNeedResponseConfirm(
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pending = context?.pendingRemindNeedResponse;
+  
+  if (!pending) {
+    return {
+      success: false,
+      message: '❌ リマインド対象が選択されていません。\n先に「再回答必要な人にリマインド」と入力してください。',
+    };
+  }
+  
+  try {
+    const { threadId, targetInvitees } = pending;
+    
+    // Extract invitee_keys for API call
+    const targetInviteeKeys = targetInvitees.map((inv) => inv.inviteeKey);
+    
+    // Call remind API with target_invitee_keys
+    const response = await threadsApi.remind(threadId, {
+      target_invitee_keys: targetInviteeKeys,
+    });
+    
+    // Build success message
+    let message = `✅ リマインドを送信しました！\n\n`;
+    message += `📬 送信: ${response.reminded_count}名\n`;
+    
+    if (response.results && response.results.length > 0) {
+      message += `\n**送信先:**\n`;
+      response.results.forEach((result: any, index: number) => {
+        message += `${index + 1}. ${result.email} - ${result.status === 'sent' ? '✅送信完了' : '❌失敗'}\n`;
+      });
+    }
+    
+    if (response.warnings && response.warnings.length > 0) {
+      message += `\n⚠️ 警告:\n`;
+      response.warnings.forEach((warn: any) => {
+        message += `- ${warn.email}: ${warn.error}\n`;
+      });
+    }
+    
+    if (response.next_reminder_available_at) {
+      const nextAvailable = new Date(response.next_reminder_available_at);
+      message += `\n⏰ 次回リマインド可能: ${formatDateTime(nextAvailable.toISOString())}`;
+    }
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.need_response.sent',
+        payload: {
+          threadId,
+          remindedCount: response.reminded_count,
+          results: response.results || [],
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ リマインド送信に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-D1: schedule.remind.need_response.cancel
+ * 再回答必要者へのリマインドをキャンセル
+ */
+async function executeRemindNeedResponseCancel(): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '✅ リマインド送信をキャンセルしました。',
+    data: {
+      kind: 'remind.need_response.cancelled',
+      payload: {},
+    },
+  };
 }
 
 // Export type for external use
