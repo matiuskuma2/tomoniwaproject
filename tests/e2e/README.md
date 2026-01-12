@@ -157,5 +157,13 @@ bash tests/e2e/phase2_need_response.sh
 ---
 
 ## 関連ドキュメント
-- [docs/PHASE2_TICKETS.md](../../docs/PHASE2_TICKETS.md) - 実装チケット
+- [docs/PHASE2_TICKETS.md](../../docs/PHASE2_TICKETS.md) - 実装チケット（P2-B1/B2/C1 含む）
 - [docs/PHASE2_SPRINT_PLAN.md](../../docs/PHASE2_SPRINT_PLAN.md) - スプリント計画
+- [docs/PHASE2_ARCHITECTURE.md](../../docs/PHASE2_ARCHITECTURE.md) - アーキテクチャ・運用ルール
+
+## 次ステップ（Sprint 2-B/2-C）
+- **P2-B1**: UIで世代混在表示（v1/v2/v3バッジ、再回答必要カウント）
+- **P2-B2**: 再通知文面の統一（3要素必須）
+- **P2-C1**: CI failing時のRunbook作成
+
+詳細は [docs/PHASE2_TICKETS.md](../../docs/PHASE2_TICKETS.md) を参照。

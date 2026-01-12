@@ -1,6 +1,6 @@
 # Phase2 実装スプリント計画
 
-最終更新: 2026-01-11
+最終更新: 2026-01-12
 
 ---
 
@@ -12,6 +12,17 @@ Phase2（追加候補）を「実装順・依存関係・運用事故ゼロ」�
 - 「動きそう」より「正しい」優先
 - 運用インシデント・技術負債を残さない
 - 既存回答は絶対に消さない
+
+---
+
+## スプリント進捗サマリ
+
+| Sprint | 内容 | ステータス | 完了日 |
+|--------|------|------------|--------|
+| 2-0 | 準備と防波堤 | ✅ 完了 | 2026-01-10 |
+| 2-A | DB + API骨格 + E2E | ✅ 完了 | 2026-01-12 |
+| 2-B | UI世代表示 + 文面統一 | 📋 チケット化済み | - |
+| 2-C | Runbook + CI安定化 | 📋 チケット化済み | - |
 
 ---
 
@@ -224,3 +235,83 @@ Phase2で入れる `location_id` と `proposal_version` が効く。
 - AIによる意図判定（会話での確認）
 - work/family の承認モデル
 - 清掃の本格最適化（n対n配置エンジン）
+
+---
+
+## Sprint 2-B/2-C 詳細（チケット化済み）
+
+### Sprint 2-B: UI世代表示 + 文面統一（3日）
+
+**目的**: 追加候補後のUI表示を改善し、運用上の混乱を防ぐ
+
+#### P2-B1: UIで世代混在表示（2日）
+
+| 項目 | 内容 |
+|------|------|
+| 担当 | フロントエンド |
+| 依存 | Sprint 2-A 完了 |
+
+**DoD**:
+- [ ] 候補カードに `v1` `v2` `v3` バッジを表示
+- [ ] 回答一覧に「この回答は v1 時点」などの表記
+- [ ] `proposal_info.invitees_needing_response_count` をカードに反映
+
+**実装ポイント**:
+```tsx
+// SlotCard.tsx - 候補のバージョン表示
+<span className="badge">v{slot.proposal_version}</span>
+
+// SelectionList.tsx - 回答の世代表示  
+<span className="text-xs">（v{selection.proposal_version_at_response} 時点）</span>
+
+// ThreadStatusCard.tsx - 再回答必要カウント
+{proposalInfo.invitees_needing_response_count > 0 && (
+  <span>再回答必要: {count}名</span>
+)}
+```
+
+#### P2-B2: 再通知文面の統一（0.5日）
+
+| 項目 | 内容 |
+|------|------|
+| 担当 | バックエンド |
+| 依存 | なし |
+
+**必須3要素**:
+1. 「既存回答は保持されます」
+2. 「追加候補についてのみ回答してください」  
+3. 「辞退された方には送信されていません」
+
+### Sprint 2-C: Runbook + CI安定化（0.5日）
+
+**目的**: E2E CIが失敗した際のトラブルシューティングを標準化
+
+#### P2-C1: CI failing時のRunbook
+
+| 項目 | 内容 |
+|------|------|
+| 担当 | DevOps |
+| 依存 | なし |
+
+**DoD**:
+- [ ] `tests/e2e/RUNBOOK.md` を作成
+- [ ] よくある失敗パターン（4種）と対応策
+- [ ] artifact ログの読み方
+- [ ] ローカル再現手順
+
+**よくある失敗パターン**:
+1. **DB schema mismatch** - migration未適用
+2. **wrangler dev 起動失敗** - ポート競合
+3. **token 期限切れ** - 15分タイムアウト
+4. **unexpected error** - DBデータ不整合
+
+---
+
+## 関連ドキュメント
+
+| ファイル | 内容 |
+|----------|------|
+| `docs/PHASE2_TICKETS.md` | 実装チケット詳細（Notion/Jira貼付用） |
+| `docs/PHASE2_ARCHITECTURE.md` | アーキテクチャ・運用ルール |
+| `tests/e2e/README.md` | E2Eテストドキュメント |
+| `tests/e2e/RUNBOOK.md` | CI失敗時のRunbook（P2-C1で作成） |

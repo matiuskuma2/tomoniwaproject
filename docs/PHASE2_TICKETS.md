@@ -313,6 +313,251 @@ SELECT * FROM invite_deliveries WHERE thread_id = ?;
 
 ---
 
+---
+
+## 🚀 Phase2 Sprint 2-B/2-C チケット（Notion/Jira 貼り付け用）
+
+以下は追加候補実装の「次フェーズ」チケット。Sprint 2-A完了を前提とする。
+
+---
+
+### 📋 P2-B1: UIで世代混在表示（v1/v2/v3）
+
+**優先度**: 高  
+**見積もり**: 2日  
+**担当**: フロントエンド
+
+#### 目的
+追加候補後に、どの候補が v1/v2/v3 で追加されたか、どの回答が v1 時点かを視覚化し、運用上の混乱を防ぐ。
+
+#### 完了条件（DoD）
+- [ ] 候補カードに `v1` `v2` `v3` バッジを表示
+- [ ] 回答一覧に「この回答は v1 時点」などの表記を追加
+- [ ] `proposal_info.invitees_needing_response_count` をカードに反映（例：「再回答必要: 3名」）
+- [ ] 既存回答は保持される表示を維持（回答済みは「✓回答済み」、追加分は「未回答」）
+
+#### 実装詳細
+
+**1. 候補カードのバッジ表示**
+```tsx
+// frontend/src/components/scheduling/SlotCard.tsx
+// proposal_version を slot から取得し、バッジを表示
+<span className="badge badge-outline">v{slot.proposal_version}</span>
+```
+
+**2. 回答一覧の世代表示**
+```tsx
+// frontend/src/components/scheduling/SelectionList.tsx
+// proposal_version_at_response を表示
+<span className="text-gray-500 text-xs">
+  （v{selection.proposal_version_at_response} 時点の回答）
+</span>
+```
+
+**3. 再回答必要カウント**
+```tsx
+// frontend/src/components/chat/ThreadStatusCard.tsx
+// proposal_info.invitees_needing_response_count を取得して表示
+{proposalInfo.invitees_needing_response_count > 0 && (
+  <div className="text-orange-500">
+    再回答が必要: {proposalInfo.invitees_needing_response_count}名
+  </div>
+)}
+```
+
+#### テスト条件
+- [ ] v1で3候補、v2で2候補追加後、カードに正しくバッジが表示される
+- [ ] v1で回答した人の回答一覧に「v1時点」と表示される
+- [ ] 追加候補後、再回答必要カウントが正しく表示される
+
+#### 関連ファイル
+- `frontend/src/components/scheduling/SlotCard.tsx`
+- `frontend/src/components/scheduling/SelectionList.tsx`
+- `frontend/src/components/chat/ThreadStatusCard.tsx`
+- `apps/api/src/routes/threadsStatus.ts`（proposal_info を返すAPI）
+
+---
+
+### 📋 P2-B2: 再通知文面の統一（メール + Inbox）
+
+**優先度**: 中  
+**見積もり**: 0.5日  
+**担当**: バックエンド
+
+#### 目的
+追加候補の再通知文面を統一し、受信者が「何をすべきか」を明確に理解できるようにする。
+
+#### 完了条件（DoD）
+- [ ] メールテンプレートに必須3要素が含まれる
+  - 「既存回答は保持されます」
+  - 「追加候補についてのみ回答してください」
+  - 「辞退された方には送信されていません」
+- [ ] Inbox通知も同様の文言を含む
+- [ ] 72時間の期限表記が含まれる
+
+#### 文面案（メール）
+
+**件名**:
+```
+【追加候補】「{thread_title}」に新しい候補日が追加されました
+```
+
+**本文**:
+```
+{inviter_name} さんより、「{thread_title}」に新しい候補日が追加されました。
+
+📌 重要なお知らせ
+・これまでの回答は保持されています
+・追加された候補についてのみ、ご回答をお願いします
+・辞退された方にはこのメールは送信されていません
+
+追加された候補: {slot_count}件
+{slot_description}
+
+▼ 回答はこちら
+{invite_url}
+
+※ このリンクの有効期限は 72時間 です。
+```
+
+**文面案（Inbox）**:
+```
+📅 【追加候補】{thread_title}
+新しい候補日が追加されました。追加分についてご回答ください。
+（これまでの回答は保持されています）
+```
+
+#### 実装ファイル
+- `apps/api/src/queue/emailConsumer.ts` - generateAdditionalSlotsEmail()
+- `apps/api/src/routes/pendingActions.ts` - Inbox通知作成部分
+
+#### テスト条件
+- [ ] 追加候補メールに3要素が必ず含まれる
+- [ ] Inbox通知に「回答は保持」の文言がある
+- [ ] 72時間期限が表示される
+
+---
+
+### 📋 P2-C1: CI failing時のRunbook
+
+**優先度**: 低  
+**見積もり**: 0.5日  
+**担当**: DevOps / 共通
+
+#### 目的
+E2E CIが失敗した際のトラブルシューティング手順を明文化し、誰でも原因特定・修正ができる状態にする。
+
+#### 完了条件（DoD）
+- [ ] `tests/e2e/RUNBOOK.md` を作成
+- [ ] よくある失敗パターンと対応策を記載
+- [ ] artifact ログの読み方を記載
+- [ ] ローカル再現手順を記載
+
+#### Runbook内容
+
+```markdown
+# Phase2 E2E Runbook
+
+## 1. よくある失敗パターン
+
+### 1-1. DB schema mismatch
+**症状**: `SQLITE_ERROR: table scheduling_threads has no column named proposal_version`
+
+**原因**: migration が適用されていない
+
+**対応**:
+```bash
+npx wrangler d1 migrations apply webapp-production --local
+```
+
+### 1-2. wrangler dev が起動しない
+**症状**: `Error: Address already in use`
+
+**対応**:
+```bash
+lsof -i :8787
+pkill -f "wrangler dev"
+pkill -f "workerd"
+```
+
+### 1-3. token 期限切れ
+**症状**: `410 Gone` or `token_expired`
+
+**対応**: テスト実行のタイミングを確認。prepare→confirm→executeの間隔が15分以上空いていないか。
+
+### 1-4. Case 3-5 で unexpected error
+**症状**: API は 200 だが検証が失敗
+
+**対応**:
+```bash
+# ログを確認
+tail -100 /tmp/wrangler_phase2_e2e.log
+
+# DBの状態を確認
+npx wrangler d1 execute webapp-production --local \
+  --command="SELECT * FROM scheduling_threads LIMIT 5;"
+```
+
+## 2. artifact ログの読み方
+
+CIが失敗すると以下のログが artifact に保存される:
+- `/tmp/wrangler_phase2_e2e.log` - 追加候補E2E
+- `/tmp/wrangler_ops_e2e.log` - 運用インシデント防止E2E
+- `/tmp/wrangler_need_response_e2e.log` - 再回答判定E2E
+
+**確認ポイント**:
+1. `[FAIL]` を検索
+2. その前の `[TEST]` でどのケースか特定
+3. API レスポンスの HTTP status と body を確認
+
+## 3. ローカル再現手順
+
+```bash
+cd /home/user/tomoniwaproject
+
+# 1. 依存インストール
+npm ci
+
+# 2. DB初期化（クリーンな状態から）
+rm -rf .wrangler/state
+npx wrangler d1 migrations apply webapp-production --local
+
+# 3. 開発サーバー起動（別ターミナル）
+npm run dev
+
+# 4. E2Eテスト実行
+bash tests/e2e/phase2_additional_slots.sh
+bash tests/e2e/phase2_ops_incident.sh
+bash tests/e2e/phase2_need_response.sh
+```
+
+## 4. エスカレーション
+
+上記で解決しない場合:
+1. GitHub Issue を作成（ログを添付）
+2. #phase2-e2e Slack チャンネルに投稿
+```
+
+#### 関連ファイル
+- `tests/e2e/README.md`（既存、Runbookへのリンクを追加）
+- `tests/e2e/RUNBOOK.md`（新規作成）
+- `.github/workflows/phase2-e2e.yml`
+
+---
+
+## ⏭️ 次ターム候補チケット（優先度順）
+
+| ID | 内容 | 見積もり | 備考 |
+|----|------|----------|------|
+| P2-D1 | 未回答者だけ再通知オプション | 2日 | 意図判定が必要 |
+| P2-D2 | 回答者だけ再通知オプション | 1日 | P2-D1と同時実装推奨 |
+| P2-D3 | 確定後のやり直し（別スレッド化） | 3日 | 履歴混乱リスク高 |
+| P2-E1 | Slack/Chatwork送達 | 5日 | 送達チャネル拡張 |
+| P3-A1 | 清掃の「時間×場所×人」最適化 | 10日+ | n対n配置エンジン |
+
+---
+
 ## 更新履歴
 
+- 2026-01-12: Phase2 Sprint 2-B/2-C チケット追加（P2-B1/B2/C1）
 - 2025-01-11: Phase2 Sprint 2-A 完了（A-D実装完了、E設計完了）
