@@ -25,6 +25,7 @@ export type IntentType =
   | 'schedule.propose_for_split'        // Phase Next-6 Day2 - 票割れ通知提案
   | 'schedule.propose_for_split.confirm' // Phase Next-6 Day2 - 票割れ提案確定
   | 'schedule.propose_for_split.cancel'  // Phase Next-6 Day2 - 票割れ提案キャンセル
+  | 'schedule.need_response.list'        // Phase2 P2-D0 - 再回答必要者リスト表示
   // Beta A: 送信確認フロー
   | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
   | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API
@@ -434,6 +435,35 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
   
+  // ============================================================
+  // Phase2 P2-D0: 再回答必要者リスト表示
+  // ============================================================
+  
+  // P2-D0: schedule.need_response.list
+  // Keywords: 再回答、要回答、回答待ち、誰が回答、誰に聞く
+  if (/(再回答|要回答|回答待ち|誰が回答|誰に聞|回答必要|回答が必要)/.test(normalizedInput)) {
+    // Require threadId context
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.need_response.list',
+        confidence: 0.9,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message: 'どのスレッドの再回答必要者を確認しますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+    
+    return {
+      intent: 'schedule.need_response.list',
+      confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+      },
+    };
+  }
+
   // P3-1: schedule.remind.pending (Phase Next-6 Day1)
   // Keywords: リマインド、催促、未返信
   if (/(リマインド|催促|未返信.*連絡|未返信.*送)/.test(normalizedInput)) {

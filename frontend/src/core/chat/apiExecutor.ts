@@ -90,7 +90,16 @@ export type ExecutionResultData =
   | { kind: 'list.created'; payload: { listId: string; listName: string } }
   | { kind: 'list.listed'; payload: { lists: any[] } }
   | { kind: 'list.members'; payload: { listName: string; members: any[] } }
-  | { kind: 'list.member_added'; payload: { listName: string; email: string } };
+  | { kind: 'list.member_added'; payload: { listName: string; email: string } }
+  // Phase2 P2-D0: 再回答必要者リスト表示
+  | { kind: 'need_response.list'; payload: {
+      threadId: string;
+      threadTitle: string;
+      currentVersion: number;
+      inviteesNeedingResponse: Array<{ email: string; name?: string; respondedVersion?: number }>;
+      inviteesNeedingResponseCount: number;
+      remainingProposals: number;
+    } };
 
 export interface ExecutionResult {
   success: boolean;
@@ -253,6 +262,10 @@ export async function executeIntent(
     
     case 'schedule.invite.list':
       return executeInviteList(intentResult);
+    
+    // Phase2 P2-D0: 再回答必要者リスト表示
+    case 'schedule.need_response.list':
+      return executeNeedResponseList(intentResult);
     
     case 'unknown':
       return {
@@ -2334,6 +2347,150 @@ function formatDateTime(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// ============================================================
+// Phase2 P2-D0: 再回答必要者リスト表示
+// ============================================================
+
+/**
+ * P2-D0: schedule.need_response.list
+ * 再回答が必要な招待者のリストを表示
+ * 
+ * 条件:
+ * - declined は除外
+ * - 未回答（selection無し）は要
+ * - proposal_version_at_response < current_proposal_version は要
+ */
+async function executeNeedResponseList(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが選択されていません。',
+      needsClarification: {
+        field: 'threadId',
+        message: 'どのスレッドの再回答必要者を確認しますか？\n左のスレッド一覧から選択してください。',
+      },
+    };
+  }
+  
+  try {
+    // Get thread status
+    const status = await threadsApi.getStatus(threadId);
+    
+    // Phase2: proposal_info が無い環境でも落ちないガード
+    const proposalInfo = (status as any).proposal_info || null;
+    const currentVersion = proposalInfo?.current_version || 1;
+    const remainingProposals = proposalInfo?.remaining_proposals ?? 2;
+    
+    // Phase2: API側で計算済みの invitees_needing_response を使用
+    // ただし古いAPIの場合は手動計算にフォールバック
+    let inviteesNeedingResponse: Array<{ email: string; name?: string; respondedVersion?: number }> = [];
+    
+    if (proposalInfo?.invitees_needing_response && Array.isArray(proposalInfo.invitees_needing_response)) {
+      // API側で計算済み
+      inviteesNeedingResponse = proposalInfo.invitees_needing_response.map((inv: any) => ({
+        email: inv.email,
+        name: inv.candidate_name || inv.name,
+        respondedVersion: inv.proposal_version_at_response || undefined,
+      }));
+    } else {
+      // フォールバック: 手動計算
+      // declined除外、未回答または旧世代回答を抽出
+      const selectionsMap = new Map<string, any>();
+      if (status.selections) {
+        status.selections.forEach((sel: any) => {
+          selectionsMap.set(sel.invitee_key, sel);
+        });
+      }
+      
+      inviteesNeedingResponse = status.invites
+        .filter((inv: any) => {
+          // declined は除外
+          if (inv.status === 'declined') return false;
+          
+          const selection = selectionsMap.get(inv.invitee_key);
+          if (!selection) {
+            // 未回答
+            return true;
+          }
+          
+          // proposal_version_at_response < currentVersion なら再回答必要
+          const respondedVersion = selection.proposal_version_at_response || 1;
+          return respondedVersion < currentVersion;
+        })
+        .map((inv: any) => {
+          const selection = selectionsMap.get(inv.invitee_key);
+          return {
+            email: inv.email,
+            name: inv.candidate_name,
+            respondedVersion: selection?.proposal_version_at_response || undefined,
+          };
+        });
+    }
+    
+    const count = inviteesNeedingResponse.length;
+    
+    // Build message
+    let message = `📋 **「${status.thread.title}」の再回答必要者**\n\n`;
+    message += `📊 候補バージョン: v${currentVersion}`;
+    if (currentVersion > 1) {
+      message += ` （追加候補あり）`;
+    }
+    message += `\n`;
+    message += `🔢 追加候補: あと ${remainingProposals} 回\n\n`;
+    
+    if (count === 0) {
+      message += `✅ 全員が最新の候補に回答済みです！\n`;
+      message += `\n日程を確定できる状態です。「1番で確定」などと入力してください。`;
+    } else {
+      message += `⚠️ **再回答が必要: ${count}名**\n\n`;
+      
+      inviteesNeedingResponse.forEach((inv, index) => {
+        message += `${index + 1}. ${inv.email}`;
+        if (inv.name) {
+          message += ` (${inv.name})`;
+        }
+        if (inv.respondedVersion) {
+          message += ` — v${inv.respondedVersion}時点の回答`;
+        } else {
+          message += ` — 未回答`;
+        }
+        message += `\n`;
+      });
+      
+      message += `\n💡 ヒント:\n`;
+      message += `- 「リマインド」と入力すると未返信者にリマインドを送れます\n`;
+      if (remainingProposals > 0) {
+        message += `- 「追加候補」と入力すると新しい候補日を追加できます\n`;
+      }
+    }
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'need_response.list',
+        payload: {
+          threadId,
+          threadTitle: status.thread.title,
+          currentVersion,
+          inviteesNeedingResponse,
+          inviteesNeedingResponseCount: count,
+          remainingProposals,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
 }
 
 // Export type for external use
