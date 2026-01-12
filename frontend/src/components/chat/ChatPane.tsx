@@ -96,6 +96,13 @@ interface ChatPaneProps {
     threadTitle?: string;
     actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
   } | null;
+  
+  // Phase2 P2-D1: pending remind need response
+  pendingRemindNeedResponse?: {
+    threadId: string;
+    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+    count: number;
+  } | null;
 }
 
 export function ChatPane({ 
@@ -113,7 +120,8 @@ export function ChatPane({
   remindCount = 0,
   pendingNotify = null,
   pendingSplit = null,
-  pendingAction = null
+  pendingAction = null,
+  pendingRemindNeedResponse = null
 }: ChatPaneProps) {
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -166,12 +174,14 @@ export function ChatPane({
       // Classify intent
       // Phase P0-5: threadId が無い場合でも Intent 分類は実行
       // Beta A: pendingAction をコンテキストに渡す（3語決定フロー用）
+      // Phase2 P2-D1: pendingRemindNeedResponse を渡す
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId || undefined,
         pendingRemind,
         pendingNotify,
         pendingSplit,
         pendingAction,
+        pendingRemindNeedResponse,
       });
       
       console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
@@ -186,6 +196,7 @@ export function ChatPane({
         pendingNotify,
         pendingSplit,
         pendingAction,
+        pendingRemindNeedResponse,
       });
       console.log('[API] Result:', result.success, result.message);
 

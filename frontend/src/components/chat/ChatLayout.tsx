@@ -121,6 +121,14 @@ export function ChatLayout() {
   // Beta A: Pending action state for 3-word decision (per thread or global)
   const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null);
 
+  // Phase2 P2-D1: Pending remind need response state (per thread)
+  type PendingRemindNeedResponse = {
+    threadId: string;
+    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+    count: number;
+  }
+  const [pendingRemindNeedResponseByThreadId, setPendingRemindNeedResponseByThreadId] = useState<Record<string, PendingRemindNeedResponse | null>>({});
+
   // Phase P0-3: Track seeded threads to prevent double-seeding
   const [seededThreads, setSeededThreads] = useState<Set<string>>(new Set());
 
@@ -387,6 +395,29 @@ export function ChatLayout() {
         }, 100);
       }
     }
+    
+    // Phase2 P2-D1: Handle remind need response state updates
+    else if (kind === 'remind.need_response.generated') {
+      // Set pending remind need response for this thread
+      if (payload.threadId) {
+        setPendingRemindNeedResponseByThreadId(prev => ({
+          ...prev,
+          [payload.threadId]: {
+            threadId: payload.threadId,
+            targetInvitees: payload.targetInvitees,
+            count: payload.count,
+          },
+        }));
+      }
+    } else if (kind === 'remind.need_response.cancelled' || kind === 'remind.need_response.sent') {
+      // Clear pending remind need response for current thread
+      if (threadId) {
+        setPendingRemindNeedResponseByThreadId(prev => ({
+          ...prev,
+          [threadId]: null,
+        }));
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -481,6 +512,7 @@ export function ChatLayout() {
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
               pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
               pendingAction={pendingAction}
+              pendingRemindNeedResponse={threadId ? (pendingRemindNeedResponseByThreadId[threadId] || null) : null}
             />
           </div>
 
@@ -514,6 +546,7 @@ export function ChatLayout() {
               pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
               pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
               pendingAction={pendingAction}
+              pendingRemindNeedResponse={threadId ? (pendingRemindNeedResponseByThreadId[threadId] || null) : null}
             />
           )}
           {mobileTab === 'cards' && (
