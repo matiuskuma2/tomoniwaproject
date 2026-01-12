@@ -7,6 +7,21 @@
 
 import type { EmailJob } from '../services/emailQueue';
 
+/**
+ * HTMLエスケープ関数
+ * XSS防止のため、ユーザー入力をHTMLに挿入する前に必ず通す
+ */
+function escapeHtml(text: string): string {
+  const map: { [key: string]: string } = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
 interface Env {
   DB: D1Database;
   RESEND_API_KEY: string;
@@ -282,7 +297,9 @@ const APP_BASE_URL = 'https://app.tomoniwao.jp';
 function generateInviteEmail(job: EmailJob & { type: 'invite' }): { html: string; text: string } {
   const { token, inviter_name, thread_title } = job.data;
   const acceptUrl = `${APP_BASE_URL}/i/${token}`;
-  const displayTitle = thread_title || '日程調整';
+  // XSS防止: ユーザー入力をHTMLエスケープ
+  const safeInviterName = escapeHtml(inviter_name);
+  const displayTitle = escapeHtml(thread_title || '日程調整');
 
   const html = `
     <!DOCTYPE html>
@@ -312,7 +329,7 @@ function generateInviteEmail(job: EmailJob & { type: 'invite' }): { html: string
         <div class="content">
           <p>こんにちは。</p>
           <div class="message">
-            <strong>${inviter_name}</strong> さんより、<br>
+            <strong>${safeInviterName}</strong> さんより、<br>
             「<strong>${displayTitle}</strong>」の日程調整依頼が届きました。
           </div>
           <p>下のボタンから、ご都合の良い日時をお選びください。<br>回答は数分で完了します。</p>
@@ -326,7 +343,7 @@ function generateInviteEmail(job: EmailJob & { type: 'invite' }): { html: string
         </div>
         <div class="footer">
           このメールは Tomoniwao（トモニワオ）から送信されています。<br>
-          ご不明な点がございましたら、${inviter_name} さんに直接お問い合わせください。
+          ご不明な点がございましたら、${safeInviterName} さんに直接お問い合わせください.
         </div>
       </div>
     </body>
@@ -358,6 +375,8 @@ ${acceptUrl}
  */
 function generateBroadcastEmail(job: EmailJob & { type: 'broadcast' }): { html: string; text: string } {
   const { message } = job.data;
+  // XSS防止: ユーザー入力をHTMLエスケープ
+  const safeMessage = escapeHtml(message).replace(/\n/g, '<br>');
 
   const html = `
     <!DOCTYPE html>
@@ -373,7 +392,7 @@ function generateBroadcastEmail(job: EmailJob & { type: 'broadcast' }): { html: 
     <body>
       <div class="container">
         <h1>New broadcast message</h1>
-        <div class="message">${message}</div>
+        <div class="message">${safeMessage}</div>
       </div>
     </body>
     </html>
@@ -399,7 +418,7 @@ function generateThreadMessageEmail(job: EmailJob & { type: 'thread_message' }):
   const threadUrl = `${APP_BASE_URL}/chat/${thread_id}`;
 
   // メッセージ内容をHTMLエスケープしつつ改行を<br>に変換
-  const htmlMessage = message.replace(/\n/g, '<br>');
+  const htmlMessage = escapeHtml(message).replace(/\n/g, '<br>');
 
   const html = `
     <!DOCTYPE html>
@@ -420,7 +439,7 @@ function generateThreadMessageEmail(job: EmailJob & { type: 'thread_message' }):
     <body>
       <div class="container">
         <div class="header">
-          <h1>✅ ${sender_name}からのお知らせ</h1>
+          <h1>✅ ${escapeHtml(sender_name)}からのお知らせ</h1>
         </div>
         <div class="content">
           <div class="message">${htmlMessage}</div>
@@ -463,7 +482,8 @@ function generateAdditionalSlotsEmail(job: EmailJob & {
   };
 }): { html: string; text: string } {
   const { token, thread_title, slot_count, slot_description, invite_url, proposal_version } = job.data;
-  const displayTitle = thread_title || '日程調整';
+  const displayTitle = escapeHtml(thread_title || '日程調整');
+  const safeSlotDescription = escapeHtml(slot_description).replace(/\n/g, '<br>');
 
   const html = `
     <!DOCTYPE html>
@@ -497,7 +517,7 @@ function generateAdditionalSlotsEmail(job: EmailJob & {
           
           <div class="highlight">
             <h3>追加された候補（${slot_count}件）</h3>
-            <p>${slot_description}</p>
+            <p>${safeSlotDescription}</p>
           </div>
           
           <div class="info-box">
