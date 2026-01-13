@@ -239,10 +239,16 @@ app.post(
       const threadId = crypto.randomUUID();
       const now = new Date().toISOString();
       
+      // P3-TZ3: organizer timezone をスレッドにコピー
+      const organizerTzRow = await env.DB.prepare(
+        `SELECT timezone FROM users WHERE id = ? LIMIT 1`
+      ).bind(ownerUserId).first<{ timezone: string }>();
+      const organizerTimeZone = organizerTzRow?.timezone || 'Asia/Tokyo';
+      
       await env.DB.prepare(`
-        INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, description, status, mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'one_on_one', ?, ?)
-      `).bind(threadId, workspaceId, ownerUserId, title, description || null, THREAD_STATUS.DRAFT, now, now).run();
+        INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, description, status, mode, timezone, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'one_on_one', ?, ?, ?)
+      `).bind(threadId, workspaceId, ownerUserId, title, description || null, THREAD_STATUS.DRAFT, organizerTimeZone, now, now).run();
 
       console.log('[Threads] Created thread in scheduling_threads:', threadId);
 

@@ -265,11 +265,17 @@ app.post('/:token/execute', async (c) => {
       threadId = crypto.randomUUID();
       const now = new Date().toISOString();
 
+      // P3-TZ3: organizer timezone をスレッドにコピー
+      const organizerTzRow = await env.DB.prepare(
+        `SELECT timezone FROM users WHERE id = ? LIMIT 1`
+      ).bind(ownerUserId).first<{ timezone: string }>();
+      const organizerTimeZone = organizerTzRow?.timezone || 'Asia/Tokyo';
+
       // scheduling_threads 作成
       await env.DB.prepare(`
-        INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, status, mode, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'one_on_one', ?, ?)
-      `).bind(threadId, workspaceId, ownerUserId, threadTitle, THREAD_STATUS.DRAFT, now, now).run();
+        INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, status, mode, timezone, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'one_on_one', ?, ?, ?)
+      `).bind(threadId, workspaceId, ownerUserId, threadTitle, THREAD_STATUS.DRAFT, organizerTimeZone, now, now).run();
 
       // デフォルト attendance rule 作成
       const defaultRule = {
@@ -641,12 +647,25 @@ async function executeAddSlots(
   let emailQueuedCount = 0;
   let inAppCreatedCount = 0;
 
-  // スロットラベル生成（共通ユーティリティ使用）
-  // ⚠️ toLocaleString の直書き禁止 → datetime.ts の関数を使用
-  const slotDescription = generateSlotLabels(slots, 3);
+  // P3-TZ2: スレッドの基準タイムゾーンを取得（外部ユーザーのフォールバック用）
+  const threadTzRow = await env.DB.prepare(
+    `SELECT timezone FROM scheduling_threads WHERE id = ? LIMIT 1`
+  ).bind(threadId).first<{ timezone: string }>();
+  const threadTimeZone = threadTzRow?.timezone || 'Asia/Tokyo';
 
   for (const invite of recipients) {
     const inviteUrl = `https://${host}/i/${invite.token}`;
+
+    // P3-TZ2: 受信者のタイムゾーンを解決
+    // アプリユーザー → users.timezone / 外部ユーザー → thread.timezone
+    const appUser = await env.DB.prepare(`
+      SELECT id, timezone FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
+    `).bind(invite.email).first<{ id: string; timezone: string }>();
+
+    const recipientTimeZone = appUser?.timezone || threadTimeZone;
+
+    // 受信者のタイムゾーンでスロットラベルを生成
+    const slotDescription = generateSlotLabels(slots, 3, recipientTimeZone);
 
     // メール送信（追加候補通知）
     const emailJobId = `add-slots-${invite.id}-v${nextVersion}`;
@@ -670,10 +689,6 @@ async function executeAddSlots(
     emailQueuedCount++;
 
     // アプリユーザーには Inbox 通知も
-    const appUser = await env.DB.prepare(`
-      SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
-    `).bind(invite.email).first<{ id: string }>();
-
     if (appUser) {
       // P2-B2: 必須3要素を含むInbox通知文面
       await inboxRepo.create({

@@ -34,6 +34,32 @@ export const SUPPORTED_TIMEZONES = [
 export type SupportedTimezone = typeof SUPPORTED_TIMEZONES[number]['value'];
 
 /**
+ * ブラウザのタイムゾーンを取得
+ * @returns ブラウザのタイムゾーン（例: 'Asia/Tokyo'）
+ */
+export function getBrowserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
+}
+
+/**
+ * タイムゾーン文字列が有効かどうかを検証
+ * @param tz - タイムゾーン文字列（例: 'Asia/Tokyo'）
+ * @returns 有効なら true
+ */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * ISO文字列を閲覧者のタイムゾーンでフォーマット
  * 
  * @param isoString - UTC ISO文字列（例: 2026-01-15T01:00:00.000Z）

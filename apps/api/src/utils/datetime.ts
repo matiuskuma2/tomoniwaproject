@@ -35,6 +35,20 @@ export const SUPPORTED_TIMEZONES = [
 export type SupportedTimezone = typeof SUPPORTED_TIMEZONES[number]['value'];
 
 /**
+ * タイムゾーン文字列が有効かどうかを検証
+ * @param tz - タイムゾーン文字列（例: 'Asia/Tokyo'）
+ * @returns 有効なら true
+ */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * ISO文字列を指定タイムゾーンでフォーマット
  * 
  * @param isoString - UTC ISO文字列（例: 2026-01-15T01:00:00.000Z）

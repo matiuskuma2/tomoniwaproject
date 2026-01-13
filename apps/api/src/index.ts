@@ -33,6 +33,7 @@ import businessCardsRoutes from './routes/businessCards';
 import calendarRoutes from './routes/calendar';
 import billingRoutes from './routes/billing';
 import pendingActionsRoutes from './routes/pendingActions';
+import usersMeRoutes from './routes/usersMe';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -192,6 +193,11 @@ app.route('/api', listItemsRoutes);
 app.use('/api/business-cards', requireAuth);
 app.use('/api/business-cards/*', requireAuth);
 app.route('/api/business-cards', businessCardsRoutes);
+
+// Users Me API (P3-TZ1: ユーザー設定 - タイムゾーン等)
+app.use('/api/users/me', requireAuth);
+app.use('/api/users/me/*', requireAuth);
+app.route('/api/users/me', usersMeRoutes);
 
 // Calendar API (Phase Next-3 - Read-only calendar access)
 app.use('/api/calendar', requireAuth);

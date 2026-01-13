@@ -9,6 +9,7 @@ import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
 import BillingPage from './pages/BillingPage';
+import SettingsPage from './pages/SettingsPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -94,6 +95,16 @@ function App() {
           element={
             <ProtectedRoute>
               <BillingPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* P3-TZ1: User Settings (Timezone) */}
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />

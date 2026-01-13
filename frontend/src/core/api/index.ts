@@ -20,3 +20,7 @@ export type {
   ConfirmResponse, 
   ExecuteResponse 
 } from './pendingActions';
+
+// P3-TZ1: Users Me API
+export { usersMeApi } from './usersMe';
+export type { UserProfile, GetMeResponse, UpdateMeResponse } from './usersMe';
