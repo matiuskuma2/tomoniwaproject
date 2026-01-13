@@ -183,11 +183,12 @@ auth.get('/google/callback', async (c) => {
         .run();
     } else {
       // Create new user
+      // P3-TZ1: 新規ユーザーはデフォルト Asia/Tokyo（将来はブラウザTZを受け取る）
       userId = `user-${Date.now()}`;
       await env.DB
         .prepare(
-          `INSERT INTO users (id, email, display_name, avatar_url)
-           VALUES (?, ?, ?, ?)`
+          `INSERT INTO users (id, email, display_name, avatar_url, timezone)
+           VALUES (?, ?, ?, ?, 'Asia/Tokyo')`
         )
         .bind(userId, userInfo.email, userInfo.name, userInfo.picture || null)
         .run();
