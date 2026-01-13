@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { formatDateTimeForViewer } from '../utils/datetime';
 
 interface BillingInfo {
   tier: 'free' | 'pro' | 'team' | 'enterprise';
@@ -176,7 +177,7 @@ export default function BillingPage() {
               </div>
               {billing.last_event_ts && (
                 <div className="text-xs text-gray-500 mt-1">
-                  最終更新: {new Date(billing.last_event_ts).toLocaleString('ja-JP')}
+                  最終更新: {formatDateTimeForViewer(billing.last_event_ts)}
                 </div>
               )}
             </div>

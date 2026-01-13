@@ -4,6 +4,7 @@
  */
 
 import type { ThreadStatus_API } from '../../core/models';
+import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface ThreadStatusCardProps {
   status: ThreadStatus_API;
@@ -42,7 +43,7 @@ export function ThreadStatusCard({ status }: ThreadStatusCardProps) {
         <div>
           <span className="text-sm text-gray-500">更新日時:</span>
           <p className="text-sm text-gray-900">
-            {new Date(status.thread.updated_at).toLocaleString('ja-JP')}
+            {formatDateTimeForViewer(status.thread.updated_at)}
           </p>
         </div>
         

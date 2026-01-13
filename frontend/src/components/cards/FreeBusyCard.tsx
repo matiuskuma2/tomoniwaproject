@@ -5,6 +5,7 @@
  */
 
 import type { CalendarFreeBusyResponse } from '../../core/models';
+import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface FreeBusyCardProps {
   data: CalendarFreeBusyResponse;
@@ -49,18 +50,7 @@ export function FreeBusyCard({ data }: FreeBusyCardProps) {
         {data.busy.map((slot, index) => (
           <div key={index} className="border-l-4 border-red-500 pl-3 py-1">
             <p className="text-xs text-gray-500">
-              {new Date(slot.start).toLocaleString('ja-JP', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })} - 
-              {new Date(slot.end).toLocaleString('ja-JP', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })}
+              {formatDateTimeForViewer(slot.start)} - {formatDateTimeForViewer(slot.end)}
             </p>
           </div>
         ))}

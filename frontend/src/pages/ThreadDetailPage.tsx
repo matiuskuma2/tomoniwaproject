@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { threadsApi } from '../core/api';
 import type { ThreadStatus_API, Slot } from '../core/models';
+import { formatDateTimeRangeForViewer } from '../utils/datetime';
 
 export function ThreadDetailPage() {
   const { threadId } = useParams<{ threadId: string }>();
@@ -60,7 +61,7 @@ export function ThreadDetailPage() {
     // Improved confirmation message
     const selectedSlot = status?.slots.find((s: Slot) => s.slot_id === selectedSlotId);
     const confirmMessage = selectedSlot
-      ? `以下の日程で確定します。\nGoogle Meet URL が自動的に生成されます。\n\n${new Date(selectedSlot.start_at).toLocaleString('ja-JP')} 〜 ${new Date(selectedSlot.end_at).toLocaleString('ja-JP')}\n\nよろしいですか？`
+      ? `以下の日程で確定します。\nGoogle Meet URL が自動的に生成されます。\n\n${formatDateTimeRangeForViewer(selectedSlot.start_at, selectedSlot.end_at)}\n\nよろしいですか？`
       : 'この日程で確定しますか？Google Meet URL が生成されます。';
     
     if (!confirm(confirmMessage)) return;
@@ -194,19 +195,10 @@ export function ThreadDetailPage() {
               <div className="bg-white rounded-lg p-4">
                 <p className="text-sm text-gray-500 mb-1">確定日時</p>
                 <p className="text-lg font-bold text-gray-900">
-                  {new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.start_at).toLocaleString('ja-JP', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    weekday: 'short',
-                  })}
-                  {' 〜 '}
-                  {new Date(status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.end_at).toLocaleString('ja-JP', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {formatDateTimeRangeForViewer(
+                    status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.start_at,
+                    status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.end_at
+                  )}
                 </p>
               </div>
             )}
@@ -309,8 +301,7 @@ export function ThreadDetailPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-gray-900">
-                        {new Date(slot.start_at).toLocaleString('ja-JP')} 〜{' '}
-                        {new Date(slot.end_at).toLocaleString('ja-JP')}
+                        {formatDateTimeRangeForViewer(slot.start_at, slot.end_at)}
                       </p>
                       {/* Phase2: バージョンバッジ（v2以上のみ表示） */}
                       {(slot as any).proposal_version && (slot as any).proposal_version > 1 && (
@@ -428,15 +419,7 @@ export function ThreadDetailPage() {
                         {/* Show selected slot */}
                         {selectedSlot && (
                           <p className="text-sm text-blue-600 mt-1">
-                            → {new Date(selectedSlot.start_at).toLocaleString('ja-JP', {
-                              month: 'numeric',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })} 〜 {new Date(selectedSlot.end_at).toLocaleString('ja-JP', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })} を選択
+                            → {formatDateTimeRangeForViewer(selectedSlot.start_at, selectedSlot.end_at)} を選択
                           </p>
                         )}
                         {/* Phase2: 回答時の世代表示 */}

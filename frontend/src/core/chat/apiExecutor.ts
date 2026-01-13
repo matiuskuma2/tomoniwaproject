@@ -10,6 +10,7 @@ import { contactsApi } from '../api/contacts';
 import { pendingActionsApi, type PendingDecision, type PrepareSendResponse } from '../api/pendingActions';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
+import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
 
 // Phase Next-5 Day2.1: Type-safe ExecutionResult
 export type ExecutionResultData =
@@ -2331,26 +2332,10 @@ function formatTimeRange(start: string, end: string): string {
 
 /**
  * Format date-time range (with date)
+ * ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用
  */
 function formatDateTimeRange(start: string, end: string): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  
-  const startStr = startDate.toLocaleString('ja-JP', { 
-    month: 'numeric', 
-    day: 'numeric', 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-  
-  const endStr = endDate.toLocaleString('ja-JP', { 
-    month: 'numeric', 
-    day: 'numeric', 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-  
-  return `${startStr} - ${endStr}`;
+  return formatDateTimeRangeForViewer(start, end, DEFAULT_TIMEZONE);
 }
 
 function getStatusLabel(status: string): string {
@@ -2368,14 +2353,11 @@ function getStatusLabel(status: string): string {
 //   // Moved to backend: threadsStatus.ts returns slots[].votes
 // }
 
+/**
+ * ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用
+ */
 function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleString('ja-JP', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTimeForViewer(dateStr, DEFAULT_TIMEZONE);
 }
 
 // ============================================================

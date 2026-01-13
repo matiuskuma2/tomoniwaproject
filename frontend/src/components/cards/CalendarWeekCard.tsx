@@ -5,6 +5,7 @@
  */
 
 import type { CalendarWeekResponse } from '../../core/models';
+import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface CalendarWeekCardProps {
   data: CalendarWeekResponse;
@@ -46,18 +47,7 @@ export function CalendarWeekCard({ data }: CalendarWeekCardProps) {
           <div key={event.id} className="border-l-4 border-green-500 pl-3">
             <p className="text-sm font-medium text-gray-900">{event.summary}</p>
             <p className="text-xs text-gray-500">
-              {new Date(event.start).toLocaleString('ja-JP', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })} - 
-              {new Date(event.end).toLocaleString('ja-JP', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })}
+              {formatDateTimeForViewer(event.start)} - {formatDateTimeForViewer(event.end)}
             </p>
             {event.location && (
               <p className="text-xs text-gray-500">📍 {event.location}</p>

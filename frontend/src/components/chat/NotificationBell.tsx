@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { inboxApi } from '../../core/api';
 import type { InboxNotification } from '../../core/models';
+import { formatDateTimeForViewer } from '../../utils/datetime';
 
 export function NotificationBell() {
   const navigate = useNavigate();
@@ -98,7 +99,7 @@ export function NotificationBell() {
                             {notification.kind}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            {new Date(notification.created_at).toLocaleString('ja-JP')}
+                            {formatDateTimeForViewer(notification.created_at)}
                           </p>
                         </div>
                         {!notification.read && (

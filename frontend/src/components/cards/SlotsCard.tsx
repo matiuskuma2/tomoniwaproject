@@ -4,6 +4,7 @@
  */
 
 import type { ThreadStatus_API, Slot } from '../../core/models';
+import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface SlotsCardProps {
   status: ThreadStatus_API;
@@ -17,18 +18,8 @@ export function SlotsCard({ status }: SlotsCardProps) {
   // Phase Next-6 Day2: Vote counts are now server-side (負債ゼロ)
   // No need to calculate - use slot.votes directly
 
-  const formatDateTime = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleString('ja-JP', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return dateStr;
-    }
-  };
+  // ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用
+  const formatDateTime = (dateStr: string) => formatDateTimeForViewer(dateStr);
 
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-4">
