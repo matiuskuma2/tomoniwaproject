@@ -848,7 +848,7 @@ app.post('/:id/proposals/prepare', async (c) => {
       total_count: body.slots.length,
       valid_count: newSlots.length,
       preview: newSlots.slice(0, 5).map((s) => ({
-        email: s.label || `${new Date(s.start_at).toLocaleString('ja-JP')}`,
+        email: s.label || `${new Date(s.start_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
         is_app_user: false,
       })),
       preview_count: Math.min(newSlots.length, 5),
@@ -889,12 +889,15 @@ app.post('/:id/proposals/prepare', async (c) => {
     ).run();
 
     // ====== (8) レスポンス ======
+    // HOTFIX: Cloudflare Workers は UTC タイムゾーンなので、明示的に Asia/Tokyo を指定
     const slotLabels = newSlots.slice(0, 3).map((s) => 
       s.label || new Date(s.start_at).toLocaleString('ja-JP', { 
+        timeZone: 'Asia/Tokyo',
         month: 'numeric', 
         day: 'numeric', 
+        weekday: 'short',
         hour: 'numeric', 
-        minute: 'numeric' 
+        minute: '2-digit' 
       })
     );
 
