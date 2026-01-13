@@ -20,6 +20,7 @@ import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS, isValidThreadStatus } from '../../../../packages/shared/src/types/thread';
 import { getTenant } from '../utils/workspaceContext';
 import { encodeCursor, decodeCursor } from '../utils/cursor';
+import { formatDateTime, generateSlotLabels } from '../utils/datetime';
 
 type Variables = {
   userId?: string;
@@ -848,7 +849,7 @@ app.post('/:id/proposals/prepare', async (c) => {
       total_count: body.slots.length,
       valid_count: newSlots.length,
       preview: newSlots.slice(0, 5).map((s) => ({
-        email: s.label || `${new Date(s.start_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
+        email: s.label || formatDateTime(s.start_at),
         is_app_user: false,
       })),
       preview_count: Math.min(newSlots.length, 5),
@@ -889,16 +890,9 @@ app.post('/:id/proposals/prepare', async (c) => {
     ).run();
 
     // ====== (8) レスポンス ======
-    // HOTFIX: Cloudflare Workers は UTC タイムゾーンなので、明示的に Asia/Tokyo を指定
+    // ⚠️ toLocaleString の直書き禁止 → datetime.ts の関数を使用
     const slotLabels = newSlots.slice(0, 3).map((s) => 
-      s.label || new Date(s.start_at).toLocaleString('ja-JP', { 
-        timeZone: 'Asia/Tokyo',
-        month: 'numeric', 
-        day: 'numeric', 
-        weekday: 'short',
-        hour: 'numeric', 
-        minute: '2-digit' 
-      })
+      s.label || formatDateTime(s.start_at)
     );
 
     return c.json({

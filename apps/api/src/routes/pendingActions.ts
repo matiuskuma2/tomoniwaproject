@@ -24,6 +24,7 @@ import { InboxRepository } from '../repositories/inboxRepository';
 import { ListsRepository } from '../repositories/listsRepository';
 import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
+import { generateSlotLabels } from '../utils/datetime';
 
 type Variables = {
   userId?: string;
@@ -640,24 +641,9 @@ async function executeAddSlots(
   let emailQueuedCount = 0;
   let inAppCreatedCount = 0;
 
-  // スロットラベル生成（UTC→JST変換対応）
-  // HOTFIX: Cloudflare Workers は UTC タイムゾーンなので、明示的に Asia/Tokyo を指定
-  const slotLabels = slots.slice(0, 3).map((s) => {
-    // 既にフロントで生成された label があればそれを使用
-    if (s.label) return s.label;
-    
-    // label がない場合は start_at から JST で生成
-    // toLocaleString に timeZone を指定して正しくフォーマット
-    return new Date(s.start_at).toLocaleString('ja-JP', {
-      timeZone: 'Asia/Tokyo',
-      month: 'numeric',
-      day: 'numeric',
-      weekday: 'short',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  });
-  const slotDescription = slotLabels.join('、') + (slots.length > 3 ? ` 他${slots.length - 3}件` : '');
+  // スロットラベル生成（共通ユーティリティ使用）
+  // ⚠️ toLocaleString の直書き禁止 → datetime.ts の関数を使用
+  const slotDescription = generateSlotLabels(slots, 3);
 
   for (const invite of recipients) {
     const inviteUrl = `https://${host}/i/${invite.token}`;
