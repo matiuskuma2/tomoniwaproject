@@ -672,11 +672,177 @@ bash tests/e2e/phase2_need_response.sh
 | P2-D3 | 確定後のやり直し（別スレッド化） | 3日 | 履歴混乱リスク高 |
 | P2-E1 | Slack/Chatwork送達 | 5日 | 送達チャネル拡張 |
 | P3-A1 | 清掃の「時間×場所×人」最適化 | 10日+ | n対n配置エンジン |
+| P3-TZ1 | ユーザータイムゾーン保存 | 1日 | グローバル対応基盤 |
+| P3-TZ2 | 表示側のタイムゾーン対応 | 2日 | フロント/メール両対応 |
+| P3-TZ3 | スレッド単位のTZ表示 | 3日 | 複数TZ混在対応 |
+
+---
+
+## 🌍 Phase3: タイムゾーン対応（グローバル展開準備）
+
+### 背景
+- 日本から展開するが、将来は海外ユーザーも想定
+- 現状: サーバー側で `Asia/Tokyo` 固定
+- 理想: ユーザーのいる場所で日時を表示
+
+### 設計方針
+- **DB**: UTC の ISO 文字列で保存（現状維持 ✅）
+- **表示**: ユーザーのタイムゾーン設定に基づいて動的変換
+
+---
+
+### P3-TZ1: ユーザータイムゾーン保存
+
+**優先度**: 中  
+**見積もり**: 1日  
+**担当**: バックエンド + フロントエンド
+
+#### 完了条件（DoD）
+- [ ] `users` テーブルに `timezone` カラム追加（デフォルト: `Asia/Tokyo`）
+- [ ] 設定画面でタイムゾーン選択UI
+- [ ] プロフィールAPI でタイムゾーンを返却
+
+#### DB Migration
+```sql
+ALTER TABLE users
+ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo';
+
+-- 主要タイムゾーン例:
+-- Asia/Tokyo (JST, UTC+9)
+-- Asia/Dubai (GST, UTC+4)
+-- America/New_York (EST, UTC-5)
+-- Europe/London (GMT, UTC+0)
+-- Asia/Singapore (SGT, UTC+8)
+```
+
+#### 設定画面UI
+```
+タイムゾーン設定:
+[▼ Asia/Tokyo (日本標準時 UTC+9)]
+
+よく使われるタイムゾーン:
+- Asia/Tokyo (日本)
+- Asia/Dubai (UAE)
+- Asia/Singapore (シンガポール)
+- America/New_York (米国東部)
+- Europe/London (イギリス)
+```
+
+---
+
+### P3-TZ2: 表示側のタイムゾーン対応
+
+**優先度**: 中  
+**見積もり**: 2日  
+**担当**: フロントエンド + バックエンド
+
+#### 完了条件（DoD）
+- [ ] 共通ユーティリティ関数 `formatDateTimeForUser()` を作成
+- [ ] フロントエンド: ユーザー設定のタイムゾーンで表示
+- [ ] メール生成: 受信者のタイムゾーンで日時表示
+- [ ] カード/チャット: 統一フォーマット適用
+
+#### 実装: 共通ユーティリティ
+```typescript
+// packages/shared/src/utils/timezone.ts
+
+/**
+ * ユーザーのタイムゾーンに基づいて日時をフォーマット
+ */
+export function formatDateTimeForUser(
+  isoString: string,
+  timezone: string = 'Asia/Tokyo',
+  options?: {
+    includeWeekday?: boolean;
+    includeYear?: boolean;
+  }
+): string {
+  const date = new Date(isoString);
+  
+  return date.toLocaleString('ja-JP', {
+    timeZone: timezone,
+    year: options?.includeYear ? 'numeric' : undefined,
+    month: 'numeric',
+    day: 'numeric',
+    weekday: options?.includeWeekday ? 'short' : undefined,
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * タイムゾーン略称を取得（表示用）
+ */
+export function getTimezoneAbbr(timezone: string): string {
+  const abbrs: Record<string, string> = {
+    'Asia/Tokyo': 'JST',
+    'Asia/Dubai': 'GST',
+    'America/New_York': 'EST',
+    'Europe/London': 'GMT',
+    'Asia/Singapore': 'SGT',
+  };
+  return abbrs[timezone] || timezone;
+}
+```
+
+#### メール生成の修正
+```typescript
+// 受信者のタイムゾーンを取得して表示
+const recipientTz = recipient.timezone || 'Asia/Tokyo';
+const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
+```
+
+---
+
+### P3-TZ3: スレッド単位のタイムゾーン表示
+
+**優先度**: 低  
+**見積もり**: 3日  
+**担当**: フロントエンド
+
+#### 完了条件（DoD）
+- [ ] 主催者と招待者が異なるTZの場合の表示ロジック
+- [ ] 「あなたの時間では XX:XX」表記
+- [ ] 回答画面でのTZ注釈表示
+
+#### UI例
+```
+📅 候補日: 1/15 (水) 10:00-11:00 JST
+   └ あなたの時間: 1/15 (水) 06:00-07:00 GST (ドバイ時間)
+```
+
+#### 回答画面
+```
+〇〇会議 日程調整
+
+【候補日】
+□ 1/15 (水) 10:00-11:00 JST
+   └ ドバイ時間: 06:00-07:00
+
+□ 1/16 (木) 14:00-15:00 JST
+   └ ドバイ時間: 10:00-11:00
+
+⚠️ 表示時間は Asia/Dubai (UTC+4) に変換されています
+```
+
+---
+
+### 実装順序
+1. **P3-TZ1**: まずユーザーにTZを保存させる（基盤）
+2. **P3-TZ2**: 保存したTZで表示を切り替える（実用化）
+3. **P3-TZ3**: 複数TZ混在時の表示を改善（UX向上）
+
+### 注意事項
+- DBの `start_at` / `end_at` は **必ずUTCのISO文字列** を維持
+- 表示のみユーザーTZで変換する
+- 「JSTのつもりで作ったISO」をDBに入れると二重補正で事故る
 
 ---
 
 ## 更新履歴
 
+- 2026-01-13: P3-TZ1/TZ2/TZ3 チケット追加（タイムゾーン対応・グローバル展開準備）
+- 2026-01-13: HOTFIX: メール通知の日付表示UTCズレ修正（timeZone: 'Asia/Tokyo' 追加）
 - 2026-01-12: P2-D1 実装完了（再回答必要者だけにリマインド送信）
 - 2026-01-12: P2-D0 実装完了（再回答必要者リストをチャットで表示）
 - 2026-01-12: Phase2 Sprint 2-B/2-C チケット追加（P2-B1/B2/C1）
