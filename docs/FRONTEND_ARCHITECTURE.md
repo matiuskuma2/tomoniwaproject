@@ -6,8 +6,8 @@ ToMoniWao フロントエンドは React + TypeScript + Tailwind CSS で構築�
 主要な UI は3カラムレイアウトのチャットインターフェースで、日程調整を会話形式で行います。
 
 **作成日**: 2026-01-13  
-**最終更新**: 2026-01-13  
-**バージョン**: 1.0.0
+**最終更新**: 2026-01-14  
+**バージョン**: 1.1.0
 
 ---
 
@@ -21,7 +21,8 @@ frontend/src/
 │
 ├── components/
 │   ├── chat/               # チャット関連コンポーネント
-│   │   ├── ChatLayout.tsx  # 563行 ⚠️ 巨大 - メインレイアウト
+│   │   ├── ChatLayout.tsx  # 289行 ✅ 短縮 (TD-004) - メインレイアウト
+│   │   ├── useChatReducer.ts # 635行 ✅ NEW (TD-004) - 状態管理
 │   │   ├── ChatPane.tsx    # 460行 ⚠️ 巨大 - チャット入力/表示
 │   │   ├── CardsPane.tsx   # 69行 - 右カラム（カード表示）
 │   │   ├── ThreadsList.tsx # 92行 - 左カラム（スレッド一覧）
@@ -56,9 +57,25 @@ frontend/src/
 │   ├── auth/
 │   │   └── index.ts        # 102行 - 認証管理
 │   │
+│   ├── cache/              # キャッシュ層 ✅ NEW (PERF-S1)
+│   │   ├── index.ts        # 20行 - エクスポート
+│   │   ├── threadStatusCache.ts # 252行 - Status キャッシュ
+│   │   └── useThreadStatus.ts   # 177行 - React Hook
+│   │
 │   ├── chat/               # チャットロジック ⚠️ 最重要
 │   │   ├── intentClassifier.ts  # 763行 ⚠️ 巨大 - インテント分類
-│   │   └── apiExecutor.ts       # 2732行 ⚠️ 超巨大 - API 実行
+│   │   ├── apiExecutor.ts       # 1852行 🔄 分割中 - API 実行
+│   │   └── executors/           # ✅ NEW (TD-002)
+│   │       ├── index.ts         # 42行 - エクスポート
+│   │       ├── types.ts         # 162行 - 型定義
+│   │       ├── calendar.ts      # 215行 - カレンダー系
+│   │       ├── list.ts          # 261行 - リスト系
+│   │       └── thread.ts        # 484行 - スレッド系
+│   │
+│   ├── platform/           # ✅ NEW (P1-C) プラットフォーム抽象化
+│   │   ├── index.ts        # エクスポート
+│   │   ├── storage.ts      # localStorage/AsyncStorage 抽象化
+│   │   └── navigation.ts   # react-router/navigation 抽象化
 │   │
 │   └── models/
 │       └── index.ts        # 317行 - 型定義
@@ -150,31 +167,46 @@ App
 
 ## 4. 状態管理フロー
 
-### 4.1 ChatLayout の状態（563行）
+### 4.1 ChatLayout の状態管理 ✅ 改善済み (TD-004)
+
+**Before**: 15個以上の useState（状態爆発リスク）  
+**After**: useChatReducer で一元管理
 
 ```typescript
-// スレッド関連
-const [status, setStatus] = useState<ThreadStatus_API | null>(null);
-const [loading, setLoading] = useState(false);
-const [mobileTab, setMobileTab] = useState<MobileTab>('threads');
+// useChatReducer.ts - 集約された状態管理
+interface ChatState {
+  // UI state
+  mobileTab: MobileTab;
+  isSettingsOpen: boolean;
+  
+  // Message history (per thread)
+  messagesByThreadId: Record<string, ChatMessage[]>;
+  seededThreads: Set<string>;
+  
+  // Calendar data
+  calendarData: CalendarData;
+  
+  // Pending states (global) ⚠️ 要正規化
+  pendingAutoPropose: PendingAutoPropose | null;
+  pendingAction: PendingActionState | null;
+  
+  // Pending states (per thread)
+  pendingRemindByThreadId: Record<string, PendingRemind | null>;
+  pendingNotifyByThreadId: Record<string, PendingNotify | null>;
+  pendingSplitByThreadId: Record<string, PendingSplit | null>;
+  pendingRemindNeedResponseByThreadId: Record<string, PendingRemindNeedResponse | null>;
+  
+  // Counters (per thread)
+  additionalProposeCountByThreadId: Record<string, number>;
+  remindCountByThreadId: Record<string, number>;
+  
+  // Persistence
+  saveFailCount: number;
+  persistEnabled: boolean;
+}
 
-// メッセージ履歴（localStorage 永続化）
-const [messagesByThreadId, setMessagesByThreadId] = useState<Record<string, ChatMessage[]>>({});
-
-// カレンダーデータ
-const [calendarData, setCalendarData] = useState<CalendarData>({});
-
-// 各種 Pending 状態（確認フロー用）
-const [pendingAutoPropose, setPendingAutoPropose] = useState<PendingAutoPropose | null>(null);
-const [pendingRemindByThreadId, setPendingRemindByThreadId] = useState<Record<string, PendingRemind | null>>({});
-const [pendingNotifyByThreadId, setPendingNotifyByThreadId] = useState<Record<string, PendingNotify | null>>({});
-const [pendingSplitByThreadId, setPendingSplitByThreadId] = useState<Record<string, PendingSplit | null>>({});
-const [pendingAction, setPendingAction] = useState<PendingActionState | null>(null);
-const [pendingRemindNeedResponseByThreadId, setPendingRemindNeedResponseByThreadId] = useState<Record<string, PendingRemindNeedResponse | null>>({});
-
-// カウンター
-const [additionalProposeCountByThreadId, setAdditionalProposeCountByThreadId] = useState<Record<string, number>>({});
-const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string, number>>({});
+// NOTE: status/loading はキャッシュ(useThreadStatus)が単一ソース
+// reducerには持たせない（二重管理防止）
 ```
 
 ### 4.2 データフロー
@@ -204,9 +236,9 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
 | ID | 問題 | 影響 | 推奨対応 | 見積もり | 状態 |
 |----|------|------|----------|----------|------|
 | TD-001 | /settings 導線なし | タイムゾーン設定不可 | ヘッダーにメニュー追加 | 30分 | ✅ 完了 (dc9ce44) |
-| TD-002 | apiExecutor.ts 2732→2283行 | 保守困難 | 機能別ファイル分割 | 2日 | 🔄 進行中 (ea849b0) |
+| TD-002 | apiExecutor.ts 2732→1852行 | 保守困難 | 機能別ファイル分割 | 2日 | 🔄 進行中 (9b65ba8) |
 | TD-003 | intentClassifier.ts 763行 | 保守困難 | インテント別ファイル分割 | 1日 | ⏳ 保留 |
-| TD-004 | ChatLayout.tsx 637→2289行 | 状態管理複雑 | useReducer化 | 1日 | ✅ 完了 (9e905ab) |
+| TD-004 | ChatLayout.tsx 637→289行 | 状態管理複雑 | useReducer化 | 1日 | ✅ 完了 (9e905ab) |
 
 ### 5.2 🟡 Medium（計画的対応）
 
@@ -234,18 +266,31 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
 2. **TD-008**: toLocaleString 残存箇所の確認・修正
 
 ### Phase 2: 構造改善（来週）
-1. **TD-002**: apiExecutor.ts の分割
+1. **TD-002**: apiExecutor.ts の分割 🔄 進行中
    - `executors/calendar.ts` ✅ 完了 (215行)
    - `executors/list.ts` ✅ 完了 (261行)
    - `executors/types.ts` ✅ 完了 (162行)
-   - `executors/thread.ts` ⏳ 保留
+   - `executors/thread.ts` ✅ 完了 (484行) - 9b65ba8
    - `executors/remind.ts` ⏳ 保留
    - `executors/pending.ts` ⏳ 保留
+   - **進捗**: 2732行 → 1852行 (32%削減、1164行分割済み)
 
 2. **TD-003**: intentClassifier.ts の分割
    - `classifiers/calendar.ts`
    - `classifiers/thread.ts`
    - `classifiers/confirm.ts`
+
+### Phase 2.5: パフォーマンス最適化 ✅ 完了
+1. **PERF-S1**: Status取得キャッシュ ✅ 完了 (b12fb81)
+   - TTL 10秒、inflight共有、強制refresh、optimistic update
+   - `threadStatusCache.ts` + `useThreadStatus.ts`
+   
+2. **PERF-S2**: メッセージ表示上限 ✅ 完了 (3fcffa1)
+   - 表示上限50件、localStorage保存上限100件/thread
+
+3. **P1-C**: Platform Adapters ✅ 完了 (dc8b5bc)
+   - `storage.ts` - localStorage抽象化
+   - `navigation.ts` - react-router抽象化
 
 ### Phase 3: 状態管理改善（再来週）
 1. **TD-004**: ChatLayout の useReducer 化 ✅ 完了
