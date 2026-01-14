@@ -13,11 +13,11 @@
 
 import { useReducer, useCallback, useEffect } from 'react';
 import type { 
-  ThreadStatus_API, 
   CalendarTodayResponse, 
   CalendarWeekResponse, 
   CalendarFreeBusyResponse 
 } from '../../core/models';
+// NOTE: ThreadStatus_API は削除（キャッシュが単一ソース）
 import type { ExecutionResult } from '../../core/chat/apiExecutor';
 import type { ChatMessage } from './ChatPane';
 
@@ -85,9 +85,8 @@ type MobileTab = 'threads' | 'chat' | 'cards';
 // ============================================================
 
 export interface ChatState {
-  // Core thread state
-  status: ThreadStatus_API | null;
-  loading: boolean;
+  // NOTE: status/loading はキャッシュ(useThreadStatus)が単一ソース
+  // reducerには持たせない（二重管理防止）
   
   // UI state
   mobileTab: MobileTab;
@@ -124,9 +123,8 @@ export interface ChatState {
 // ============================================================
 
 export type ChatAction =
-  // Core actions
-  | { type: 'SET_STATUS'; payload: ThreadStatus_API | null }
-  | { type: 'SET_LOADING'; payload: boolean }
+  // NOTE: SET_STATUS/SET_LOADING は削除（キャッシュが単一ソース）
+  // UI actions
   | { type: 'SET_MOBILE_TAB'; payload: MobileTab }
   | { type: 'SET_SETTINGS_OPEN'; payload: boolean }
   
@@ -174,12 +172,7 @@ const MAX_FAIL_COUNT = 3;
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
-    // Core actions
-    case 'SET_STATUS':
-      return { ...state, status: action.payload };
-    
-    case 'SET_LOADING':
-      return { ...state, loading: action.payload };
+    // NOTE: SET_STATUS/SET_LOADING は削除（キャッシュが単一ソース）
     
     case 'SET_MOBILE_TAB':
       return { ...state, mobileTab: action.payload };
@@ -367,9 +360,7 @@ function createInitialState(): ChatState {
   }
 
   return {
-    // Core
-    status: null,
-    loading: false,
+    // NOTE: status/loading はキャッシュが単一ソース
     
     // UI
     mobileTab: 'threads',
@@ -456,13 +447,7 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     dispatch({ type: 'SEED_MESSAGES', payload: { threadId, messages } });
   }, []);
 
-  const setStatus = useCallback((status: ThreadStatus_API | null) => {
-    dispatch({ type: 'SET_STATUS', payload: status });
-  }, []);
-
-  const setLoading = useCallback((loading: boolean) => {
-    dispatch({ type: 'SET_LOADING', payload: loading });
-  }, []);
+  // NOTE: setStatus/setLoading は削除（キャッシュが単一ソース）
 
   const setMobileTab = useCallback((tab: MobileTab) => {
     dispatch({ type: 'SET_MOBILE_TAB', payload: tab });
@@ -614,8 +599,7 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // Actions
     appendMessage,
     seedIfEmpty,
-    setStatus,
-    setLoading,
+    // NOTE: setStatus/setLoading は削除（キャッシュが単一ソース）
     setMobileTab,
     setSettingsOpen,
     handleExecutionResult,

@@ -12,7 +12,6 @@ import { useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { clearAuth } from '../../core/auth';
 import { useThreadStatus } from '../../core/cache';
-import type { ThreadStatus_API } from '../../core/models';
 import { ThreadsList } from './ThreadsList';
 import { ChatPane } from './ChatPane';
 import { CardsPane } from './CardsPane';
@@ -24,30 +23,23 @@ export function ChatLayout() {
   const { threadId } = useParams<{ threadId: string }>();
   
   // P1-B: 全ての状態管理を useReducer に移行
+  // NOTE: status/loading はキャッシュが単一ソース（二重管理防止）
   const {
     state,
     appendMessage,
     seedIfEmpty,
-    setStatus,
     setMobileTab,
     setSettingsOpen,
     handleExecutionResult,
   } = useChatReducer(threadId, navigate);
 
   // PERF-S1: Status取得のキャッシュ（TTL 10秒・inflight共有）
+  // キャッシュが単一ソース（reducer には status を持たせない）
   const { 
-    status: cachedStatus, 
+    status, 
     loading, 
     refresh: refreshThreadStatus 
-  } = useThreadStatus(threadId, {
-    onStatusChange: useCallback((newStatus: ThreadStatus_API | null) => {
-      // Sync cached status to reducer state
-      setStatus(newStatus);
-    }, [setStatus]),
-  });
-
-  // Use cached status (synced to reducer via onStatusChange)
-  const status = state.status ?? cachedStatus;
+  } = useThreadStatus(threadId);
 
   // Destructure state for easy access
   const {
