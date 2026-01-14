@@ -170,6 +170,9 @@ export async function executeCreate(
       };
     }
 
+    // P1-1: スレッド作成後に refresh
+    await refreshAfterWrite('THREAD_CREATE', threadId);
+
     return {
       success: true,
       message,
@@ -414,6 +417,9 @@ export async function executeThreadCreate(
       };
     }
 
+    // P1-1: スレッド作成後に refresh
+    await refreshAfterWrite('THREAD_CREATE', threadId);
+
     return {
       success: true,
       message: `✅ スレッドを作成しました。\nこのまま「候補出して」「来週の午後で」など入力してください。`,
@@ -461,6 +467,9 @@ export async function executeInviteList(
       if (!ensuredThreadId) {
         return { success: false, message: '❌ スレッド作成に失敗しました（threadId取得不可）' };
       }
+
+      // P1-1: スレッド作成後に refresh
+      await refreshAfterWrite('THREAD_CREATE', ensuredThreadId);
     }
 
     const membersResponse = await listsApi.getMembers(targetList.id) as any;

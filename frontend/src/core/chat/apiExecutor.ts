@@ -800,6 +800,12 @@ async function executeAutoProposeConfirm(
       
       message += '\n💡 リンクをコピーして送信してください。';
     }
+
+    // P1-1: スレッド作成後に refresh
+    const createdThreadId = response.thread?.id;
+    if (createdThreadId) {
+      await refreshAfterWrite('THREAD_CREATE', createdThreadId);
+    }
     
     return {
       success: true,
