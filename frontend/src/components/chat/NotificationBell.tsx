@@ -3,9 +3,9 @@
  * Displays inbox icon with unread count and drawer
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { inboxApi } from '../../core/api';
+import { getInbox, subscribeInbox } from '../../core/cache';
 import type { InboxNotification } from '../../core/models';
 import { formatDateTimeForViewer } from '../../utils/datetime';
 
@@ -15,21 +15,29 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await inboxApi.list();
-      setNotifications(response.items || []);
+      // P1-1: キャッシュ経由で取得（TTL 10秒 + inflight共有）
+      const items = await getInbox();
+      setNotifications(items || []);
     } catch (error) {
       console.error('Failed to load notifications:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+    
+    // P1-1: キャッシュ更新をsubscribe（refreshAfterWrite後の自動更新）
+    const unsubscribe = subscribeInbox((updatedItems) => {
+      setNotifications(updatedItems || []);
+    });
+    
+    return unsubscribe;
+  }, [loadNotifications]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 

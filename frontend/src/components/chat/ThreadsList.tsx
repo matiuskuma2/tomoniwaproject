@@ -4,9 +4,9 @@
  * Uses GET /api/threads
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { threadsApi } from '../../core/api';
+import { getThreadsList, subscribeThreadsList } from '../../core/cache';
 import type { Thread } from '../../core/models';
 
 export function ThreadsList() {
@@ -15,21 +15,29 @@ export function ThreadsList() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadThreads();
-  }, []);
-
-  const loadThreads = async () => {
+  const loadThreads = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await threadsApi.list();
-      setThreads(response.threads || []);
+      // P1-1: キャッシュ経由で取得（TTL 30秒 + inflight共有）
+      const threads = await getThreadsList();
+      setThreads(threads || []);
     } catch (error) {
       console.error('Failed to load threads:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadThreads();
+    
+    // P1-1: キャッシュ更新をsubscribe（refreshAfterWrite後の自動更新）
+    const unsubscribe = subscribeThreadsList((updatedThreads) => {
+      setThreads(updatedThreads || []);
+    });
+    
+    return unsubscribe;
+  }, [loadThreads]);
 
   const getStatusBadge = (status: string) => {
     const styles = {
