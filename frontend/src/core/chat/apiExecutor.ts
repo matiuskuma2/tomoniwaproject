@@ -18,6 +18,7 @@ import { pendingActionsApi, type PendingDecision, type PrepareSendResponse } fro
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
+import { setStatus as setCacheStatus } from '../cache';
 
 // P1-1: 分割した executor をインポート
 import {
@@ -29,6 +30,21 @@ import {
   executeListMembers,
   executeListAddMember,
 } from './executors';
+
+// ============================================================
+// PERF-S1: キャッシュ連携ヘルパー
+// ============================================================
+
+/**
+ * getStatus を呼んでキャッシュも更新する
+ * executor 内では常に最新データを使用しつつ、キャッシュも更新
+ */
+async function getStatusWithCache(threadId: string): Promise<ThreadStatus_API> {
+  const status = await threadsApi.getStatus(threadId);
+  // キャッシュを更新（他の画面でも最新に）
+  setCacheStatus(threadId, status);
+  return status;
+}
 
 // Phase Next-5 Day2.1: Type-safe ExecutionResult
 export type ExecutionResultData =
@@ -855,7 +871,7 @@ async function executeRemindPending(
   
   try {
     // Get thread status
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // Get pending invites
     const pendingInvites = status.invites
@@ -1016,7 +1032,7 @@ async function executeNotifyConfirmed(
   
   try {
     // Get thread status
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // Check if thread is confirmed
     if (status.thread.status !== 'confirmed') {
@@ -1281,7 +1297,7 @@ async function executeAdditionalPropose(
   
   try {
     // (1) スレッド状態を取得
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // (2) 追加候補が必要か判定
     const needsMoreProposals = analyzeStatusForPropose(status);
@@ -1605,7 +1621,7 @@ async function executeStatusCheck(
     }
 
     // Single thread status
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // Build status message
     let message = `📊 ${status.thread.title}\n\n`;
@@ -1699,7 +1715,7 @@ async function executeFinalize(
 
   try {
     // Get thread status to find slot_id
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     if (!status.slots || status.slots.length === 0) {
       return {
@@ -1960,7 +1976,7 @@ async function executeNeedResponseList(
   
   try {
     // Get thread status
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // Phase2: proposal_info が無い環境でも落ちないガード
     const proposalInfo = (status as any).proposal_info || null;
@@ -2103,7 +2119,7 @@ async function executeRemindNeedResponse(
   
   try {
     // Get thread status
-    const status = await threadsApi.getStatus(threadId);
+    const status = await getStatusWithCache(threadId);
     
     // Check if thread is active
     if (status.thread.status === 'confirmed' || status.thread.status === 'cancelled') {

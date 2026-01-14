@@ -5,12 +5,14 @@
  * Mobile: Tabs for Threads/Chat/Cards
  * 
  * P1-B: useReducer で状態管理を一元化（運用インシデント対策）
+ * PERF-S1: Status取得のキャッシュ（1万人同時接続対策）
  */
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { threadsApi } from '../../core/api';
 import { clearAuth } from '../../core/auth';
+import { useThreadStatus } from '../../core/cache';
+import type { ThreadStatus_API } from '../../core/models';
 import { ThreadsList } from './ThreadsList';
 import { ChatPane } from './ChatPane';
 import { CardsPane } from './CardsPane';
@@ -27,16 +29,28 @@ export function ChatLayout() {
     appendMessage,
     seedIfEmpty,
     setStatus,
-    setLoading,
     setMobileTab,
     setSettingsOpen,
     handleExecutionResult,
   } = useChatReducer(threadId, navigate);
 
+  // PERF-S1: Status取得のキャッシュ（TTL 10秒・inflight共有）
+  const { 
+    status: cachedStatus, 
+    loading, 
+    refresh: refreshThreadStatus 
+  } = useThreadStatus(threadId, {
+    onStatusChange: useCallback((newStatus: ThreadStatus_API | null) => {
+      // Sync cached status to reducer state
+      setStatus(newStatus);
+    }, [setStatus]),
+  });
+
+  // Use cached status (synced to reducer via onStatusChange)
+  const status = state.status ?? cachedStatus;
+
   // Destructure state for easy access
   const {
-    status,
-    loading,
     mobileTab,
     isSettingsOpen,
     messagesByThreadId,
@@ -52,34 +66,19 @@ export function ChatLayout() {
     persistEnabled,
   } = state;
 
-  // Load thread status when threadId changes
+  // Auto-switch to chat on mobile when thread selected
   useEffect(() => {
     if (threadId) {
-      loadThreadStatus(threadId);
-      setMobileTab('chat'); // Auto-switch to chat on mobile when thread selected
-    } else {
-      setStatus(null);
+      setMobileTab('chat');
     }
-  }, [threadId, setMobileTab, setStatus]);
+  }, [threadId, setMobileTab]);
 
-  const loadThreadStatus = async (id: string) => {
-    try {
-      setLoading(true);
-      const response = await threadsApi.getStatus(id);
-      setStatus(response);
-    } catch (error) {
-      console.error('Failed to load thread status:', error);
-      setStatus(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleThreadUpdate = () => {
+  // Handle thread update (force refresh cache)
+  const handleThreadUpdate = useCallback(() => {
     if (threadId) {
-      loadThreadStatus(threadId);
+      refreshThreadStatus();
     }
-  };
+  }, [threadId, refreshThreadStatus]);
 
   const handleLogout = async () => {
     try {
