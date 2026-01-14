@@ -16,6 +16,9 @@ import type { ExecutionResult } from './types';
 import type { ThreadStatus_API } from '../../models';
 import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../../utils/datetime';
 import { threadStatusCache } from '../../cache';
+// P0-2: Write 後の refresh 強制
+import { getRefreshActions, type WriteOp } from '../../refresh/refreshMap';
+import { runRefresh } from '../../refresh/runRefresh';
 
 // ============================================================
 // Helper Functions
@@ -29,6 +32,17 @@ async function getStatusWithCache(threadId: string): Promise<ThreadStatus_API> {
   const status = await threadsApi.getStatus(threadId);
   threadStatusCache.setStatus(threadId, status);
   return status;
+}
+
+/**
+ * P0-2: Write 操作後に必須の refresh を実行
+ */
+async function refreshAfterWrite(op: WriteOp, threadId: string): Promise<void> {
+  try {
+    await runRefresh(getRefreshActions(op, { threadId }));
+  } catch (e) {
+    console.warn('[thread.refreshAfterWrite] failed:', op, threadId, e);
+  }
 }
 
 /**
@@ -353,6 +367,9 @@ export async function executeFinalize(
     if (response.meeting) {
       message += `\n🎥 Google Meet:\n${response.meeting.url}\n`;
     }
+
+    // P0-2: Write 後の refresh 強制
+    await refreshAfterWrite('FINALIZE', threadId);
 
     return {
       success: true,

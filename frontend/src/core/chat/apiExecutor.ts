@@ -21,6 +21,9 @@ import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime'
 import { setStatus as setCacheStatus } from '../cache';
 // P0-1: PendingState 正規化
 import type { PendingState } from './pendingTypes';
+// P0-2: Write 後の refresh 強制
+import { getRefreshActions, type WriteOp } from '../refresh/refreshMap';
+import { runRefresh } from '../refresh/runRefresh';
 import { 
   isPendingAction, 
   isPendingRemind, 
@@ -60,6 +63,19 @@ async function getStatusWithCache(threadId: string): Promise<ThreadStatus_API> {
   // キャッシュを更新（他の画面でも最新に）
   setCacheStatus(threadId, status);
   return status;
+}
+
+/**
+ * P0-2: Write 操作後に必須の refresh を実行
+ * refresh 失敗で Write を失敗扱いにしない（運用インシデント回避）
+ */
+async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> {
+  try {
+    const actions = getRefreshActions(op, threadId ? { threadId } : undefined);
+    await runRefresh(actions);
+  } catch (e) {
+    console.warn('[refreshAfterWrite] failed:', op, threadId, e);
+  }
 }
 
 // Phase Next-5 Day2.1: Type-safe ExecutionResult
@@ -529,6 +545,10 @@ async function executePendingDecision(
       if (isAddSlots) {
         // Phase2: 追加候補の実行結果
         const addSlotsResponse = executeResponse as any;
+        
+        // P0-2: Write 後の refresh 強制
+        await refreshAfterWrite('ADD_SLOTS', addSlotsResponse.thread_id);
+        
         return {
           success: true,
           message: addSlotsResponse.message_for_chat || 
@@ -550,6 +570,9 @@ async function executePendingDecision(
       // 通常の招待送信
       let message = executeResponse.message_for_chat || 
         `✅ ${executeResponse.result.inserted}名に招待を送信しました。`;
+      
+      // P0-2: Write 後の refresh 強制
+      await refreshAfterWrite('INVITE_SEND', executeResponse.thread_id);
       
       return {
         success: true,
@@ -949,6 +972,9 @@ async function executeRemindPendingConfirm(
       message += invite.template_message;
       message += '\n\n────────────────────────────\n\n';
     });
+    
+    // P0-2: Write 後の refresh 強制
+    await refreshAfterWrite('REMIND_PENDING', threadId);
     
     return {
       success: true,
@@ -1801,6 +1827,9 @@ async function executeRemindNeedResponseConfirm(
       const nextAvailable = new Date(response.next_reminder_available_at);
       message += `\n⏰ 次回リマインド可能: ${formatDateTime(nextAvailable.toISOString())}`;
     }
+    
+    // P0-2: Write 後の refresh 強制
+    await refreshAfterWrite('REMIND_NEED_RESPONSE', threadId);
     
     return {
       success: true,

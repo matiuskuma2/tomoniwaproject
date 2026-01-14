@@ -14,7 +14,8 @@
 export type WriteOp =
   | 'THREAD_CREATE'           // スレッド作成
   | 'INVITE_SEND'             // 招待送信
-  | 'INVITE_ADD_SLOTS'        // 候補追加
+  | 'INVITE_ADD_SLOTS'        // 候補追加（旧名、互換性のため残す）
+  | 'ADD_SLOTS'               // 候補追加（pending_actions execute）
   | 'REMIND_PENDING'          // 未返信リマインド送信
   | 'REMIND_NEED_RESPONSE'    // 再回答リマインド送信
   | 'FINALIZE'                // 日程確定
@@ -64,6 +65,7 @@ export function getRefreshActions(
 
     // 候補追加: ステータス
     case 'INVITE_ADD_SLOTS':
+    case 'ADD_SLOTS':
       return args.threadId 
         ? [{ type: 'STATUS', threadId: args.threadId }]
         : [];
@@ -137,6 +139,7 @@ export function requiresStatusRefresh(op: WriteOp): boolean {
     'THREAD_CREATE',
     'INVITE_SEND',
     'INVITE_ADD_SLOTS',
+    'ADD_SLOTS',
     'REMIND_PENDING',
     'REMIND_NEED_RESPONSE',
     'FINALIZE',
