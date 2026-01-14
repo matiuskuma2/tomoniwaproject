@@ -3,14 +3,32 @@
  * Execute API calls based on classified intent
  */
 
+/**
+ * API Executor for Phase Next-2 (P0) + Phase Next-3 (P1)
+ * Execute API calls based on classified intent
+ * 
+ * P1-1: 一部の executor を executors/ に分割
+ * - calendar.ts: schedule.today, schedule.week, schedule.freebusy
+ * - list.ts: list.create, list.list, list.members, list.add_member
+ */
+
 import { threadsApi } from '../api/threads';
-import { calendarApi } from '../api/calendar';
 import { listsApi } from '../api/lists';
-import { contactsApi } from '../api/contacts';
 import { pendingActionsApi, type PendingDecision, type PrepareSendResponse } from '../api/pendingActions';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
-import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
+import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
+
+// P1-1: 分割した executor をインポート
+import {
+  executeToday,
+  executeWeek,
+  executeFreeBusy,
+  executeListCreate,
+  executeListList,
+  executeListMembers,
+  executeListAddMember,
+} from './executors';
 
 // Phase Next-5 Day2.1: Type-safe ExecutionResult
 export type ExecutionResultData =
@@ -603,254 +621,8 @@ function buildPrepareMessage(response: PrepareSendResponse): string {
 
 // ============================================================
 // Beta A: リスト5コマンド
+// P1-1: executors/list.ts に分離済み
 // ============================================================
-
-/**
- * Beta A: list.create - リスト作成
- */
-async function executeListCreate(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { listName } = intentResult.params;
-  
-  if (!listName) {
-    return {
-      success: false,
-      message: 'リスト名を指定してください。',
-      needsClarification: {
-        field: 'listName',
-        message: '作成するリストの名前を入力してください。\n\n例: 「営業部リストを作って」',
-      },
-    };
-  }
-  
-  try {
-    const response = await listsApi.create({
-      name: listName,
-    });
-    
-    return {
-      success: true,
-      message: `✅ リスト「${listName}」を作成しました。\n\nメンバーを追加するには「tanaka@example.comを${listName}に追加」と入力してください。`,
-      data: {
-        kind: 'list.created',
-        payload: {
-          listId: response.id,
-          listName: response.name,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ リスト作成に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * Beta A: list.list - リスト一覧
- */
-async function executeListList(): Promise<ExecutionResult> {
-  try {
-    const response = await listsApi.list() as any;
-    const lists = response.lists || response.items || [];
-    
-    if (lists.length === 0) {
-      return {
-        success: true,
-        message: '📋 リストがありません。\n\n「〇〇リストを作って」でリストを作成できます。',
-        data: {
-          kind: 'list.listed',
-          payload: { lists: [] },
-        },
-      };
-    }
-    
-    let message = `📋 リスト一覧（${lists.length}件）\n\n`;
-    lists.forEach((list: any, index: number) => {
-      message += `${index + 1}. ${list.name}`;
-      if (list.description) message += ` - ${list.description}`;
-      message += '\n';
-    });
-    
-    message += '\n💡 「〇〇リストのメンバー」でメンバーを確認できます。';
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'list.listed',
-        payload: { lists },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ リスト取得に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * Beta A: list.members - リストメンバー表示
- */
-async function executeListMembers(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { listName } = intentResult.params;
-  
-  if (!listName) {
-    return {
-      success: false,
-      message: 'リスト名を指定してください。',
-      needsClarification: {
-        field: 'listName',
-        message: 'どのリストのメンバーを表示しますか？\n\n例: 「営業部リストのメンバー」',
-      },
-    };
-  }
-  
-  try {
-    // リストIDを取得
-    const listsResponse = await listsApi.list() as any;
-    const lists = listsResponse.lists || listsResponse.items || [];
-    const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
-    
-    if (!targetList) {
-      return {
-        success: false,
-        message: `❌ リスト「${listName}」が見つかりませんでした。`,
-      };
-    }
-    
-    const membersResponse = await listsApi.getMembers(targetList.id) as any;
-    const members = membersResponse.members || membersResponse.items || [];
-    
-    if (members.length === 0) {
-      return {
-        success: true,
-        message: `📋 リスト「${targetList.name}」にはメンバーがいません。\n\n「tanaka@example.comを${targetList.name}に追加」でメンバーを追加できます。`,
-        data: {
-          kind: 'list.members',
-          payload: { listName: targetList.name, members: [] },
-        },
-      };
-    }
-    
-    let message = `📋 「${targetList.name}」のメンバー（${members.length}名）\n\n`;
-    members.forEach((member: any, index: number) => {
-      message += `${index + 1}. ${member.contact_display_name || member.contact_email || '名前なし'}`;
-      if (member.contact_email) message += ` <${member.contact_email}>`;
-      message += '\n';
-    });
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'list.members',
-        payload: { listName: targetList.name, members },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ メンバー取得に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * Beta A: list.add_member - リストにメンバー追加
- */
-async function executeListAddMember(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { emails, listName } = intentResult.params;
-  
-  if (!emails || emails.length === 0) {
-    return {
-      success: false,
-      message: 'メールアドレスを指定してください。',
-      needsClarification: {
-        field: 'emails',
-        message: '追加するメールアドレスを入力してください。\n\n例: 「tanaka@example.comを営業部リストに追加」',
-      },
-    };
-  }
-  
-  if (!listName) {
-    return {
-      success: false,
-      message: 'リスト名を指定してください。',
-      needsClarification: {
-        field: 'listName',
-        message: 'どのリストに追加しますか？\n\n例: 「営業部リストに追加」',
-      },
-    };
-  }
-  
-  try {
-    // リストIDを取得
-    const listsResponse = await listsApi.list() as any;
-    const lists = listsResponse.lists || listsResponse.items || [];
-    const targetList = lists.find((l: any) => l.name === listName || l.name.includes(listName));
-    
-    if (!targetList) {
-      return {
-        success: false,
-        message: `❌ リスト「${listName}」が見つかりませんでした。`,
-      };
-    }
-    
-    // 各メールアドレスに対してコンタクト作成 → リストに追加
-    let addedCount = 0;
-    const errors: string[] = [];
-    
-    for (const email of emails) {
-      try {
-        // コンタクト作成（既存の場合は既存を使用）
-        let contact;
-        try {
-          contact = await contactsApi.create({
-            kind: 'external_person',
-            email,
-            display_name: email.split('@')[0],
-          });
-        } catch (e: any) {
-          // 既存コンタクトの場合はリストから検索
-          const contactsResponse = await contactsApi.list({ q: email });
-          contact = (contactsResponse.items || []).find((c: any) => c.email === email);
-          if (!contact) throw e;
-        }
-        
-        // リストに追加
-        await listsApi.addMember(targetList.id, { contact_id: contact.id });
-        addedCount++;
-      } catch (e: any) {
-        errors.push(`${email}: ${e.message || '追加失敗'}`);
-      }
-    }
-    
-    let message = `✅ ${addedCount}名をリスト「${targetList.name}」に追加しました。`;
-    
-    if (errors.length > 0) {
-      message += `\n\n⚠️ エラー:\n${errors.join('\n')}`;
-    }
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'list.member_added',
-        payload: {
-          listName: targetList.name,
-          email: emails[0],
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ メンバー追加に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
 
 // ============================================================
 // Phase Next-5 (P2): Auto-propose (自動調整)
@@ -1698,178 +1470,8 @@ function formatProposalLabel(start: Date, end: Date): string {
 
 // ============================================================
 // Phase Next-3 (P1): Calendar Read-only
+// REFACTORED: Moved to executors/calendar.ts
 // ============================================================
-
-/**
- * P1-1: schedule.today
- */
-async function executeToday(): Promise<ExecutionResult> {
-  try {
-    const response = await calendarApi.getToday();
-    
-    // Handle warnings
-    if (response.warning) {
-      return {
-        success: true,
-        message: getWarningMessage(response.warning),
-        data: {
-          kind: 'calendar.today',
-          payload: response,
-        },
-      };
-    }
-    
-    // No events
-    if (response.events.length === 0) {
-      return {
-        success: true,
-        message: '今日の予定はありません。',
-        data: {
-          kind: 'calendar.today',
-          payload: response,
-        },
-      };
-    }
-    
-    // Build message with events
-    let message = `📅 今日の予定（${response.events.length}件）\n\n`;
-    response.events.forEach((event, index) => {
-      message += `${index + 1}. ${event.summary}\n`;
-      message += `   ${formatTimeRange(event.start, event.end)}\n`;
-      if (event.meet_url) {
-        message += `   🎥 Meet: ${event.meet_url}\n`;
-      }
-      message += '\n';
-    });
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'calendar.today',
-        payload: response,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P1-2: schedule.week
- */
-async function executeWeek(): Promise<ExecutionResult> {
-  try {
-    const response = await calendarApi.getWeek();
-    
-    // Handle warnings
-    if (response.warning) {
-      return {
-        success: true,
-        message: getWarningMessage(response.warning),
-        data: {
-          kind: 'calendar.week',
-          payload: response,
-        },
-      };
-    }
-    
-    // No events
-    if (response.events.length === 0) {
-      return {
-        success: true,
-        message: '今週の予定はありません。',
-        data: {
-          kind: 'calendar.week',
-          payload: response,
-        },
-      };
-    }
-    
-    // Build message with events
-    let message = `📅 今週の予定（${response.events.length}件）\n\n`;
-    response.events.forEach((event, index) => {
-      message += `${index + 1}. ${event.summary}\n`;
-      message += `   ${formatDateTimeRange(event.start, event.end)}\n`;
-      if (event.meet_url) {
-        message += `   🎥 Meet: ${event.meet_url}\n`;
-      }
-      message += '\n';
-    });
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'calendar.week',
-        payload: response,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P1-3: schedule.freebusy
- */
-async function executeFreeBusy(intentResult: IntentResult): Promise<ExecutionResult> {
-  const range = (intentResult.params.range as 'today' | 'week') || 'today';
-  
-  try {
-    const response = await calendarApi.getFreeBusy(range);
-    
-    // Handle warnings
-    if (response.warning) {
-      return {
-        success: true,
-        message: getWarningMessage(response.warning),
-        data: {
-          kind: 'calendar.freebusy',
-          payload: response,
-        },
-      };
-    }
-    
-    // No busy slots
-    if (response.busy.length === 0) {
-      return {
-        success: true,
-        message: range === 'today' ? '今日は終日空いています。' : '今週は終日空いています。',
-        data: {
-          kind: 'calendar.freebusy',
-          payload: response,
-        },
-      };
-    }
-    
-    // Build message with busy slots
-    let message = range === 'today' ? '📊 今日の予定が入っている時間:\n\n' : '📊 今週の予定が入っている時間:\n\n';
-    response.busy.forEach((slot, index) => {
-      message += `${index + 1}. ${formatDateTimeRange(slot.start, slot.end)}\n`;
-    });
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'calendar.freebusy',
-        payload: response,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
 
 // ============================================================
 // Phase Next-2 (P0): Scheduling
@@ -2301,42 +1903,9 @@ async function executeInviteList(intentResult: IntentResult): Promise<ExecutionR
 
 // ============================================================
 // Helper Functions
+// NOTE: getWarningMessage, formatTimeRange, formatDateTimeRange は
+//       executors/calendar.ts に移動済み
 // ============================================================
-
-/**
- * Get user-friendly warning message
- */
-function getWarningMessage(warning: string): string {
-  const messages: Record<string, string> = {
-    'google_calendar_permission_missing': '⚠️ Google Calendar の権限が不足しています。\n予定情報を取得できませんでした。',
-    'google_account_not_linked': '⚠️ Google アカウントが連携されていません。\n設定から連携してください。',
-  };
-  return messages[warning] || '⚠️ 予定情報を取得できませんでした。';
-}
-
-/**
- * 安全な時刻フォーマット関数
- */
-function safeFormatTime(ts: string | Date): string {
-  const d = typeof ts === 'string' ? new Date(ts) : ts;
-  if (!d || Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-}
-
-/**
- * Format time range (same day, time only)
- */
-function formatTimeRange(start: string, end: string): string {
-  return `${safeFormatTime(start)} - ${safeFormatTime(end)}`;
-}
-
-/**
- * Format date-time range (with date)
- * ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用
- */
-function formatDateTimeRange(start: string, end: string): string {
-  return formatDateTimeRangeForViewer(start, end, DEFAULT_TIMEZONE);
-}
 
 function getStatusLabel(status: string): string {
   const labels: Record<string, string> = {
