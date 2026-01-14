@@ -18,6 +18,8 @@
 
 import { threadsApi } from '../api/threads';
 import type { ThreadStatus_API } from '../models';
+// P1-2: Structured logger
+import { log } from '../platform';
 
 // ============================================================
 // Configuration
@@ -108,19 +110,19 @@ export async function getStatus(
   // 1. Check cache (TTL valid)
   const cached = cache.get(threadId);
   if (cached && !isExpired(cached)) {
-    console.log(`[StatusCache] HIT: ${threadId} (age: ${Date.now() - cached.timestamp}ms)`);
+    log.cacheDebug('StatusCache HIT', { module: 'StatusCache', threadId, age: Date.now() - cached.timestamp });
     return cached.data;
   }
   
   // 2. Check inflight (return same promise)
   const existing = inflight.get(threadId);
   if (existing) {
-    console.log(`[StatusCache] INFLIGHT: ${threadId} (waiting for existing request)`);
+    log.cacheDebug('StatusCache INFLIGHT', { module: 'StatusCache', threadId });
     return existing.promise;
   }
   
   // 3. Fetch and cache
-  console.log(`[StatusCache] MISS: ${threadId} (fetching from server)`);
+  log.cacheDebug('StatusCache MISS', { module: 'StatusCache', threadId });
   
   const promise = threadsApi.getStatus(threadId)
     .then(data => {
@@ -157,7 +159,7 @@ export async function getStatus(
  * 送信後・確定後など、確実に最新を取得したい場合に使用
  */
 export async function refreshStatus(threadId: string): Promise<ThreadStatus_API> {
-  console.log(`[StatusCache] REFRESH: ${threadId} (forced)`);
+  log.cacheDebug('StatusCache REFRESH', { module: 'StatusCache', threadId });
   
   // Clear existing cache
   cache.delete(threadId);
@@ -191,7 +193,7 @@ export async function refreshStatus(threadId: string): Promise<ThreadStatus_API>
  * キャッシュを削除するだけで、新規fetchはしない
  */
 export function invalidate(threadId: string): void {
-  console.log(`[StatusCache] INVALIDATE: ${threadId}`);
+  log.cacheDebug('StatusCache INVALIDATE', { module: 'StatusCache', threadId });
   cache.delete(threadId);
 }
 
@@ -199,7 +201,7 @@ export function invalidate(threadId: string): void {
  * Invalidate all cache
  */
 export function invalidateAll(): void {
-  console.log('[StatusCache] INVALIDATE ALL');
+  log.cacheDebug('StatusCache INVALIDATE ALL', { module: 'StatusCache' });
   cache.clear();
 }
 
@@ -229,7 +231,7 @@ export function updateOptimistic(
 ): ThreadStatus_API | null {
   const cached = cache.get(threadId);
   if (!cached) {
-    console.warn(`[StatusCache] OPTIMISTIC: ${threadId} not in cache, skipping`);
+    log.warn('StatusCache OPTIMISTIC: not in cache', { module: 'StatusCache', threadId });
     return null;
   }
   
@@ -245,7 +247,7 @@ export function updateOptimistic(
   // Notify listeners
   notifyListeners(threadId, updated);
   
-  console.log(`[StatusCache] OPTIMISTIC: ${threadId} updated`);
+  log.cacheDebug('StatusCache OPTIMISTIC updated', { module: 'StatusCache', threadId });
   return updated;
 }
 
@@ -261,7 +263,7 @@ export function setStatus(threadId: string, data: ThreadStatus_API): void {
     ttl: DEFAULT_TTL_MS,
   });
   notifyListeners(threadId, data);
-  console.log(`[StatusCache] SET: ${threadId}`);
+  log.cacheDebug('StatusCache SET', { module: 'StatusCache', threadId });
 }
 
 // ============================================================
