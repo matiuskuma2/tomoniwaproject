@@ -204,7 +204,7 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
 | ID | 問題 | 影響 | 推奨対応 | 見積もり | 状態 |
 |----|------|------|----------|----------|------|
 | TD-001 | /settings 導線なし | タイムゾーン設定不可 | ヘッダーにメニュー追加 | 30分 | ✅ 完了 (dc9ce44) |
-| TD-002 | apiExecutor.ts 2732行 | 保守困難 | 機能別ファイル分割 | 2日 | ⏳ 保留 |
+| TD-002 | apiExecutor.ts 2732→2283行 | 保守困難 | 機能別ファイル分割 | 2日 | 🔄 進行中 (ea849b0) |
 | TD-003 | intentClassifier.ts 763行 | 保守困難 | インテント別ファイル分割 | 1日 | ⏳ 保留 |
 | TD-004 | ChatLayout.tsx 563行 | 状態管理複雑 | カスタムフック抽出 | 1日 | ⏳ 保留 |
 
@@ -235,11 +235,12 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
 
 ### Phase 2: 構造改善（来週）
 1. **TD-002**: apiExecutor.ts の分割
-   - `executors/calendar.ts`
-   - `executors/thread.ts`
-   - `executors/remind.ts`
-   - `executors/pending.ts`
-   - `executors/list.ts`
+   - `executors/calendar.ts` ✅ 完了 (215行)
+   - `executors/list.ts` ✅ 完了 (261行)
+   - `executors/types.ts` ✅ 完了 (162行)
+   - `executors/thread.ts` ⏳ 保留
+   - `executors/remind.ts` ⏳ 保留
+   - `executors/pending.ts` ⏳ 保留
 
 2. **TD-003**: intentClassifier.ts の分割
    - `classifiers/calendar.ts`
