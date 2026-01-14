@@ -206,7 +206,7 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
 | TD-001 | /settings 導線なし | タイムゾーン設定不可 | ヘッダーにメニュー追加 | 30分 | ✅ 完了 (dc9ce44) |
 | TD-002 | apiExecutor.ts 2732→2283行 | 保守困難 | 機能別ファイル分割 | 2日 | 🔄 進行中 (ea849b0) |
 | TD-003 | intentClassifier.ts 763行 | 保守困難 | インテント別ファイル分割 | 1日 | ⏳ 保留 |
-| TD-004 | ChatLayout.tsx 563行 | 状態管理複雑 | カスタムフック抽出 | 1日 | ⏳ 保留 |
+| TD-004 | ChatLayout.tsx 637→2289行 | 状態管理複雑 | useReducer化 | 1日 | ✅ 完了 (9e905ab) |
 
 ### 5.2 🟡 Medium（計画的対応）
 
@@ -248,13 +248,14 @@ const [remindCountByThreadId, setRemindCountByThreadId] = useState<Record<string
    - `classifiers/confirm.ts`
 
 ### Phase 3: 状態管理改善（再来週）
-1. **TD-004**: ChatLayout のカスタムフック抽出
-   - `usePendingStates.ts`
-   - `useMessageHistory.ts`
-   - `useCalendarData.ts`
+1. **TD-004**: ChatLayout の useReducer 化 ✅ 完了
+   - `useChatReducer.ts` 新規作成 (635行)
+   - ChatLayout.tsx: 637行 → 289行 (54%削減)
+   - 全 state を1オブジェクトに集約
+   - 型安全な dispatch ベースの状態更新
 
-2. **TD-005**: Context API 導入
-   - `ChatContext` で共有状態管理
+2. **TD-005**: Context API 導入 (後回し)
+   - useReducer 化により優先度低下
 
 ### Phase 4: テスト強化（月末）
 1. **TD-009**: Vitest 導入・基本テスト作成
