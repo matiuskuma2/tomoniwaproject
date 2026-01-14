@@ -29,6 +29,12 @@ import {
   executeListList,
   executeListMembers,
   executeListAddMember,
+  // TD-002: Thread executors
+  executeCreate as executeCreateFromThread,
+  executeStatusCheck as executeStatusCheckFromThread,
+  executeFinalize as executeFinalizeFromThread,
+  executeThreadCreate as executeThreadCreateFromThread,
+  executeInviteList as executeInviteListFromThread,
 } from './executors';
 
 // ============================================================
@@ -311,21 +317,21 @@ export async function executeIntent(
     case 'schedule.freebusy':
       return executeFreeBusy(intentResult);
     
-    // Phase Next-2 (P0): Scheduling
+    // Phase Next-2 (P0): Scheduling - TD-002: Use split executors
     case 'thread.create':
-      return executeThreadCreate(intentResult);
+      return executeThreadCreateFromThread(intentResult);
     
     case 'schedule.external.create':
-      return executeCreate(intentResult);
+      return executeCreateFromThread(intentResult);
     
     case 'schedule.status.check':
-      return executeStatusCheck(intentResult);
+      return executeStatusCheckFromThread(intentResult);
     
     case 'schedule.finalize':
-      return executeFinalize(intentResult);
+      return executeFinalizeFromThread(intentResult);
     
     case 'schedule.invite.list':
-      return executeInviteList(intentResult);
+      return executeInviteListFromThread(intentResult);
     
     // Phase2 P2-D0: 再回答必要者リスト表示
     case 'schedule.need_response.list':
@@ -1204,38 +1210,16 @@ async function executeNotifyConfirmedCancel(): Promise<ExecutionResult> {
 // ============================================================
 
 /**
- * Analyze if votes are split (Phase Next-6 Day2)
- * Trigger conditions:
- * 1. maxVotes <= 1 (no one gathered)
- * 2. topSlots.length >= 2 (tied votes)
+ * Phase Next-5 Day3: Analyze status for additional proposal
+ * Pure function: returns true if additional proposals are needed
  */
-function analyzeSplitVotes(status: ThreadStatus_API): {
-  shouldPropose: boolean;
-  summary: Array<{ label: string; votes: number }>;
-} {
-  if (status.slots.length === 0) {
-    return { shouldPropose: false, summary: [] };
-  }
-  
-  // Phase Next-6 Day2: Use server-side vote counts (負債ゼロ)
-  const slotVotes = status.slots.map((slot) => ({
-    label: slot.label ?? formatDateTime(slot.start_at), 
-    votes: slot.votes ?? 0
-  }));
-  
-  const maxVotes = Math.max(...slotVotes.map(s => s.votes));
-  const topSlots = slotVotes.filter(s => s.votes === maxVotes);
-  
-  // Trigger 1: 誰も集まってない
-  const noGathering = maxVotes <= 1;
-  
-  // Trigger 2: 同票で割れてる
-  const tiedVotes = topSlots.length >= 2;
-  
-  const shouldPropose = noGathering || tiedVotes;
-  
-  return { shouldPropose, summary: slotVotes };
+function analyzeStatusForPropose(status: ThreadStatus_API): boolean {
+  const { invites } = status;
+  const pendingCount = invites.filter((i) => i.status === 'pending' || i.status === null).length;
+  return pendingCount >= 1;
 }
+
+// NOTE: analyzeSplitVotes moved to executors/thread.ts
 
 /**
  * Wrapper for executeAdditionalPropose (Phase Next-6 Day2)
@@ -1491,452 +1475,21 @@ function formatProposalLabel(start: Date, end: Date): string {
 
 // ============================================================
 // Phase Next-2 (P0): Scheduling
+// TD-002: Moved to executors/thread.ts
+// - executeCreate
+// - executeStatusCheck
+// - executeFinalize
+// - executeThreadCreate
+// - executeInviteList
 // ============================================================
-
-/**
- * P0-1: schedule.external.create
- * Phase Next-2: Fixed title/description, email-based candidates
- */
-async function executeCreate(
-  intentResult: IntentResult
-): Promise<ExecutionResult> {
-  // Extract emails from intent params
-  const emails = intentResult.params.emails as string[] | undefined;
-  
-  if (!emails || emails.length === 0) {
-    return {
-      success: false,
-      message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
-      needsClarification: {
-        field: 'emails',
-        message: '送信先のメールアドレスを貼ってください。',
-      },
-    };
-  }
-
-  try {
-    // Build candidates from emails
-    const candidates = emails.map((email) => ({
-      email,
-      name: email.split('@')[0], // Use email prefix as name
-    }));
-
-    // Create thread with FIXED title/description
-    const response = await threadsApi.create({
-      title: '日程調整（自動生成）',
-      description: '', // Empty description
-      candidates,
-    });
-
-    // Build success message with invite URLs
-    const inviteCount = response.candidates?.length || 0;
-    let message = `✅ 調整を作成しました（${inviteCount}名）\n\n`;
-    
-    if (inviteCount > 0) {
-      message += '招待リンク:\n';
-      
-      // Show ALL invite URLs
-      response.candidates?.forEach((c) => {
-        message += `- ${c.email}: ${c.invite_url}\n`;
-      });
-    }
-
-    // Extract threadId from response
-    const threadId = response.thread?.id;
-    if (!threadId) {
-      return {
-        success: false,
-        message: '❌ スレッド作成に失敗しました（threadId取得不可）',
-      };
-    }
-
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'thread.create',
-        payload: { threadId },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * Phase Next-5 Day3: Analyze status for additional proposal
- * Pure function: returns true if additional proposals are needed
- * 
- * Day3 最小安全版:
- * - Rule 1: 未返信 >= 1 のみ
- * - 票割れ判定は Day3.5 で追加予定
- */
-function analyzeStatusForPropose(status: ThreadStatus_API): boolean {
-  const { invites } = status;
-  
-  // Rule 1: 未返信が1以上（status が pending または null）
-  const pendingCount = invites.filter((i) => i.status === 'pending' || i.status === null).length;
-  
-  return pendingCount >= 1;
-}
-
-/**
- * P0-2: schedule.status.check
- */
-async function executeStatusCheck(
-  intentResult: IntentResult
-): Promise<ExecutionResult> {
-  const { threadId, scope } = intentResult.params;
-
-  try {
-    // All threads
-    if (scope === 'all' || !threadId) {
-      const response = await threadsApi.list();
-      const activeThreads = response.threads.filter((t) => t.status === 'active');
-      
-      if (activeThreads.length === 0) {
-        return {
-          success: true,
-          message: '現在、募集中の調整はありません。',
-        };
-      }
-
-      let message = `📋 現在募集中の調整（${activeThreads.length}件）\n\n`;
-      activeThreads.forEach((thread, index) => {
-        message += `${index + 1}. ${thread.title}\n`;
-        message += `   作成日: ${new Date(thread.created_at).toLocaleDateString('ja-JP')}\n\n`;
-      });
-
-      return {
-        success: true,
-        message,
-        data: {
-          kind: 'thread.status',
-          payload: { threads: activeThreads },
-        },
-      };
-    }
-
-    // Single thread status
-    const status = await getStatusWithCache(threadId);
-    
-    // Build status message
-    let message = `📊 ${status.thread.title}\n\n`;
-    message += `状態: ${getStatusLabel(status.thread.status)}\n`;
-    message += `招待: ${status.invites.length}名\n`;
-    
-    const acceptedCount = status.invites.filter((i) => i.status === 'accepted').length;
-    const pendingCount = status.invites.filter((i) => i.status === 'pending').length;
-    
-    message += `承諾: ${acceptedCount}名\n`;
-    message += `未返信: ${pendingCount}名\n\n`;
-
-    // Show slots with votes
-    if (status.slots && status.slots.length > 0) {
-      message += '📅 候補日時:\n';
-      status.slots.forEach((slot, index) => {
-        const votes = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
-        message += `${index + 1}. ${formatDateTime(slot.start_at)} (${votes}票)\n`;
-      });
-    }
-    
-    // Phase Next-6 Day2: 票割れ検知（優先）
-    const split = analyzeSplitVotes(status);
-    
-    if (split.shouldPropose) {
-      message += '\n\n💡 票が割れています。追加候補を出しますか？';
-      message += '\n\n現在の投票状況:\n';
-      split.summary.forEach((item) => {
-        message += `- ${item.label}: ${item.votes}票\n`;
-      });
-      message += '\n「はい」で追加候補を3本提案します。';
-      message += '\n「いいえ」でキャンセルします。';
-      
-      // Return with split.propose.generated to trigger pending state
-      return {
-        success: true,
-        message,
-        data: {
-          kind: 'split.propose.generated',
-          payload: {
-            source: 'split',
-            threadId: status.thread.id,
-            voteSummary: split.summary,
-          },
-        },
-      };
-    }
-    
-    // Phase Next-5 Day3: 追加提案の判定（票割れがない場合）
-    const needsMoreProposals = analyzeStatusForPropose(status);
-    
-    if (needsMoreProposals) {
-      message += '\n💡 未返信や票割れが発生しています。';
-      message += '\n「追加候補出して」と入力すると、追加の候補日時を提案できます。';
-    }
-
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'thread.status',
-        payload: status,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P0-3: schedule.finalize
- */
-async function executeFinalize(
-  intentResult: IntentResult
-): Promise<ExecutionResult> {
-  const { threadId, slotNumber } = intentResult.params;
-
-  if (!threadId) {
-    return {
-      success: false,
-      message: 'スレッドが選択されていません。',
-      needsClarification: {
-        field: 'threadId',
-        message: 'どのスレッドの日程を確定しますか？',
-      },
-    };
-  }
-
-  try {
-    // Get thread status to find slot_id
-    const status = await getStatusWithCache(threadId);
-    
-    if (!status.slots || status.slots.length === 0) {
-      return {
-        success: false,
-        message: '候補日時が設定されていません。',
-      };
-    }
-
-    // Determine selected_slot_id
-    let selectedSlotId: string | undefined;
-
-    if (typeof slotNumber === 'number' && slotNumber > 0) {
-      // Use slot number (1-indexed)
-      const slotIndex = slotNumber - 1;
-      
-      if (slotIndex >= 0 && slotIndex < status.slots.length) {
-        selectedSlotId = status.slots[slotIndex].slot_id;
-        console.log('[Finalize] Resolved slotNumber', slotNumber, '-> slot_id', selectedSlotId);
-      } else {
-        // 範囲外エラー
-        return {
-          success: false,
-          message: `候補番号が範囲外です。1〜${status.slots.length} の範囲で指定してください。`,
-        };
-      }
-    }
-
-    if (!selectedSlotId) {
-      // slotNumber がない → 候補を表示して番号入力を促す
-      let message = 'どの候補日時で確定しますか？\n\n';
-      status.slots.forEach((slot, index) => {
-        const votes = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
-        message += `${index + 1}. ${formatDateTime(slot.start_at)} (${votes}票)\n`;
-      });
-      message += '\n番号を入力してください（例: 1番で確定）';
-
-      return {
-        success: false,
-        message,
-        needsClarification: {
-          field: 'slotId',
-          message,
-        },
-      };
-    }
-
-    // Execute finalize
-    const response = await threadsApi.finalize(threadId, {
-      selected_slot_id: selectedSlotId,
-    });
-
-    // Build success message
-    let message = `✅ 日程を確定しました\n\n`;
-    message += `📅 日時: ${formatDateTime(response.selected_slot.start_at)} - ${formatDateTime(response.selected_slot.end_at)}\n`;
-    message += `👥 参加者: ${response.participants_count}名\n`;
-
-    if (response.meeting) {
-      message += `\n🎥 Google Meet:\n${response.meeting.url}\n`;
-    }
-
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'thread.finalize',
-        payload: response,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P0-5: thread.create
- * チャットからスレッドを作成
- */
-async function executeThreadCreate(intentResult: IntentResult): Promise<ExecutionResult> {
-  try {
-    const raw = (intentResult.params?.rawInput ?? '').toString();
-
-    // まずは最小：タイトル固定でOK（後で抽出ロジック強化）
-    const title = '日程調整';
-    const description = raw.length > 0 ? raw : '';
-
-    const created: any = await threadsApi.create({ title, description });
-
-    const threadId =
-      created?.thread?.id ??
-      created?.thread_id ??
-      created?.id ??
-      null;
-
-    if (!threadId) {
-      return {
-        success: false,
-        message: '❌ スレッドは作成されましたが、threadId が取得できませんでした（APIレスポンス確認が必要）',
-      };
-    }
-
-    return {
-      success: true,
-      message: `✅ スレッドを作成しました。\nこのまま「候補出して」「来週の午後で」など入力してください。`,
-      data: { kind: 'thread.create', payload: { threadId } },
-    };
-  } catch (e: any) {
-    return {
-      success: false,
-      message: `❌ スレッド作成に失敗しました: ${e?.message ?? String(e)}`,
-    };
-  }
-}
-
-/**
- * P0-4: schedule.invite.list
- * リストの全員に招待メールを送信
- */
-async function executeInviteList(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { listName, threadId } = intentResult.params;
-
-  try {
-    // Step 1: Get all lists
-    const listsResponse = await listsApi.list() as any;
-    const lists = listsResponse.lists || listsResponse.items || [];
-
-    // Step 2: Find list by name
-    const targetList = lists.find((list: any) => list.name === listName);
-
-    if (!targetList) {
-      return {
-        success: false,
-        message: `❌ リスト「${listName}」が見つかりませんでした。\n\n利用可能なリスト:\n${lists.map((l: any) => `- ${l.name}`).join('\n')}`,
-      };
-    }
-
-    // Step 3: threadId が無い場合は自動で作成（P0-5）
-    let ensuredThreadId = threadId;
-
-    if (!ensuredThreadId) {
-      const created: any = await threadsApi.create({
-        title: '日程調整',
-        description: `招待: ${listName}`,
-      });
-      ensuredThreadId = created?.thread?.id ?? created?.thread_id ?? created?.id ?? null;
-
-      if (!ensuredThreadId) {
-        return { success: false, message: '❌ スレッド作成に失敗しました（threadId取得不可）' };
-      }
-    }
-
-    // Step 4: Get list members count
-    const membersResponse = await listsApi.getMembers(targetList.id) as any;
-    const membersCount = membersResponse.members?.length || membersResponse.items?.length || 0;
-
-    if (membersCount === 0) {
-      return {
-        success: false,
-        message: `❌ リスト「${listName}」にメンバーがいません。\n先にメンバーを追加してください。`,
-      };
-    }
-
-    // Step 6: Add bulk invites to existing thread (ensuredThreadId を使用)
-    const result = await threadsApi.addBulkInvites(ensuredThreadId, {
-      target_list_id: targetList.id,
-    });
-
-    // Build success message
-    let message = `✅ 招待メールを送信しました\n\n`;
-    message += `📋 リスト: ${result.list_name}\n`;
-    message += `📧 送信: ${result.inserted}名\n`;
-    
-    if (result.skipped > 0) {
-      message += `⚠️ スキップ: ${result.skipped}名（メールアドレス不足など）\n`;
-    }
-    
-    if (result.failed > 0) {
-      message += `❌ 失敗: ${result.failed}名\n`;
-    }
-
-    message += `\n💡 招待リンクがメールで送信されました。`;
-
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'thread.invites.batch',
-        payload: { ...result, threadId: ensuredThreadId },
-      },
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
 
 // ============================================================
 // Helper Functions
 // NOTE: getWarningMessage, formatTimeRange, formatDateTimeRange は
 //       executors/calendar.ts に移動済み
 // ============================================================
-
-function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: '下書き',
-    active: '募集中',
-    confirmed: '確定',
-    cancelled: 'キャンセル',
-  };
-  return labels[status] || status;
-}
-
-// Phase Next-6 Day2: getSlotVotes() removed - votes are now server-side
-// function getSlotVotes(slotId: string, status: ThreadStatus_API): number {
-//   // Moved to backend: threadsStatus.ts returns slots[].votes
-// }
+// NOTE: getStatusLabel moved to executors/thread.ts
+// NOTE: getSlotVotes() removed - votes are now server-side (Phase Next-6 Day2)
 
 /**
  * ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用

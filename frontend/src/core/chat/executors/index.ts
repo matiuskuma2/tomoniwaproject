@@ -7,9 +7,9 @@
  * - types.ts: ExecutionResult, ExecutionContext 型定義
  * - calendar.ts: schedule.today, schedule.week, schedule.freebusy
  * - list.ts: list.create, list.list, list.members, list.add_member
+ * - thread.ts: schedule.create, schedule.status, schedule.finalize, thread.create, invite.list
  * 
  * 今後の分割予定:
- * - thread.ts: thread.create, thread.status, thread.finalize
  * - remind.ts: remind.pending, remind.need_response
  * - pending.ts: pending.action.decide, invite.prepare
  */
@@ -31,3 +31,12 @@ export {
   executeListMembers,
   executeListAddMember,
 } from './list';
+
+// Thread executors
+export {
+  executeCreate,
+  executeStatusCheck,
+  executeFinalize,
+  executeThreadCreate,
+  executeInviteList,
+} from './thread';
