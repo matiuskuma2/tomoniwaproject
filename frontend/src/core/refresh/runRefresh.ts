@@ -8,6 +8,8 @@
  */
 
 import { refreshStatus } from '../cache/threadStatusCache';
+import { refreshThreadsList as refreshThreadsListCache } from '../cache/threadsListCache';
+import { refreshInbox as refreshInboxCache } from '../cache/inboxCache';
 import type { RefreshAction } from './refreshMap';
 import { describeRefreshAction } from './refreshMap';
 
@@ -65,17 +67,17 @@ async function executeRefreshAction(action: RefreshAction, debug: boolean): Prom
       break;
       
     case 'THREADS_LIST':
-      // TODO: threads list キャッシュが実装されたらここで invalidate
       if (debug) {
-        console.log('[runRefresh] THREADS_LIST refresh (not implemented yet)');
+        console.log('[runRefresh] Refreshing threads list');
       }
+      await refreshThreadsListCache();
       break;
       
     case 'INBOX':
-      // TODO: inbox キャッシュが実装されたらここで invalidate
       if (debug) {
-        console.log('[runRefresh] INBOX refresh (not implemented yet)');
+        console.log('[runRefresh] Refreshing inbox');
       }
+      await refreshInboxCache();
       break;
       
     case 'ME':
