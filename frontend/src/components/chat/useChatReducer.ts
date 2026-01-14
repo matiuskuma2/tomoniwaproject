@@ -11,12 +11,13 @@
  * - ロジックは変えない（状態の置き場所だけ変える）
  */
 
-import { useReducer, useCallback, useEffect } from 'react';
+import { useReducer, useCallback, useEffect, useRef } from 'react';
 import type { 
   CalendarTodayResponse, 
   CalendarWeekResponse, 
   CalendarFreeBusyResponse 
 } from '../../core/models';
+import { storage, STORAGE_KEYS, StorageError } from '../../core/platform';
 // NOTE: ThreadStatus_API は削除（キャッシュが単一ソース）
 import type { ExecutionResult } from '../../core/chat/apiExecutor';
 import type { ChatMessage } from './ChatPane';
@@ -340,23 +341,25 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 // Initial State Factory
 // ============================================================
 
+// Note: Initial state is created synchronously, but we load async in effect
 function createInitialState(): ChatState {
-  // Load messages from localStorage
+  // Synchronous fallback for initial render
+  // Actual messages will be loaded asynchronously via storage adapter
   let initialMessages: Record<string, ChatMessage[]> = {};
-  try {
-    const saved = localStorage.getItem('tomoniwao_messages');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (typeof parsed === 'object' && parsed !== null) {
-        initialMessages = parsed;
-      } else {
-        console.warn('[ChatReducer] Invalid messages format in localStorage, clearing');
-        localStorage.removeItem('tomoniwao_messages');
+  
+  // Try synchronous localStorage for immediate hydration (Web only)
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.MESSAGES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) {
+          initialMessages = parsed;
+        }
       }
+    } catch {
+      // Ignore - will be handled by async load
     }
-  } catch (error) {
-    console.error('[ChatReducer] Failed to load messages from localStorage:', error);
-    localStorage.removeItem('tomoniwao_messages');
   }
 
   return {
@@ -401,16 +404,22 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
   const [state, dispatch] = useReducer(chatReducer, undefined, createInitialState);
 
   // ============================================================
-  // Persistence Effect (debounced localStorage save)
+  // Persistence Effect (debounced storage save via adapter)
   // ============================================================
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   useEffect(() => {
     if (!state.persistEnabled) {
-      console.warn('[ChatReducer] localStorage persistence disabled');
+      console.warn('[ChatReducer] Storage persistence disabled');
       return;
     }
-    if (typeof window === 'undefined') return;
 
-    const timer = setTimeout(() => {
+    // Clear previous timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
       try {
         // PERF-S2: 保存前にメッセージ数を制限（各スレッド最新100件、最大20スレッド）
         const MAX_MESSAGES_PER_THREAD = 100;
@@ -427,7 +436,8 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
           }
         }
         
-        const serialized = JSON.stringify(trimmedMessages);
+        let dataToSave = trimmedMessages;
+        let serialized = JSON.stringify(dataToSave);
         
         // Check size (5MB limit)
         if (serialized.length > 5 * 1024 * 1024) {
@@ -441,19 +451,29 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
               furtherTrimmed[tid] = msgs.slice(-50);
             }
           }
-          localStorage.setItem('tomoniwao_messages', JSON.stringify(furtherTrimmed));
-        } else {
-          localStorage.setItem('tomoniwao_messages', serialized);
+          dataToSave = furtherTrimmed;
+          serialized = JSON.stringify(dataToSave);
         }
         
+        // Use storage adapter (async)
+        await storage.set(STORAGE_KEYS.MESSAGES, serialized);
         dispatch({ type: 'SAVE_SUCCESS' });
+        
       } catch (error) {
-        console.error('[ChatReducer] localStorage save failed:', error);
+        if (error instanceof StorageError) {
+          console.error(`[ChatReducer] Storage ${error.operation} failed:`, error.message);
+        } else {
+          console.error('[ChatReducer] Storage save failed:', error);
+        }
         dispatch({ type: 'SAVE_FAILURE' });
       }
     }, 500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [state.messagesByThreadId, state.persistEnabled]);
 
   // ============================================================

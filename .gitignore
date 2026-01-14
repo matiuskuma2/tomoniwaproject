@@ -87,4 +87,7 @@ secrets/
 .cloudflare-credentials
 .env.cloudflare
 .wrangler/
-core
+
+# Core dumps (Node.js crash files)
+core.*
+vgcore.*

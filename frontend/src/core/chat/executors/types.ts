@@ -1,0 +1,162 @@
+/**
+ * Executor Types - 共通型定義
+ * 
+ * P1-1: apiExecutor.ts から分離
+ * ロジック変更なし、型のみ
+ */
+
+import type { CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse, ThreadStatus_API } from '../../models';
+
+// Phase Next-5 Day2.1: Type-safe ExecutionResult
+export type ExecutionResultData =
+  | { kind: 'calendar.today'; payload: CalendarTodayResponse }
+  | { kind: 'calendar.week'; payload: CalendarWeekResponse }
+  | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
+  | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
+  | { kind: 'thread.create'; payload: { threadId: string } }
+  | { kind: 'thread.finalize'; payload: any }
+  | { kind: 'thread.invites.batch'; payload: any }
+  | { kind: 'auto_propose.generated'; payload: { 
+      source: 'initial' | 'additional';
+      threadId?: string;
+      emails: string[]; 
+      duration: number; 
+      range: string; 
+      proposals: any[] 
+    } }
+  | { kind: 'auto_propose.cancelled'; payload: {} }
+  | { kind: 'auto_propose.created'; payload: any }
+  | { kind: 'auto_propose.slots_added'; payload: { thread_id: string; slots_added: number; slot_ids: string[] } }
+  | { kind: 'remind.pending.generated'; payload: {
+      source: 'remind';
+      threadId: string;
+      pendingInvites: Array<{ email: string; name?: string }>;
+      count: number;
+    } }
+  | { kind: 'remind.pending.cancelled'; payload: {} }
+  | { kind: 'remind.pending.sent'; payload: any }
+  | { kind: 'notify.confirmed.generated'; payload: {
+      source: 'notify';
+      threadId: string;
+      invites: Array<{ email: string; name?: string }>;
+      finalSlot: { start_at: string; end_at: string; label?: string };
+      meetingUrl?: string;
+    } }
+  | { kind: 'notify.confirmed.cancelled'; payload: {} }
+  | { kind: 'notify.confirmed.sent'; payload: any }
+  | { kind: 'split.propose.generated'; payload: {
+      source: 'split';
+      threadId: string;
+      voteSummary: Array<{ label: string; votes: number }>;
+    } }
+  | { kind: 'split.propose.cancelled'; payload: {} }
+  // Beta A / Phase2: 送信確認フロー
+  | { kind: 'pending.action.created'; payload: {
+      confirmToken: string;
+      expiresAt: string;
+      summary: any;
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots';
+      threadId?: string;
+      threadTitle?: string;
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots';
+      proposalVersion?: number;
+      remainingProposals?: number;
+    } }
+  | { kind: 'pending.action.decided'; payload: {
+      decision: 'send' | 'cancel' | 'new_thread' | 'add';
+      canExecute: boolean;
+    } }
+  | { kind: 'pending.action.executed'; payload: {
+      threadId: string;
+      inserted?: number;
+      emailQueued?: number;
+      actionType?: 'add_slots';
+      slotsAdded?: number;
+      proposalVersion?: number;
+      remainingProposals?: number;
+      notifications?: {
+        email_queued: number;
+        in_app_created: number;
+        total_recipients: number;
+      };
+    } }
+  | { kind: 'pending.action.cleared'; payload: {} }
+  // Beta A: リスト5コマンド
+  | { kind: 'list.created'; payload: { listId: string; listName: string } }
+  | { kind: 'list.listed'; payload: { lists: any[] } }
+  | { kind: 'list.members'; payload: { listName: string; members: any[] } }
+  | { kind: 'list.member_added'; payload: { listName: string; email: string } }
+  // Phase2 P2-D0: 再回答必要者リスト表示
+  | { kind: 'need_response.list'; payload: {
+      threadId: string;
+      threadTitle: string;
+      currentVersion: number;
+      inviteesNeedingResponse: Array<{ email: string; name?: string; respondedVersion?: number }>;
+      inviteesNeedingResponseCount: number;
+      remainingProposals: number;
+    } }
+  // Phase2 P2-D1: 再回答必要者へのリマインド
+  | { kind: 'remind.need_response.generated'; payload: {
+      threadId: string;
+      threadTitle: string;
+      targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+      count: number;
+    } }
+  | { kind: 'remind.need_response.sent'; payload: {
+      threadId: string;
+      remindedCount: number;
+      results: Array<{ email: string; status: string }>;
+    } }
+  | { kind: 'remind.need_response.cancelled'; payload: {} };
+
+export interface ExecutionResult {
+  success: boolean;
+  message: string;
+  data?: ExecutionResultData;
+  needsClarification?: {
+    field: string;
+    message: string;
+  };
+}
+
+// Phase Next-5 Day2.1: Type-safe ExecutionContext
+export interface ExecutionContext {
+  pendingAutoPropose?: {
+    emails: string[];
+    duration: number;
+    range: string;
+    proposals: Array<{ start: string; end: string; label: string }>;
+    source?: 'initial' | 'additional';
+    threadId?: string;
+  } | null;
+  additionalProposeCount?: number;
+  pendingRemind?: {
+    threadId: string;
+    pendingInvites: Array<{ email: string; name?: string }>;
+    count: number;
+  } | null;
+  remindCount?: number;
+  pendingNotify?: {
+    threadId: string;
+    invites: Array<{ email: string; name?: string }>;
+    finalSlot: { start_at: string; end_at: string; label?: string };
+    meetingUrl?: string;
+  } | null;
+  pendingSplit?: {
+    threadId: string;
+  } | null;
+  pendingAction?: {
+    confirmToken: string;
+    expiresAt: string;
+    summary: any;
+    mode: 'new_thread' | 'add_to_thread' | 'add_slots';
+    threadId?: string;
+    threadTitle?: string;
+    actionType?: 'send_invites' | 'add_invites' | 'add_slots';
+  } | null;
+  pendingRemindNeedResponse?: {
+    threadId: string;
+    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+    count: number;
+  } | null;
+}
