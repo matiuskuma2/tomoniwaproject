@@ -21,6 +21,9 @@ import { storage, STORAGE_KEYS, StorageError } from '../../core/platform';
 // NOTE: ThreadStatus_API は削除（キャッシュが単一ソース）
 import type { ExecutionResult } from '../../core/chat/apiExecutor';
 import type { ChatMessage } from './ChatPane';
+// P0-1: PendingState 正規化
+import type { PendingState } from '../../core/chat/pendingTypes';
+import { getPendingForThread } from '../../core/chat/pendingTypes';
 
 // ============================================================
 // State Types
@@ -33,51 +36,9 @@ interface CalendarData {
   freebusy?: CalendarFreeBusyResponse;
 }
 
-/** Auto-propose pending state (Phase Next-5 Day2) */
-interface PendingAutoPropose {
-  emails: string[];
-  duration: number;
-  range: string;
-  proposals: Array<{ start_at: string; end_at: string; label: string }>;
-}
-
-/** Pending action state (Beta A / Phase2) */
-interface PendingActionState {
-  confirmToken: string;
-  expiresAt: string;
-  summary: any;
-  mode: 'new_thread' | 'add_to_thread' | 'add_slots';
-  threadId?: string;
-  threadTitle?: string;
-  actionType?: 'send_invites' | 'add_invites' | 'add_slots';
-}
-
-/** Pending remind state (Phase Next-6 Day1) */
-interface PendingRemind {
-  threadId: string;
-  pendingInvites: Array<{ email: string; name?: string }>;
-  count: number;
-}
-
-/** Pending notify state (Phase Next-6 Day3) */
-interface PendingNotify {
-  threadId: string;
-  invites: Array<{ email: string; name?: string }>;
-  finalSlot: { start_at: string; end_at: string; label?: string };
-  meetingUrl?: string;
-}
-
-/** Pending split state (Phase Next-6 Day2) */
-interface PendingSplit {
-  threadId: string;
-}
-
-/** Pending remind need response state (Phase2 P2-D1) */
-interface PendingRemindNeedResponse {
-  threadId: string;
-  targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
-  count: number;
-}
+// P0-1: 旧 pending 型定義は pendingTypes.ts に統合
+// PendingAutoPropose, PendingActionState, PendingRemind, PendingNotify, PendingSplit, PendingRemindNeedResponse
+// は全て PendingState union に統合済み
 
 type MobileTab = 'threads' | 'chat' | 'cards';
 
@@ -100,15 +61,11 @@ export interface ChatState {
   // Calendar data
   calendarData: CalendarData;
   
-  // Pending states (global)
-  pendingAutoPropose: PendingAutoPropose | null;
-  pendingAction: PendingActionState | null;
+  // P0-1: Pending states 正規化 - 1つの辞書に統合
+  pendingByThreadId: Record<string, PendingState | null>;
   
-  // Pending states (per thread)
-  pendingRemindByThreadId: Record<string, PendingRemind | null>;
-  pendingNotifyByThreadId: Record<string, PendingNotify | null>;
-  pendingSplitByThreadId: Record<string, PendingSplit | null>;
-  pendingRemindNeedResponseByThreadId: Record<string, PendingRemindNeedResponse | null>;
+  // threadId未選択でも走る pending.action（prepare-send等）のみ残す
+  globalPendingAction: PendingState | null;
   
   // Counters (per thread)
   additionalProposeCountByThreadId: Record<string, number>;
@@ -140,25 +97,14 @@ export type ChatAction =
   | { type: 'SET_CALENDAR_WEEK'; payload: CalendarWeekResponse }
   | { type: 'SET_CALENDAR_FREEBUSY'; payload: CalendarFreeBusyResponse }
   
-  // Auto-propose actions
-  | { type: 'SET_PENDING_AUTO_PROPOSE'; payload: PendingAutoPropose | null }
+  // P0-1: Pending actions 正規化
+  | { type: 'SET_PENDING_FOR_THREAD'; payload: { threadId: string; pending: PendingState | null } }
+  | { type: 'CLEAR_PENDING_FOR_THREAD'; payload: { threadId: string } }
+  | { type: 'SET_GLOBAL_PENDING_ACTION'; payload: { pending: PendingState | null } }
+  
+  // Counter actions
   | { type: 'INCREMENT_ADDITIONAL_PROPOSE_COUNT'; payload: { threadId: string } }
-  
-  // Remind actions
-  | { type: 'SET_PENDING_REMIND'; payload: { threadId: string; data: PendingRemind | null } }
   | { type: 'INCREMENT_REMIND_COUNT'; payload: { threadId: string } }
-  
-  // Notify actions
-  | { type: 'SET_PENDING_NOTIFY'; payload: { threadId: string; data: PendingNotify | null } }
-  
-  // Split actions
-  | { type: 'SET_PENDING_SPLIT'; payload: { threadId: string; data: PendingSplit | null } }
-  
-  // Pending action (Beta A)
-  | { type: 'SET_PENDING_ACTION'; payload: PendingActionState | null }
-  
-  // Remind need response (Phase2)
-  | { type: 'SET_PENDING_REMIND_NEED_RESPONSE'; payload: { threadId: string; data: PendingRemindNeedResponse | null } }
   
   // Persistence actions
   | { type: 'SAVE_SUCCESS' }
@@ -238,10 +184,34 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'SET_CALENDAR_FREEBUSY':
       return { ...state, calendarData: { ...state.calendarData, freebusy: action.payload } };
     
-    // Auto-propose actions
-    case 'SET_PENDING_AUTO_PROPOSE':
-      return { ...state, pendingAutoPropose: action.payload };
+    // P0-1: Pending actions 正規化
+    case 'SET_PENDING_FOR_THREAD': {
+      const { threadId, pending } = action.payload;
+      return {
+        ...state,
+        pendingByThreadId: {
+          ...state.pendingByThreadId,
+          [threadId]: pending,
+        },
+      };
+    }
     
+    case 'CLEAR_PENDING_FOR_THREAD': {
+      const { threadId } = action.payload;
+      return {
+        ...state,
+        pendingByThreadId: {
+          ...state.pendingByThreadId,
+          [threadId]: null,
+        },
+      };
+    }
+    
+    case 'SET_GLOBAL_PENDING_ACTION': {
+      return { ...state, globalPendingAction: action.payload.pending };
+    }
+    
+    // Counter actions
     case 'INCREMENT_ADDITIONAL_PROPOSE_COUNT': {
       const { threadId } = action.payload;
       return {
@@ -253,18 +223,6 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
     
-    // Remind actions
-    case 'SET_PENDING_REMIND': {
-      const { threadId, data } = action.payload;
-      return {
-        ...state,
-        pendingRemindByThreadId: {
-          ...state.pendingRemindByThreadId,
-          [threadId]: data,
-        },
-      };
-    }
-    
     case 'INCREMENT_REMIND_COUNT': {
       const { threadId } = action.payload;
       return {
@@ -272,46 +230,6 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         remindCountByThreadId: {
           ...state.remindCountByThreadId,
           [threadId]: (state.remindCountByThreadId[threadId] || 0) + 1,
-        },
-      };
-    }
-    
-    // Notify actions
-    case 'SET_PENDING_NOTIFY': {
-      const { threadId, data } = action.payload;
-      return {
-        ...state,
-        pendingNotifyByThreadId: {
-          ...state.pendingNotifyByThreadId,
-          [threadId]: data,
-        },
-      };
-    }
-    
-    // Split actions
-    case 'SET_PENDING_SPLIT': {
-      const { threadId, data } = action.payload;
-      return {
-        ...state,
-        pendingSplitByThreadId: {
-          ...state.pendingSplitByThreadId,
-          [threadId]: data,
-        },
-      };
-    }
-    
-    // Pending action (Beta A)
-    case 'SET_PENDING_ACTION':
-      return { ...state, pendingAction: action.payload };
-    
-    // Remind need response (Phase2)
-    case 'SET_PENDING_REMIND_NEED_RESPONSE': {
-      const { threadId, data } = action.payload;
-      return {
-        ...state,
-        pendingRemindNeedResponseByThreadId: {
-          ...state.pendingRemindNeedResponseByThreadId,
-          [threadId]: data,
         },
       };
     }
@@ -376,15 +294,9 @@ function createInitialState(): ChatState {
     // Calendar
     calendarData: {},
     
-    // Pending (global)
-    pendingAutoPropose: null,
-    pendingAction: null,
-    
-    // Pending (per thread)
-    pendingRemindByThreadId: {},
-    pendingNotifyByThreadId: {},
-    pendingSplitByThreadId: {},
-    pendingRemindNeedResponseByThreadId: {},
+    // P0-1: Pending 正規化 - 1つの辞書に統合
+    pendingByThreadId: {},
+    globalPendingAction: null,
     
     // Counters
     additionalProposeCountByThreadId: {},
@@ -499,7 +411,7 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
   }, []);
 
   // ============================================================
-  // ExecutionResult Handler (type-safe, dispatch-based)
+  // ExecutionResult Handler (P0-1: 正規化された pending 辞書を使用)
   // ============================================================
   const handleExecutionResult = useCallback((result: ExecutionResult) => {
     if (!result.data) return;
@@ -515,26 +427,48 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       dispatch({ type: 'SET_CALENDAR_FREEBUSY', payload });
     }
     
-    // Auto-propose
+    // Auto-propose (P0-1: pendingByThreadId に統合)
     else if (kind === 'auto_propose.generated') {
-      dispatch({ type: 'SET_PENDING_AUTO_PROPOSE', payload });
-      // Phase Next-5 Day3: Increment additional propose count
-      if (payload.source === 'additional' && payload.threadId) {
-        dispatch({ type: 'INCREMENT_ADDITIONAL_PROPOSE_COUNT', payload: { threadId: payload.threadId } });
+      const threadId = payload.threadId ?? currentThreadId;
+      if (threadId) {
+        dispatch({
+          type: 'SET_PENDING_FOR_THREAD',
+          payload: {
+            threadId,
+            pending: {
+              kind: 'auto_propose',
+              threadId,
+              createdAt: Date.now(),
+              source: payload.source,
+              emails: payload.emails,
+              duration: payload.duration,
+              range: payload.range,
+              proposals: payload.proposals,
+            },
+          },
+        });
+        // Phase Next-5 Day3: Increment additional propose count
+        if (payload.source === 'additional') {
+          dispatch({ type: 'INCREMENT_ADDITIONAL_PROPOSE_COUNT', payload: { threadId } });
+        }
       }
     } else if (kind === 'auto_propose.cancelled' || kind === 'auto_propose.created') {
-      dispatch({ type: 'SET_PENDING_AUTO_PROPOSE', payload: null });
+      if (currentThreadId) {
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
+      }
     }
     
-    // Remind (Phase Next-6 Day1)
+    // Remind (P0-1: pendingByThreadId に統合)
     else if (kind === 'remind.pending.generated') {
       if (payload.threadId) {
         dispatch({
-          type: 'SET_PENDING_REMIND',
+          type: 'SET_PENDING_FOR_THREAD',
           payload: {
             threadId: payload.threadId,
-            data: {
+            pending: {
+              kind: 'remind.pending',
               threadId: payload.threadId,
+              createdAt: Date.now(),
               pendingInvites: payload.pendingInvites,
               count: payload.count,
             },
@@ -544,19 +478,21 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       }
     } else if (kind === 'remind.pending.cancelled' || kind === 'remind.pending.sent') {
       if (currentThreadId) {
-        dispatch({ type: 'SET_PENDING_REMIND', payload: { threadId: currentThreadId, data: null } });
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
     
-    // Notify (Phase Next-6 Day3)
+    // Notify (P0-1: pendingByThreadId に統合)
     else if (kind === 'notify.confirmed.generated') {
       if (payload.threadId) {
         dispatch({
-          type: 'SET_PENDING_NOTIFY',
+          type: 'SET_PENDING_FOR_THREAD',
           payload: {
             threadId: payload.threadId,
-            data: {
+            pending: {
+              kind: 'notify.confirmed',
               threadId: payload.threadId,
+              createdAt: Date.now(),
               invites: payload.invites,
               finalSlot: payload.finalSlot,
               meetingUrl: payload.meetingUrl,
@@ -566,58 +502,76 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       }
     } else if (kind === 'notify.confirmed.cancelled' || kind === 'notify.confirmed.sent') {
       if (currentThreadId) {
-        dispatch({ type: 'SET_PENDING_NOTIFY', payload: { threadId: currentThreadId, data: null } });
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
     
-    // Split (Phase Next-6 Day2)
+    // Split (P0-1: pendingByThreadId に統合)
     else if (kind === 'split.propose.generated') {
       if (payload.threadId) {
         dispatch({
-          type: 'SET_PENDING_SPLIT',
-          payload: { threadId: payload.threadId, data: { threadId: payload.threadId } },
+          type: 'SET_PENDING_FOR_THREAD',
+          payload: {
+            threadId: payload.threadId,
+            pending: {
+              kind: 'split.propose',
+              threadId: payload.threadId,
+              createdAt: Date.now(),
+              voteSummary: payload.voteSummary,
+            },
+          },
         });
       }
     } else if (kind === 'split.propose.cancelled') {
       if (currentThreadId) {
-        dispatch({ type: 'SET_PENDING_SPLIT', payload: { threadId: currentThreadId, data: null } });
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
     
-    // Clear split when moving to additional propose (Phase Next-6 Day2)
-    if (kind === 'auto_propose.generated' && currentThreadId) {
-      dispatch({ type: 'SET_PENDING_SPLIT', payload: { threadId: currentThreadId, data: null } });
-    }
-    
-    // Pending action (Beta A)
+    // Pending action (P0-1: threadId があれば pendingByThreadId, なければ globalPendingAction)
     else if (kind === 'pending.action.created') {
-      dispatch({
-        type: 'SET_PENDING_ACTION',
-        payload: {
-          confirmToken: payload.confirmToken,
-          expiresAt: payload.expiresAt,
-          summary: payload.summary,
-          mode: payload.mode,
-          threadId: payload.threadId,
-          threadTitle: payload.threadTitle,
-        },
-      });
+      const pendingState: PendingState = {
+        kind: 'pending.action',
+        threadId: payload.threadId ?? 'GLOBAL',
+        createdAt: Date.now(),
+        confirmToken: payload.confirmToken,
+        expiresAt: payload.expiresAt,
+        summary: payload.summary,
+        mode: payload.mode,
+        threadTitle: payload.threadTitle,
+        actionType: payload.actionType,
+      };
+      
+      if (payload.threadId) {
+        dispatch({
+          type: 'SET_PENDING_FOR_THREAD',
+          payload: { threadId: payload.threadId, pending: pendingState },
+        });
+      } else {
+        dispatch({ type: 'SET_GLOBAL_PENDING_ACTION', payload: { pending: pendingState } });
+      }
     } else if (kind === 'pending.action.cleared' || kind === 'pending.action.executed') {
-      dispatch({ type: 'SET_PENDING_ACTION', payload: null });
+      // Clear both possible locations
+      dispatch({ type: 'SET_GLOBAL_PENDING_ACTION', payload: { pending: null } });
+      if (currentThreadId) {
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
+      }
       if (kind === 'pending.action.executed' && payload.threadId) {
         setTimeout(() => navigate(`/chat/${payload.threadId}`), 100);
       }
     }
     
-    // Remind need response (Phase2 P2-D1)
+    // Remind need response (P0-1: pendingByThreadId に統合)
     else if (kind === 'remind.need_response.generated') {
       if (payload.threadId) {
         dispatch({
-          type: 'SET_PENDING_REMIND_NEED_RESPONSE',
+          type: 'SET_PENDING_FOR_THREAD',
           payload: {
             threadId: payload.threadId,
-            data: {
+            pending: {
+              kind: 'remind.need_response',
               threadId: payload.threadId,
+              createdAt: Date.now(),
               targetInvitees: payload.targetInvitees,
               count: payload.count,
             },
@@ -626,13 +580,15 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       }
     } else if (kind === 'remind.need_response.cancelled' || kind === 'remind.need_response.sent') {
       if (currentThreadId) {
-        dispatch({
-          type: 'SET_PENDING_REMIND_NEED_RESPONSE',
-          payload: { threadId: currentThreadId, data: null },
-        });
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
   }, [currentThreadId, navigate]);
+
+  // P0-1: pendingForThread ヘルパー
+  const pendingForThread = currentThreadId 
+    ? getPendingForThread(state.pendingByThreadId, currentThreadId)
+    : null;
 
   return {
     state,
@@ -644,17 +600,17 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     setMobileTab,
     setSettingsOpen,
     handleExecutionResult,
+    // P0-1: 正規化された pending アクセサ
+    pendingForThread,
   };
 }
 
 // Re-export types for external use
 export type {
   CalendarData,
-  PendingAutoPropose,
-  PendingActionState,
-  PendingRemind,
-  PendingNotify,
-  PendingSplit,
-  PendingRemindNeedResponse,
   MobileTab,
 };
+
+// P0-1: PendingState は pendingTypes.ts から re-export
+export { getPendingForThread } from '../../core/chat/pendingTypes';
+export type { PendingState, PendingKind } from '../../core/chat/pendingTypes';

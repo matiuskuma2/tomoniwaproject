@@ -52,62 +52,42 @@ export interface IntentResult {
 
 /**
  * Intent context for classification
- * Phase Next-6 Day1: Added pendingRemind
- * Phase Next-6 Day3: Added pendingNotify
- * Phase Next-6 Day2: Added pendingSplit
- * Beta A: Added pendingAction for 3-word decision flow
+ * P0-1: PendingState 正規化対応
  */
+import type { PendingState } from './pendingTypes';
+import { 
+  isPendingAction, 
+  isPendingRemind, 
+  isPendingRemindNeedResponse,
+  isPendingNotify,
+  isPendingSplit,
+} from './pendingTypes';
+
 export interface IntentContext {
   selectedThreadId?: string;
   selectedSlotId?: string;
-  pendingRemind?: {
-    threadId: string;
-    pendingInvites: Array<{ email: string; name?: string }>;
-    count: number;
-  } | null;
-  pendingNotify?: {
-    threadId: string;
-    invites: Array<{ email: string; name?: string }>;
-    finalSlot: { start_at: string; end_at: string; label?: string };
-    meetingUrl?: string;
-  } | null;
-  pendingSplit?: {
-    threadId: string;
-  } | null;
-  // Beta A / Phase2: pending action state for decision flow
-  pendingAction?: {
-    confirmToken: string;
-    expiresAt: string;
-    summary: any;
-    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
-    threadId?: string;
-    threadTitle?: string;
-    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
-  } | null;
-  // Phase2 P2-D1: 再回答必要者へのリマインド確認状態
-  pendingRemindNeedResponse?: {
-    threadId: string;
-    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
-    count: number;
-  } | null;
+  // P0-1: 正規化された pending
+  pendingForThread?: PendingState | null;
+  globalPendingAction?: PendingState | null;
 }
 
 /**
  * Classify user input into one of the P0 intents
  * Phase Next-2: Rule-based only (no LLM)
- * Phase Next-6 Day1: Added pendingRemind support
- * Beta A: Added 3-word decision and invite.prepare flows
+ * P0-1: PendingState 正規化対応
  */
 export function classifyIntent(input: string, context?: IntentContext): IntentResult {
   const normalizedInput = input.toLowerCase().trim();
+  
+  // P0-1: 正規化された pending を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
 
   // ============================================================
-  // Beta A: 3語固定決定フロー（最優先）
-  // pendingAction が存在する場合、決定語のみ受け付け
-  // Phase2: add_slots の場合は「追加/キャンセル」、それ以外は「送る/キャンセル/別スレッドで」
+  // P0-1: pending.action 決定フロー（最優先）
+  // pending.action が存在する場合、決定語のみ受け付け
   // ============================================================
-  if (context?.pendingAction) {
-    const isAddSlots = (context.pendingAction as any).mode === 'add_slots';
+  if (isPendingAction(activePending)) {
+    const isAddSlots = activePending.mode === 'add_slots';
     
     // 「送る」「send」「追加」「add」
     if (/^(送る|送って|send|送信|追加|追加する|add)$/i.test(normalizedInput)) {
@@ -116,7 +96,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
         confidence: 1.0,
         params: {
           decision: isAddSlots ? '追加' : '送る',
-          confirmToken: context.pendingAction.confirmToken,
+          confirmToken: activePending.confirmToken,
         },
       };
     }
@@ -127,7 +107,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
         confidence: 1.0,
         params: {
           decision: 'キャンセル',
-          confirmToken: context.pendingAction.confirmToken,
+          confirmToken: activePending.confirmToken,
         },
       };
     }
@@ -138,7 +118,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
         confidence: 1.0,
         params: {
           decision: '別スレッドで',
-          confirmToken: context.pendingAction.confirmToken,
+          confirmToken: activePending.confirmToken,
         },
       };
     }
@@ -316,12 +296,11 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
   // Phase Next-5 (P2): Auto-propose (自動調整)
   // ============================================================
 
-  // P2-2 & P3-2 & P3-5 & P3-7: Confirm (提案確定)
-  // Phase Next-6 Day2: Support split, notify, remind, and auto_propose flows
+  // P0-1: Confirm (提案確定) - 正規化された pending を使用
   // Keywords: はい、yes、作成して、OK
   if (/(はい|yes|作成|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
-    // Check context to determine which flow (優先順位: split > notify > remind > auto_propose)
-    if (context?.pendingSplit) {
+    // P0-1: pendingForThread の kind で判定（優先順位順）
+    if (isPendingSplit(activePending)) {
       return {
         intent: 'schedule.propose_for_split.confirm',
         confidence: 0.9,
@@ -329,7 +308,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       };
     }
     
-    if (context?.pendingNotify) {
+    if (isPendingNotify(activePending)) {
       return {
         intent: 'schedule.notify.confirmed.confirm',
         confidence: 0.9,
@@ -337,9 +316,17 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       };
     }
     
-    if (context?.pendingRemind) {
+    if (isPendingRemind(activePending)) {
       return {
         intent: 'schedule.remind.pending.confirm',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
+    if (isPendingRemindNeedResponse(activePending)) {
+      return {
+        intent: 'schedule.remind.need_response.confirm',
         confidence: 0.9,
         params: {},
       };
@@ -353,12 +340,11 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
     };
   }
 
-  // P2-3 & P3-3 & P3-6 & P3-8: Cancel (提案キャンセル)
-  // Phase Next-6 Day2: Support split, notify, remind, and auto_propose flows
+  // P0-1: Cancel (提案キャンセル) - 正規化された pending を使用
   // Keywords: いいえ、no、キャンセル、やめる
   if (/(いいえ|no|キャンセル|やめ)/i.test(normalizedInput) && normalizedInput.length < 10) {
-    // Check context to determine which flow (優先順位: split > notify > remind > auto_propose)
-    if (context?.pendingSplit) {
+    // P0-1: pendingForThread の kind で判定（優先順位順）
+    if (isPendingSplit(activePending)) {
       return {
         intent: 'schedule.propose_for_split.cancel',
         confidence: 0.9,
@@ -366,7 +352,7 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       };
     }
     
-    if (context?.pendingNotify) {
+    if (isPendingNotify(activePending)) {
       return {
         intent: 'schedule.notify.confirmed.cancel',
         confidence: 0.9,
@@ -374,9 +360,17 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
       };
     }
     
-    if (context?.pendingRemind) {
+    if (isPendingRemind(activePending)) {
       return {
         intent: 'schedule.remind.pending.cancel',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+    
+    if (isPendingRemindNeedResponse(activePending)) {
+      return {
+        intent: 'schedule.remind.need_response.cancel',
         confidence: 0.9,
         params: {},
       };
@@ -475,27 +469,8 @@ export function classifyIntent(input: string, context?: IntentContext): IntentRe
 
   // ============================================================
   // Phase2 P2-D1: 再回答必要者だけにリマインド
+  // P0-1: この判定は上の confirm/cancel 判定に統合済み
   // ============================================================
-  
-  // P2-D1: pendingRemindNeedResponse がある場合、confirm/cancel を優先判定
-  if (context?.pendingRemindNeedResponse) {
-    // 「はい」「送る」→ confirm
-    if (/(はい|yes|送る|送って|send|ok|おk)/i.test(normalizedInput) && normalizedInput.length < 10) {
-      return {
-        intent: 'schedule.remind.need_response.confirm',
-        confidence: 1.0,
-        params: {},
-      };
-    }
-    // 「いいえ」「キャンセル」→ cancel
-    if (/(いいえ|no|キャンセル|やめ|cancel)/i.test(normalizedInput) && normalizedInput.length < 10) {
-      return {
-        intent: 'schedule.remind.need_response.cancel',
-        confidence: 1.0,
-        params: {},
-      };
-    }
-  }
   
   // P2-D1: schedule.remind.need_response
   // Keywords: 再回答必要な人にリマインド、再回答の人だけ、要回答者にリマインド

@@ -24,6 +24,7 @@ export function ChatLayout() {
   
   // P1-B: 全ての状態管理を useReducer に移行
   // NOTE: status/loading はキャッシュが単一ソース（二重管理防止）
+  // P0-1: pendingForThread で正規化された pending にアクセス
   const {
     state,
     appendMessage,
@@ -31,6 +32,7 @@ export function ChatLayout() {
     setMobileTab,
     setSettingsOpen,
     handleExecutionResult,
+    pendingForThread,
   } = useChatReducer(threadId, navigate);
 
   // PERF-S1: Status取得のキャッシュ（TTL 10秒・inflight共有）
@@ -42,19 +44,15 @@ export function ChatLayout() {
   } = useThreadStatus(threadId);
 
   // Destructure state for easy access
+  // P0-1: pending 系は pendingForThread / globalPendingAction に正規化
   const {
     mobileTab,
     isSettingsOpen,
     messagesByThreadId,
     calendarData,
-    pendingAutoPropose,
+    globalPendingAction,
     additionalProposeCountByThreadId,
-    pendingRemindByThreadId,
     remindCountByThreadId,
-    pendingNotifyByThreadId,
-    pendingSplitByThreadId,
-    pendingAction,
-    pendingRemindNeedResponseByThreadId,
     persistEnabled,
   } = state;
 
@@ -222,14 +220,10 @@ export function ChatLayout() {
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
-              pendingAutoPropose={pendingAutoPropose}
+              pendingForThread={pendingForThread}
+              globalPendingAction={globalPendingAction}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
-              pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
-              pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
-              pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
-              pendingAction={pendingAction}
-              pendingRemindNeedResponse={threadId ? (pendingRemindNeedResponseByThreadId[threadId] || null) : null}
             />
           </div>
 
@@ -256,14 +250,10 @@ export function ChatLayout() {
               onSeedIfEmpty={seedIfEmpty}
               onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
-              pendingAutoPropose={pendingAutoPropose}
+              pendingForThread={pendingForThread}
+              globalPendingAction={globalPendingAction}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
-              pendingRemind={threadId ? (pendingRemindByThreadId[threadId] || null) : null}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
-              pendingNotify={threadId ? (pendingNotifyByThreadId[threadId] || null) : null}
-              pendingSplit={threadId ? (pendingSplitByThreadId[threadId] || null) : null}
-              pendingAction={pendingAction}
-              pendingRemindNeedResponse={threadId ? (pendingRemindNeedResponseByThreadId[threadId] || null) : null}
             />
           )}
           {mobileTab === 'cards' && (

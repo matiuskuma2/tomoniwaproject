@@ -19,6 +19,16 @@ import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
 import { setStatus as setCacheStatus } from '../cache';
+// P0-1: PendingState 正規化
+import type { PendingState } from './pendingTypes';
+import { 
+  isPendingAction, 
+  isPendingRemind, 
+  isPendingRemindNeedResponse,
+  isPendingNotify,
+  isPendingSplit,
+  isPendingAutoPropose,
+} from './pendingTypes';
 
 // P1-1: 分割した executor をインポート
 import {
@@ -165,53 +175,15 @@ export interface ExecutionResult {
   };
 }
 
-// Phase Next-5 Day2.1: Type-safe ExecutionContext
+// P0-1: 正規化された ExecutionContext
 export interface ExecutionContext {
-  pendingAutoPropose?: {
-    emails: string[];
-    duration: number;
-    range: string;
-    proposals: Array<{ start: string; end: string; label: string }>;
-    source?: 'initial' | 'additional';  // Phase Next-5 Day3: 追加候補フラグ
-    threadId?: string;  // Phase Next-5 Day3: 追加候補時のスレッドID
-  } | null;
-  // Phase Next-5 Day3: additional propose execution count (max 2)
+  // P0-1: 正規化された pending（threadId に紐づく）
+  pendingForThread?: PendingState | null;
+  // P0-1: threadId 未選択時の pending.action
+  globalPendingAction?: PendingState | null;
+  // カウンター
   additionalProposeCount?: number;
-  // Phase Next-6 Day1: pending remind state
-  pendingRemind?: {
-    threadId: string;
-    pendingInvites: Array<{ email: string; name?: string }>;
-    count: number;
-  } | null;
-  // Phase Next-6 Day1: remind execution count (max 2 per thread)
   remindCount?: number;
-  // Phase Next-6 Day3: pending notify state
-  pendingNotify?: {
-    threadId: string;
-    invites: Array<{ email: string; name?: string }>;
-    finalSlot: { start_at: string; end_at: string; label?: string };
-    meetingUrl?: string;
-  } | null;
-  // Phase Next-6 Day2: pending split state
-  pendingSplit?: {
-    threadId: string;
-  } | null;
-  // Beta A / Phase2: pending action state for decision flow
-  pendingAction?: {
-    confirmToken: string;
-    expiresAt: string;
-    summary: any;
-    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
-    threadId?: string;
-    threadTitle?: string;
-    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
-  } | null;
-  // Phase2 P2-D1: 再回答必要者へのリマインド確認状態
-  pendingRemindNeedResponse?: {
-    threadId: string;
-    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
-    count: number;
-  } | null;
 }
 
 /**
@@ -494,13 +466,16 @@ async function executeInvitePrepareList(intentResult: IntentResult): Promise<Exe
  * Beta A / Phase2: 決定処理
  * - 通常: 3語固定 (送る/キャンセル/別スレッドで)
  * - 追加候補: 2語固定 (追加/キャンセル)
+ * P0-1: 正規化された pending を使用
  */
 async function executePendingDecision(
   intentResult: IntentResult,
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
   const { decision, confirmToken } = intentResult.params;
-  const pending = context?.pendingAction;
+  // P0-1: 正規化された pending から pending.action を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingAction(activePending) ? activePending : null;
   
   if (!pending && !confirmToken) {
     return {
@@ -714,13 +689,14 @@ async function executeAutoPropose(intentResult: IntentResult): Promise<Execution
 /**
  * P2-2: schedule.auto_propose.confirm
  * Phase Next-5 Day2: 提案確定 → POST /api/threads
- * Phase Next-5 Day2.1: Type-safe ExecutionContext
+ * P0-1: 正規化された pending を使用
  */
 async function executeAutoProposeConfirm(
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  // pendingAutoPropose が存在するかチェック
-  const pending = context?.pendingAutoPropose;
+  // P0-1: 正規化された pending から auto_propose を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingAutoPropose(activePending) ? activePending : null;
   
   if (!pending) {
     return {
@@ -730,14 +706,15 @@ async function executeAutoProposeConfirm(
   }
   
   try {
-    const { emails, duration, proposals, source, threadId } = pending;
+    // P0-1: PendingState の auto_propose 形式から取得
+    const { emails = [], duration, proposals, source, threadId } = pending;
     
     // Phase Next-5 Day3: 追加候補の場合は既存スレッドにスロットを追加
     if (source === 'additional' && threadId) {
-      // Convert proposals to slots format
-      const slots = proposals.map((proposal: any) => ({
-        start_at: proposal.start,
-        end_at: proposal.end,
+      // Convert proposals to slots format (start_at/end_at 形式)
+      const slots = proposals.map((proposal) => ({
+        start_at: proposal.start_at,
+        end_at: proposal.end_at,
         label: proposal.label,
       }));
       
@@ -785,7 +762,7 @@ async function executeAutoProposeConfirm(
     let message = `✅ スレッドを作成しました（${inviteCount}名）\n\n`;
     
     message += `📅 候補日時（${proposals.length}件）:\n`;
-    proposals.forEach((proposal: any, index: number) => {
+    proposals.forEach((proposal, index) => {
       message += `${index + 1}. ${proposal.label}\n`;
     });
     message += '\n';
@@ -932,11 +909,14 @@ async function executeRemindPending(
 /**
  * P3-2: schedule.remind.pending.confirm
  * Phase Next-6 Day1: リマインド確定 → POST
+ * P0-1: 正規化された pending を使用
  */
 async function executeRemindPendingConfirm(
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const pending = context?.pendingRemind;
+  // P0-1: 正規化された pending から remind.pending を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingRemind(activePending) ? activePending : null;
   
   if (!pending) {
     return {
@@ -1128,11 +1108,14 @@ async function executeNotifyConfirmed(
 /**
  * P3-5: schedule.notify.confirmed.confirm
  * Phase Next-6 Day3: 確定通知確定 → POST（Day3.5で実装）
+ * P0-1: 正規化された pending を使用
  */
 async function executeNotifyConfirmedConfirm(
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const pending = context?.pendingNotify;
+  // P0-1: 正規化された pending から notify.confirmed を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingNotify(activePending) ? activePending : null;
   
   if (!pending) {
     return {
@@ -1163,7 +1146,7 @@ ${meetingUrl ? `🎥 Meet URL: ${meetingUrl}` : ''}
     message += '📋 以下をコピーして各自にメールで送信してください:\n\n';
     message += '────────────────────────────\n\n';
     
-    invites.forEach((invite, index) => {
+    invites.forEach((invite: { email: string; name?: string }, index: number) => {
       message += `【${index + 1}. ${invite.email}${invite.name ? ` (${invite.name})` : ''}】\n\n`;
       message += `件名: 日程調整完了のお知らせ\n\n`;
       message += templateMessage;
@@ -1369,11 +1352,14 @@ async function executeAdditionalPropose(
 /**
  * P3-7: schedule.propose_for_split.confirm
  * Phase Next-6 Day2: 票割れ提案確定 → Day3 に誘導
+ * P0-1: 正規化された pending を使用
  */
 async function executeProposeForSplitConfirm(
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const pending = context?.pendingSplit;
+  // P0-1: 正規化された pending から split.propose を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingSplit(activePending) ? activePending : null;
   
   if (!pending?.threadId) {
     return {
@@ -1766,11 +1752,14 @@ async function executeRemindNeedResponse(
 /**
  * P2-D1: schedule.remind.need_response.confirm
  * 再回答必要者へのリマインドを実行
+ * P0-1: 正規化された pending を使用
  */
 async function executeRemindNeedResponseConfirm(
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const pending = context?.pendingRemindNeedResponse;
+  // P0-1: 正規化された pending から remind.need_response を取得
+  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
+  const pending = isPendingRemindNeedResponse(activePending) ? activePending : null;
   
   if (!pending) {
     return {
@@ -1783,7 +1772,7 @@ async function executeRemindNeedResponseConfirm(
     const { threadId, targetInvitees } = pending;
     
     // Extract invitee_keys for API call
-    const targetInviteeKeys = targetInvitees.map((inv) => inv.inviteeKey);
+    const targetInviteeKeys = targetInvitees.map((inv: { inviteeKey: string }) => inv.inviteeKey);
     
     // Call remind API with target_invitee_keys
     const response = await threadsApi.remind(threadId, {

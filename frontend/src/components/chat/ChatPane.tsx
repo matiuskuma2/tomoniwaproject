@@ -14,6 +14,16 @@ import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 import { SpeakButton } from './SpeakButton';
+// P0-1: PendingState 正規化
+import type { PendingState } from '../../core/chat/pendingTypes';
+import { 
+  isPendingAction, 
+  isPendingRemind, 
+  isPendingRemindNeedResponse,
+  isPendingNotify,
+  isPendingSplit,
+  isPendingAutoPropose,
+} from '../../core/chat/pendingTypes';
 
 /**
  * 安全な時刻フォーマット関数
@@ -57,52 +67,15 @@ interface ChatPaneProps {
   // NEW (Phase Next-5 Day2.1): unified execution result handler (type-safe)
   onExecutionResult?: (result: ExecutionResult) => void;
   
-  // NEW (Phase Next-5 Day2): pending auto-propose
-  pendingAutoPropose?: any;
+  // P0-1: 正規化された pending（threadId に紐づく pending）
+  pendingForThread?: PendingState | null;
   
-  // NEW (Phase Next-5 Day3): additional propose execution count (max 2)
+  // P0-1: threadId 未選択時の pending.action（prepare-send等）
+  globalPendingAction?: PendingState | null;
+  
+  // カウンター（max 2 制限用）
   additionalProposeCount?: number;
-  
-  // NEW (Phase Next-6 Day1): pending remind
-  pendingRemind?: {
-    threadId: string;
-    pendingInvites: Array<{ email: string; name?: string }>;
-    count: number;
-  } | null;
-  
-  // NEW (Phase Next-6 Day1): remind execution count (max 2)
   remindCount?: number;
-  
-  // NEW (Phase Next-6 Day3): pending notify
-  pendingNotify?: {
-    threadId: string;
-    invites: Array<{ email: string; name?: string }>;
-    finalSlot: { start_at: string; end_at: string; label?: string };
-    meetingUrl?: string;
-  } | null;
-  
-  // NEW (Phase Next-6 Day2): pending split
-  pendingSplit?: {
-    threadId: string;
-  } | null;
-  
-  // Beta A / Phase2: pending action for decision flow
-  pendingAction?: {
-    confirmToken: string;
-    expiresAt: string;
-    summary: any;
-    mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
-    threadId?: string;
-    threadTitle?: string;
-    actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
-  } | null;
-  
-  // Phase2 P2-D1: pending remind need response
-  pendingRemindNeedResponse?: {
-    threadId: string;
-    targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
-    count: number;
-  } | null;
 }
 
 export function ChatPane({ 
@@ -114,14 +87,10 @@ export function ChatPane({
   onSeedIfEmpty, 
   onThreadUpdate,
   onExecutionResult,
-  pendingAutoPropose,
+  pendingForThread = null,
+  globalPendingAction = null,
   additionalProposeCount = 0,
-  pendingRemind = null,
   remindCount = 0,
-  pendingNotify = null,
-  pendingSplit = null,
-  pendingAction = null,
-  pendingRemindNeedResponse = null
 }: ChatPaneProps) {
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -172,16 +141,11 @@ export function ChatPane({
 
     try {
       // Classify intent
-      // Phase P0-5: threadId が無い場合でも Intent 分類は実行
-      // Beta A: pendingAction をコンテキストに渡す（3語決定フロー用）
-      // Phase2 P2-D1: pendingRemindNeedResponse を渡す
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId || undefined,
-        pendingRemind,
-        pendingNotify,
-        pendingSplit,
-        pendingAction,
-        pendingRemindNeedResponse,
+        // P0-1: 正規化された pending を渡す
+        pendingForThread,
+        globalPendingAction,
       });
       
       console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
@@ -189,14 +153,11 @@ export function ChatPane({
       // Execute intent
       console.log('[API] Executing intent:', intentResult.intent);
       const result = await executeIntent(intentResult, {
-        pendingAutoPropose,
+        // P0-1: 正規化された pending を渡す
+        pendingForThread,
+        globalPendingAction,
         additionalProposeCount,
-        pendingRemind,
         remindCount,
-        pendingNotify,
-        pendingSplit,
-        pendingAction,
-        pendingRemindNeedResponse,
       });
       console.log('[API] Result:', result.success, result.message);
 
@@ -456,11 +417,21 @@ export function ChatPane({
             {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : '送信'}
           </button>
         </div>
-        {/* Beta A: pending action インジケーター */}
-        {pendingAction && (
+        {/* P0-1: 正規化された pending インジケーター */}
+        {(pendingForThread || globalPendingAction) && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mt-2">
             <p className="text-xs text-yellow-800">
-              ⚠️ 送信確認待ち: 「送る」「キャンセル」「別スレッドで」のいずれかを入力
+              ⚠️ 確認待ち: {isPendingAction(pendingForThread || globalPendingAction) 
+                ? '「送る」「キャンセル」「別スレッドで」'
+                : isPendingRemind(pendingForThread) || isPendingRemindNeedResponse(pendingForThread)
+                  ? '「はい」「キャンセル」'
+                  : isPendingNotify(pendingForThread)
+                    ? '「はい」「キャンセル」'
+                    : isPendingAutoPropose(pendingForThread)
+                      ? '「はい」「キャンセル」'
+                      : isPendingSplit(pendingForThread)
+                        ? '「はい」「キャンセル」'
+                        : '入力待ち'}
             </p>
           </div>
         )}
