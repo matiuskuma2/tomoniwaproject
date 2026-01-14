@@ -412,19 +412,40 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
 
     const timer = setTimeout(() => {
       try {
-        const serialized = JSON.stringify(state.messagesByThreadId);
+        // PERF-S2: 保存前にメッセージ数を制限（各スレッド最新100件、最大20スレッド）
+        const MAX_MESSAGES_PER_THREAD = 100;
+        const MAX_THREADS = 20;
         
-        // Check size (5MB limit)
-        if (serialized.length > 5 * 1024 * 1024) {
-          console.warn('[ChatReducer] Messages too large, trimming to last 10 threads');
-          const threadIds = Object.keys(state.messagesByThreadId);
-          if (threadIds.length > 10) {
-            dispatch({ type: 'TRIM_MESSAGES', payload: { threadIds: threadIds.slice(-10) } });
-            return;
+        const threadIds = Object.keys(state.messagesByThreadId);
+        const recentThreadIds = threadIds.slice(-MAX_THREADS);
+        
+        const trimmedMessages: Record<string, ChatMessage[]> = {};
+        for (const tid of recentThreadIds) {
+          const msgs = state.messagesByThreadId[tid];
+          if (msgs && msgs.length > 0) {
+            trimmedMessages[tid] = msgs.slice(-MAX_MESSAGES_PER_THREAD);
           }
         }
         
-        localStorage.setItem('tomoniwao_messages', serialized);
+        const serialized = JSON.stringify(trimmedMessages);
+        
+        // Check size (5MB limit)
+        if (serialized.length > 5 * 1024 * 1024) {
+          console.warn('[ChatReducer] Messages still too large after trim');
+          // さらに削減: 各スレッド50件、10スレッドに
+          const furtherTrimmed: Record<string, ChatMessage[]> = {};
+          const limitedThreadIds = recentThreadIds.slice(-10);
+          for (const tid of limitedThreadIds) {
+            const msgs = trimmedMessages[tid];
+            if (msgs) {
+              furtherTrimmed[tid] = msgs.slice(-50);
+            }
+          }
+          localStorage.setItem('tomoniwao_messages', JSON.stringify(furtherTrimmed));
+        } else {
+          localStorage.setItem('tomoniwao_messages', serialized);
+        }
+        
         dispatch({ type: 'SAVE_SUCCESS' });
       } catch (error) {
         console.error('[ChatReducer] localStorage save failed:', error);

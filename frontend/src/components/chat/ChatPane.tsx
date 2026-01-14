@@ -340,11 +340,24 @@ export function ChatPane({
 
   // Phase P0-5: status が無くてもチャット入力は可能にする
 
+  // PERF-S2: メッセージ表示上限（DOM肥大防止）
+  const MAX_DISPLAY_MESSAGES = 50;
+  const displayMessages = messages.length > MAX_DISPLAY_MESSAGES
+    ? messages.slice(-MAX_DISPLAY_MESSAGES)
+    : messages;
+  const hiddenCount = messages.length - displayMessages.length;
+
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && !threadId ? (
+        {/* PERF-S2: 古いメッセージ省略表示 */}
+        {hiddenCount > 0 && (
+          <div className="text-center text-xs text-gray-400 py-2">
+            {hiddenCount}件の古いメッセージは省略されています
+          </div>
+        )}
+        {displayMessages.length === 0 && !threadId ? (
           /* Phase P0-5: スレッド未選択時のプレースホルダー */
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-500 max-w-md">
@@ -367,7 +380,7 @@ export function ChatPane({
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
+          displayMessages.map((msg) => (
             <div key={msg.id} className="flex items-start">
               {msg.role === 'assistant' ? (
                 <>
