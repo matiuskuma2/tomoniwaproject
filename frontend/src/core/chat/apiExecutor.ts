@@ -24,8 +24,6 @@ import type { PendingState } from './pendingTypes';
 // P0-2: Write 後の refresh 強制
 import { getRefreshActions, type WriteOp } from '../refresh/refreshMap';
 import { runRefresh } from '../refresh/runRefresh';
-// P1-2: Structured logger
-import { log } from '../platform';
 import { 
   isPendingAction, 
   isPendingRemind, 
@@ -76,8 +74,7 @@ async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> 
     const actions = getRefreshActions(op, threadId ? { threadId } : undefined);
     await runRefresh(actions);
   } catch (e) {
-    // P1-2: 構造化ログで追跡可能に
-    log.warn('refreshAfterWrite failed', { module: 'apiExecutor', writeOp: op, threadId, err: e });
+    console.warn('[refreshAfterWrite] failed:', op, threadId, e);
   }
 }
 

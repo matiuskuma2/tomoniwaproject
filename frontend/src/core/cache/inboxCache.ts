@@ -16,8 +16,6 @@
 
 import { inboxApi } from '../api/inbox';
 import type { InboxNotification } from '../models';
-// P1-2: Structured logger
-import { log } from '../platform';
 
 // ============================================================
 // Configuration
@@ -85,18 +83,18 @@ export async function getInbox(
   
   // 1. Check cache (TTL valid)
   if (cache && !isExpired(cache)) {
-    log.cacheDebug('InboxCache HIT', { module: 'InboxCache', age: Date.now() - cache.timestamp });
+    console.log(`[InboxCache] HIT (age: ${Date.now() - cache.timestamp}ms)`);
     return cache.data;
   }
   
   // 2. Check inflight (return same promise)
   if (inflight) {
-    log.cacheDebug('InboxCache INFLIGHT', { module: 'InboxCache' });
+    console.log('[InboxCache] INFLIGHT (waiting for existing request)');
     return inflight.promise;
   }
   
   // 3. Fetch and cache
-  log.cacheDebug('InboxCache MISS', { module: 'InboxCache' });
+  console.log('[InboxCache] MISS (fetching from server)');
   
   const promise = inboxApi.list()
     .then(response => {
@@ -134,7 +132,7 @@ export async function getInbox(
  * Write後など、確実に最新を取得したい場合に使用
  */
 export async function refreshInbox(): Promise<InboxNotification[]> {
-  log.cacheDebug('InboxCache REFRESH', { module: 'InboxCache' });
+  console.log('[InboxCache] REFRESH (forced)');
   
   // Clear existing cache
   cache = null;
@@ -166,7 +164,7 @@ export async function refreshInbox(): Promise<InboxNotification[]> {
  * キャッシュを削除するだけで、新規fetchはしない
  */
 export function invalidateInbox(): void {
-  log.cacheDebug('InboxCache INVALIDATE', { module: 'InboxCache' });
+  console.log('[InboxCache] INVALIDATE');
   cache = null;
 }
 
