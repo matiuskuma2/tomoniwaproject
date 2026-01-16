@@ -16,6 +16,8 @@
 
 import { threadsApi } from '../api/threads';
 import type { Thread } from '../models';
+// P1-2: Structured logger
+import { log } from '../platform';
 
 // ============================================================
 // Configuration
@@ -83,18 +85,18 @@ export async function getThreadsList(
   
   // 1. Check cache (TTL valid)
   if (cache && !isExpired(cache)) {
-    console.log(`[ThreadsListCache] HIT (age: ${Date.now() - cache.timestamp}ms)`);
+    log.cacheDebug('ThreadsListCache HIT', { module: 'ThreadsListCache', age: Date.now() - cache.timestamp });
     return cache.data;
   }
   
   // 2. Check inflight (return same promise)
   if (inflight) {
-    console.log('[ThreadsListCache] INFLIGHT (waiting for existing request)');
+    log.cacheDebug('ThreadsListCache INFLIGHT', { module: 'ThreadsListCache' });
     return inflight.promise;
   }
   
   // 3. Fetch and cache
-  console.log('[ThreadsListCache] MISS (fetching from server)');
+  log.cacheDebug('ThreadsListCache MISS', { module: 'ThreadsListCache' });
   
   const promise = threadsApi.list()
     .then(response => {
@@ -132,7 +134,7 @@ export async function getThreadsList(
  * Write後など、確実に最新を取得したい場合に使用
  */
 export async function refreshThreadsList(): Promise<Thread[]> {
-  console.log('[ThreadsListCache] REFRESH (forced)');
+  log.cacheDebug('ThreadsListCache REFRESH', { module: 'ThreadsListCache' });
   
   // Clear existing cache
   cache = null;
@@ -164,7 +166,7 @@ export async function refreshThreadsList(): Promise<Thread[]> {
  * キャッシュを削除するだけで、新規fetchはしない
  */
 export function invalidateThreadsList(): void {
-  console.log('[ThreadsListCache] INVALIDATE');
+  log.cacheDebug('ThreadsListCache INVALIDATE', { module: 'ThreadsListCache' });
   cache = null;
 }
 
