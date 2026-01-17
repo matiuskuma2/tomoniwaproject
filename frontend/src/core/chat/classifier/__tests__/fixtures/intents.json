@@ -1,0 +1,309 @@
+{
+  "$schema": "./intents.schema.json",
+  "description": "TD-003 ゴールデンファイル回帰テスト: 入力→intent のスナップショット",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "list-create-1",
+      "input": "営業部リストを作って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.create" }
+    },
+    {
+      "id": "list-create-2",
+      "input": "新しいリストを作って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.create" }
+    },
+    {
+      "id": "list-list-1",
+      "input": "リスト",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.list" }
+    },
+    {
+      "id": "list-list-2",
+      "input": "リスト一覧",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.list" }
+    },
+    {
+      "id": "list-members-1",
+      "input": "営業部リストのメンバー",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.members" }
+    },
+    {
+      "id": "list-members-2",
+      "input": "テストリストの中身",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.members" }
+    },
+    {
+      "id": "list-add-member-1",
+      "input": "tanaka@example.comを営業部リストに追加",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "list.add_member" }
+    },
+    {
+      "id": "invite-prepare-list-1",
+      "input": "営業部リストに招待",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "invite.prepare.list" }
+    },
+    {
+      "id": "invite-prepare-list-2",
+      "input": "テストリストに送って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "invite.prepare.list" }
+    },
+    {
+      "id": "calendar-today-1",
+      "input": "今日の予定",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.today" }
+    },
+    {
+      "id": "calendar-today-2",
+      "input": "きょうの予定教えて",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.today" }
+    },
+    {
+      "id": "calendar-week-1",
+      "input": "今週の予定",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.week" }
+    },
+    {
+      "id": "calendar-week-2",
+      "input": "週の予定見せて",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.week" }
+    },
+    {
+      "id": "freebusy-1",
+      "input": "今日空いてる？",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.freebusy", "params": { "range": "today" } }
+    },
+    {
+      "id": "freebusy-2",
+      "input": "今週の空き時間",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.freebusy", "params": { "range": "week" } }
+    },
+    {
+      "id": "freebusy-3",
+      "input": "フリーな時間",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.freebusy" }
+    },
+    {
+      "id": "additional-propose-1",
+      "input": "追加候補",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.additional_propose" }
+    },
+    {
+      "id": "additional-propose-2",
+      "input": "もっと候補出して",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.additional_propose" }
+    },
+    {
+      "id": "additional-propose-3",
+      "input": "追加して",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.additional_propose" }
+    },
+    {
+      "id": "notify-confirmed-1",
+      "input": "確定通知",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.notify.confirmed" }
+    },
+    {
+      "id": "notify-confirmed-2",
+      "input": "みんなに知らせて",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.notify.confirmed" }
+    },
+    {
+      "id": "notify-confirmed-3",
+      "input": "全員に連絡",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.notify.confirmed" }
+    },
+    {
+      "id": "auto-propose-1",
+      "input": "候補出して tanaka@example.com",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose" }
+    },
+    {
+      "id": "auto-propose-2",
+      "input": "自動調整",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose" }
+    },
+    {
+      "id": "need-response-list-1",
+      "input": "再回答必要",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.need_response.list" }
+    },
+    {
+      "id": "need-response-list-2",
+      "input": "誰が回答必要？",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.need_response.list" }
+    },
+    {
+      "id": "remind-need-response-1",
+      "input": "催促メール送って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.remind.pending" },
+      "note": "実際の動作: '\u518d\u56de\u7b54\u5fc5\u8981' が先に need_response.list にマッチするため、リマインド系は別のパターンでテスト"
+    },
+    {
+      "id": "remind-need-response-2",
+      "input": "未返信の人にリマインド送って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.remind.pending" },
+      "note": "remind.pending のテスト"
+    },
+    {
+      "id": "remind-pending-1",
+      "input": "リマインド",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.remind.pending" }
+    },
+    {
+      "id": "remind-pending-2",
+      "input": "催促",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.remind.pending" }
+    },
+    {
+      "id": "remind-pending-3",
+      "input": "未返信の人に連絡",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.remind.pending" }
+    },
+    {
+      "id": "thread-create-1",
+      "input": "スレッド作って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "thread.create" }
+    },
+    {
+      "id": "thread-create-2",
+      "input": "新規日程調整開始",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "thread.create" }
+    },
+    {
+      "id": "invite-prepare-emails-1",
+      "input": "tanaka@example.comに送って",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "invite.prepare.emails" }
+    },
+    {
+      "id": "invite-prepare-emails-2",
+      "input": "yamada@test.com suzuki@test.comに招待",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "invite.prepare.emails" }
+    },
+    {
+      "id": "invite-prepare-emails-3",
+      "input": "test@example.com",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "invite.prepare.emails" }
+    },
+    {
+      "id": "finalize-1",
+      "input": "1番で確定",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.finalize", "params": { "slotNumber": 1 } }
+    },
+    {
+      "id": "finalize-2",
+      "input": "2番で",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.finalize", "params": { "slotNumber": 2 } }
+    },
+    {
+      "id": "finalize-3",
+      "input": "この日で決めて",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.finalize" }
+    },
+    {
+      "id": "status-check-1",
+      "input": "状況教えて",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.status.check" }
+    },
+    {
+      "id": "status-check-2",
+      "input": "進捗確認",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.status.check" }
+    },
+    {
+      "id": "status-check-3",
+      "input": "何がある？",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.status.check" }
+    },
+    {
+      "id": "confirm-yes-default",
+      "input": "はい",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose.confirm" }
+    },
+    {
+      "id": "confirm-ok",
+      "input": "OK",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose.confirm" }
+    },
+    {
+      "id": "cancel-no-default",
+      "input": "いいえ",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose.cancel" }
+    },
+    {
+      "id": "cancel-cancel",
+      "input": "やめる",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "schedule.auto_propose.cancel" }
+    },
+    {
+      "id": "unknown-1",
+      "input": "こんにちは",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "unknown" }
+    },
+    {
+      "id": "unknown-2",
+      "input": "おはよう",
+      "context": { "hasThreadId": true },
+      "expected": { "intent": "unknown" }
+    },
+    {
+      "id": "clarification-finalize-no-thread",
+      "input": "1番で確定",
+      "context": { "hasThreadId": false },
+      "expected": { "intent": "schedule.finalize", "needsClarification": true }
+    },
+    {
+      "id": "clarification-remind-no-thread",
+      "input": "リマインド",
+      "context": { "hasThreadId": false },
+      "expected": { "intent": "schedule.remind.pending", "needsClarification": true }
+    }
+  ]
+}
