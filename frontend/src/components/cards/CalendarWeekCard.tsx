@@ -2,6 +2,8 @@
  * CalendarWeekCard
  * Displays this week's events from Google Calendar
  * Phase Next-3 (Day4)
+ * 
+ * P1-3: viewerTz for consistent timezone display
  */
 
 import type { CalendarWeekResponse } from '../../core/models';
@@ -9,9 +11,13 @@ import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface CalendarWeekCardProps {
   data: CalendarWeekResponse;
+  viewerTz?: string;
 }
 
-export function CalendarWeekCard({ data }: CalendarWeekCardProps) {
+export function CalendarWeekCard({ data, viewerTz }: CalendarWeekCardProps) {
+  // P1-3: Use viewerTz for consistent timezone display
+  const fmt = (iso: string) => formatDateTimeForViewer(iso, viewerTz);
+
   // Warning state
   if (data.warning) {
     return (
@@ -47,7 +53,7 @@ export function CalendarWeekCard({ data }: CalendarWeekCardProps) {
           <div key={event.id} className="border-l-4 border-green-500 pl-3">
             <p className="text-sm font-medium text-gray-900">{event.summary}</p>
             <p className="text-xs text-gray-500">
-              {formatDateTimeForViewer(event.start)} - {formatDateTimeForViewer(event.end)}
+              {fmt(event.start)} - {fmt(event.end)}
             </p>
             {event.location && (
               <p className="text-xs text-gray-500">📍 {event.location}</p>

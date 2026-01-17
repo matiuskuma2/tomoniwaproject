@@ -17,6 +17,7 @@ import { ChatPane } from './ChatPane';
 import { CardsPane } from './CardsPane';
 import { NotificationBell } from './NotificationBell';
 import { useChatReducer } from './useChatReducer';
+import { useViewerTimezone } from '../../core/hooks/useViewerTimezone';
 
 export function ChatLayout() {
   const navigate = useNavigate();
@@ -42,6 +43,9 @@ export function ChatLayout() {
     loading, 
     refresh: refreshThreadStatus 
   } = useThreadStatus(threadId);
+
+  // P1-3: Viewer timezone from users/me (fallback to browser TZ)
+  const viewerTz = useViewerTimezone();
 
   // Destructure state for easy access
   // P0-1: pending 系は pendingForThread / globalPendingAction に正規化
@@ -233,6 +237,7 @@ export function ChatLayout() {
               status={status} 
               loading={loading} 
               calendarData={calendarData}
+              viewerTz={viewerTz}
             />
           </div>
         </div>
@@ -261,6 +266,7 @@ export function ChatLayout() {
               status={status} 
               loading={loading} 
               calendarData={calendarData}
+              viewerTz={viewerTz}
             />
           )}
         </div>

@@ -11,6 +11,7 @@ import { refreshStatus } from '../cache/threadStatusCache';
 import { refreshThreadsList as refreshThreadsListCache } from '../cache/threadsListCache';
 import { refreshInbox as refreshInboxCache } from '../cache/inboxCache';
 import { refreshMe as refreshMeCache } from '../cache/meCache';
+import { refreshLists as refreshListsCache } from '../cache/listsCache';
 import type { RefreshAction } from './refreshMap';
 import { describeRefreshAction } from './refreshMap';
 
@@ -89,10 +90,10 @@ async function executeRefreshAction(action: RefreshAction, debug: boolean): Prom
       break;
       
     case 'LISTS':
-      // TODO: lists キャッシュが実装されたらここで invalidate
       if (debug) {
-        console.log('[runRefresh] LISTS refresh (not implemented yet)');
+        console.log('[runRefresh] Refreshing lists');
       }
+      await refreshListsCache();
       break;
       
     default:

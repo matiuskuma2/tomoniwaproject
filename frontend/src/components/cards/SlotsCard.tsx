@@ -1,6 +1,8 @@
 /**
  * SlotsCard
  * Displays slots with start_at, end_at, and vote counts
+ * 
+ * P1-3: viewerTz for consistent timezone display
  */
 
 import type { ThreadStatus_API, Slot } from '../../core/models';
@@ -8,9 +10,10 @@ import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface SlotsCardProps {
   status: ThreadStatus_API;
+  viewerTz?: string;
 }
 
-export function SlotsCard({ status }: SlotsCardProps) {
+export function SlotsCard({ status, viewerTz }: SlotsCardProps) {
   if (status.slots.length === 0) {
     return null;
   }
@@ -18,8 +21,8 @@ export function SlotsCard({ status }: SlotsCardProps) {
   // Phase Next-6 Day2: Vote counts are now server-side (負債ゼロ)
   // No need to calculate - use slot.votes directly
 
-  // ⚠️ toLocaleString 直書き禁止: datetime.ts の関数を使用
-  const formatDateTime = (dateStr: string) => formatDateTimeForViewer(dateStr);
+  // P1-3: Use viewerTz for consistent timezone display
+  const formatDateTime = (dateStr: string) => formatDateTimeForViewer(dateStr, viewerTz);
 
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-4">

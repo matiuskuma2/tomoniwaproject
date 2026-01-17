@@ -1,6 +1,9 @@
 /**
  * NotificationBell
  * Displays inbox icon with unread count and drawer
+ * 
+ * P1-1: uses inbox cache
+ * P1-3: uses viewerTz for consistent timezone display
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -8,9 +11,11 @@ import { useNavigate } from 'react-router-dom';
 import { getInbox, subscribeInbox } from '../../core/cache';
 import type { InboxNotification } from '../../core/models';
 import { formatDateTimeForViewer } from '../../utils/datetime';
+import { useViewerTimezone } from '../../core/hooks/useViewerTimezone';
 
 export function NotificationBell() {
   const navigate = useNavigate();
+  const viewerTz = useViewerTimezone(); // P1-3
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -107,7 +112,7 @@ export function NotificationBell() {
                             {notification.kind}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            {formatDateTimeForViewer(notification.created_at)}
+                            {formatDateTimeForViewer(notification.created_at, viewerTz)}
                           </p>
                         </div>
                         {!notification.read && (

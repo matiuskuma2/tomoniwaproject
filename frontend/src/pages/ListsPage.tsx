@@ -1,11 +1,14 @@
 /**
  * Lists Page
  * Manage lists (segments) for bulk invitation
+ * 
+ * P1-3(C): uses listsCache for TTL + inflight sharing
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listsApi, threadsApi } from '../core/api';
+import { getLists, subscribeLists, refreshLists } from '../core/cache';
 import type { List, ListMember } from '../core/models';
 
 export function ListsPage() {
@@ -17,21 +20,31 @@ export function ListsPage() {
   const [selectedList, setSelectedList] = useState<string | null>(null);
   const [members, setMembers] = useState<ListMember[]>([]);
 
-  useEffect(() => {
-    loadLists();
-  }, []);
-
-  const loadLists = async () => {
+  // P1-3(C): Load lists via cache
+  const loadLists = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await listsApi.list();
-      setLists(response.items || []);
+      const items = await getLists();
+      setLists(items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load lists');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadLists();
+    
+    // P1-3(C): Subscribe to cache updates
+    const unsubscribe = subscribeLists((updatedLists) => {
+      if (updatedLists) {
+        setLists(updatedLists);
+      }
+    });
+    
+    return unsubscribe;
+  }, [loadLists]);
 
   const loadMembers = async (listId: string) => {
     try {
@@ -53,7 +66,8 @@ export function ListsPage() {
       });
       
       setShowCreateModal(false);
-      await loadLists();
+      // P1-3(C): Force refresh cache after create
+      await refreshLists();
       e.currentTarget.reset();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to create list');

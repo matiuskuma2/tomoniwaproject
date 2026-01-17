@@ -1,6 +1,8 @@
 /**
  * Thread Detail Page
  * Shows thread status, invites, slots, and actions (remind/finalize)
+ * 
+ * P1-3: uses viewerTz for consistent timezone display
  */
 
 import { useEffect, useState } from 'react';
@@ -8,10 +10,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { threadsApi } from '../core/api';
 import type { ThreadStatus_API, Slot } from '../core/models';
 import { formatDateTimeRangeForViewer } from '../utils/datetime';
+import { useViewerTimezone } from '../core/hooks/useViewerTimezone';
 
 export function ThreadDetailPage() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
+  const viewerTz = useViewerTimezone(); // P1-3
   
   const [status, setStatus] = useState<ThreadStatus_API | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +23,9 @@ export function ThreadDetailPage() {
   const [reminding, setReminding] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+
+  // P1-3: Use viewerTz for consistent timezone display
+  const formatRange = (start: string, end: string) => formatDateTimeRangeForViewer(start, end, viewerTz);
 
   useEffect(() => {
     if (threadId) {
@@ -61,7 +68,7 @@ export function ThreadDetailPage() {
     // Improved confirmation message
     const selectedSlot = status?.slots.find((s: Slot) => s.slot_id === selectedSlotId);
     const confirmMessage = selectedSlot
-      ? `以下の日程で確定します。\nGoogle Meet URL が自動的に生成されます。\n\n${formatDateTimeRangeForViewer(selectedSlot.start_at, selectedSlot.end_at)}\n\nよろしいですか？`
+      ? `以下の日程で確定します。\nGoogle Meet URL が自動的に生成されます。\n\n${formatRange(selectedSlot.start_at, selectedSlot.end_at)}\n\nよろしいですか？`
       : 'この日程で確定しますか？Google Meet URL が生成されます。';
     
     if (!confirm(confirmMessage)) return;
@@ -195,7 +202,7 @@ export function ThreadDetailPage() {
               <div className="bg-white rounded-lg p-4">
                 <p className="text-sm text-gray-500 mb-1">確定日時</p>
                 <p className="text-lg font-bold text-gray-900">
-                  {formatDateTimeRangeForViewer(
+                  {formatRange(
                     status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.start_at,
                     status.slots.find((s: Slot) => s.slot_id === status.evaluation.final_slot_id)!.end_at
                   )}
@@ -301,7 +308,7 @@ export function ThreadDetailPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-gray-900">
-                        {formatDateTimeRangeForViewer(slot.start_at, slot.end_at)}
+                        {formatRange(slot.start_at, slot.end_at)}
                       </p>
                       {/* Phase2: バージョンバッジ（v2以上のみ表示） */}
                       {(slot as any).proposal_version && (slot as any).proposal_version > 1 && (
@@ -419,7 +426,7 @@ export function ThreadDetailPage() {
                         {/* Show selected slot */}
                         {selectedSlot && (
                           <p className="text-sm text-blue-600 mt-1">
-                            → {formatDateTimeRangeForViewer(selectedSlot.start_at, selectedSlot.end_at)} を選択
+                            → {formatRange(selectedSlot.start_at, selectedSlot.end_at)} を選択
                           </p>
                         )}
                         {/* Phase2: 回答時の世代表示 */}

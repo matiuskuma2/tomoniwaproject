@@ -2,24 +2,22 @@
  * CalendarTodayCard
  * Displays today's events from Google Calendar
  * Phase Next-3 (Day4)
+ * 
+ * P1-3: viewerTz for consistent timezone display
  */
 
 import type { CalendarTodayResponse } from '../../core/models';
-
-/**
- * 安全な時刻フォーマット関数
- */
-function formatTime(ts: string): string {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-}
+import { formatTimeForViewer } from '../../utils/datetime';
 
 interface CalendarTodayCardProps {
   data: CalendarTodayResponse;
+  viewerTz?: string;
 }
 
-export function CalendarTodayCard({ data }: CalendarTodayCardProps) {
+export function CalendarTodayCard({ data, viewerTz }: CalendarTodayCardProps) {
+  // P1-3: Use viewerTz for consistent timezone display
+  const formatTime = (ts: string) => formatTimeForViewer(ts, viewerTz);
+
   // Warning state
   if (data.warning) {
     return (

@@ -1,6 +1,8 @@
 /**
  * ThreadStatusCard
  * Displays thread status, title, and updated_at
+ * 
+ * P1-3: viewerTz for consistent timezone display
  */
 
 import type { ThreadStatus_API } from '../../core/models';
@@ -8,9 +10,10 @@ import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface ThreadStatusCardProps {
   status: ThreadStatus_API;
+  viewerTz?: string;
 }
 
-export function ThreadStatusCard({ status }: ThreadStatusCardProps) {
+export function ThreadStatusCard({ status, viewerTz }: ThreadStatusCardProps) {
   const getStatusBadge = (statusValue: string) => {
     const styles = {
       draft: 'bg-gray-100 text-gray-800',
@@ -43,7 +46,7 @@ export function ThreadStatusCard({ status }: ThreadStatusCardProps) {
         <div>
           <span className="text-sm text-gray-500">更新日時:</span>
           <p className="text-sm text-gray-900">
-            {formatDateTimeForViewer(status.thread.updated_at)}
+            {formatDateTimeForViewer(status.thread.updated_at, viewerTz)}
           </p>
         </div>
         

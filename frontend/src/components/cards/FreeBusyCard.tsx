@@ -2,6 +2,8 @@
  * FreeBusyCard
  * Displays busy time slots (calendar free/busy information)
  * Phase Next-3 (Day4)
+ * 
+ * P1-3: viewerTz for consistent timezone display
  */
 
 import type { CalendarFreeBusyResponse } from '../../core/models';
@@ -9,10 +11,14 @@ import { formatDateTimeForViewer } from '../../utils/datetime';
 
 interface FreeBusyCardProps {
   data: CalendarFreeBusyResponse;
+  viewerTz?: string;
 }
 
-export function FreeBusyCard({ data }: FreeBusyCardProps) {
+export function FreeBusyCard({ data, viewerTz }: FreeBusyCardProps) {
   const rangeLabel = data.range === 'today' ? '今日' : '今週';
+  
+  // P1-3: Use viewerTz for consistent timezone display
+  const fmt = (iso: string) => formatDateTimeForViewer(iso, viewerTz);
   
   // Warning state
   if (data.warning) {
@@ -50,7 +56,7 @@ export function FreeBusyCard({ data }: FreeBusyCardProps) {
         {data.busy.map((slot, index) => (
           <div key={index} className="border-l-4 border-red-500 pl-3 py-1">
             <p className="text-xs text-gray-500">
-              {formatDateTimeForViewer(slot.start)} - {formatDateTimeForViewer(slot.end)}
+              {fmt(slot.start)} - {fmt(slot.end)}
             </p>
           </div>
         ))}

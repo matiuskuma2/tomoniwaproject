@@ -59,3 +59,16 @@ export {
 } from './meCache';
 
 export * as meCache from './meCache';
+
+// Lists cache (P1-3C)
+export {
+  getLists,
+  refreshLists,
+  invalidateLists,
+  getCachedLists,
+  setLists,
+  subscribeLists,
+  getListsCacheStats,
+} from './listsCache';
+
+export * as listsCache from './listsCache';

@@ -2,6 +2,8 @@
  * CardsPane
  * Right pane: displays status cards + calendar cards (Phase Next-3 Day4)
  * Uses GET /api/threads/:id/status + Calendar API
+ * 
+ * P1-3: viewerTz is passed down so all time rendering uses users/me.timezone
  */
 
 import { ThreadStatusCard } from '../cards/ThreadStatusCard';
@@ -26,9 +28,10 @@ interface CardsPaneProps {
     week?: CalendarWeekResponse;
     freebusy?: CalendarFreeBusyResponse;
   };
+  viewerTz?: string; // P1-3: user timezone
 }
 
-export function CardsPane({ status, loading, calendarData }: CardsPaneProps) {
+export function CardsPane({ status, loading, calendarData, viewerTz }: CardsPaneProps) {
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
@@ -51,16 +54,16 @@ export function CardsPane({ status, loading, calendarData }: CardsPaneProps) {
   return (
     <div className="h-full bg-gray-50 border-l border-gray-200 overflow-y-auto p-4">
       {/* Phase Next-3 (Day4): Calendar Cards (show when data exists) */}
-      {calendarData?.today && <CalendarTodayCard data={calendarData.today} />}
-      {calendarData?.week && <CalendarWeekCard data={calendarData.week} />}
-      {calendarData?.freebusy && <FreeBusyCard data={calendarData.freebusy} />}
+      {calendarData?.today && <CalendarTodayCard data={calendarData.today} viewerTz={viewerTz} />}
+      {calendarData?.week && <CalendarWeekCard data={calendarData.week} viewerTz={viewerTz} />}
+      {calendarData?.freebusy && <FreeBusyCard data={calendarData.freebusy} viewerTz={viewerTz} />}
       
       {/* Phase Next-2: Thread Status Cards (show when thread is selected) */}
       {status && (
         <>
-          <ThreadStatusCard status={status} />
+          <ThreadStatusCard status={status} viewerTz={viewerTz} />
           <InvitesCard status={status} />
-          <SlotsCard status={status} />
+          <SlotsCard status={status} viewerTz={viewerTz} />
           <MeetCard status={status} />
         </>
       )}
