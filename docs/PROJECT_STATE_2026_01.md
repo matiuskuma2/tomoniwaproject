@@ -1,8 +1,8 @@
 # Tomoniwao - プロジェクト完全ドキュメント
 
 **最終更新**: 2026-01-17  
-**コミット**: 2d7f7f0  
-**ステータス**: P1-3 キャッシュ改善完了、次は contactsCache
+**コミット**: (最新)  
+**ステータス**: P1-4 contactsCache 完了
 
 ---
 
@@ -290,7 +290,7 @@ chat/
 | `list.create` | `executeListCreate` | `refreshLists()` |
 | `list.list` | `executeListList` | - |
 | `list.members` | `executeListMembers` | - |
-| `list.add_member` | `executeListAddMember` | `refreshLists()` |
+| `list.add_member` | `executeListAddMember` | `refreshLists()` + `refreshContacts()` ★P1-4 |
 | `schedule.create` | `executeCreate` | `refreshThreadsList()` |
 | `schedule.status` | `executeStatusCheck` | - |
 | `schedule.finalize` | `executeFinalize` | `refreshStatus()` |
@@ -365,6 +365,7 @@ chat/
 |---------|------|-----|---------|
 | `meCache.ts` | `/api/users/me` | 60s | getMe, refreshMe, setMe, subscribeMe |
 | `listsCache.ts` | `/api/lists` | 60s | getLists, refreshLists, setLists, subscribeLists |
+| `contactsCache.ts` | `/api/contacts` | 60s | getContacts, refreshContacts, setContacts, subscribeContacts ★P1-4 |
 | `threadStatusCache.ts` | `/api/threads/:id/status` | 15s | getStatus, refreshStatus, subscribe |
 | `threadsListCache.ts` | `/api/threads` | 30s | getThreadsList, refreshThreadsList |
 | `inboxCache.ts` | `/api/inbox` | 30s | getInbox, refreshInbox |
@@ -460,9 +461,69 @@ case 'LISTS':
 // list.create 実行後
 await refreshLists();
 
-// list.add_member 実行後（ループ外で一括）
+// list.add_member 実行後（ループ外で一括）★P1-4で更新
 if (addedCount > 0) {
-  await refreshLists();
+  await Promise.all([
+    refreshLists(),
+    refreshContacts(),  // ★P1-4: 連絡先も更新
+  ]);
+}
+```
+
+### P1-4 contactsCache（2026-01完了）
+
+#### 実装ファイル
+
+| ファイル | ステータス | 内容 |
+|---------|----------|------|
+| `frontend/src/core/cache/contactsCache.ts` | ✅ NEW | 連絡先キャッシュ |
+| `frontend/src/core/cache/index.ts` | ✅ MODIFIED | contactsCache exports追加 |
+| `frontend/src/core/refresh/refreshMap.ts` | ✅ MODIFIED | CONTACT_CREATE/UPDATE/DELETE追加 |
+| `frontend/src/core/refresh/runRefresh.ts` | ✅ MODIFIED | CONTACTS refresh追加 |
+| `frontend/src/core/chat/executors/list.ts` | ✅ MODIFIED | refreshContacts() 呼び出し |
+
+#### 変更点まとめ
+
+**A) contactsCache.ts**
+- TTL 60秒
+- inflight sharing（同時リクエスト統合）
+- `getContacts()`, `refreshContacts()`, `invalidateContacts()`, `setContacts()`, `subscribeContacts()`
+- subscribe/unsubscribeログ追加
+- 運用事故リスク最高（招待・リスト・メール送信に波及）
+
+**B) refreshMap.ts 追加**
+```typescript
+export type WriteOp =
+  | ...
+  | 'CONTACT_CREATE'
+  | 'CONTACT_UPDATE'
+  | 'CONTACT_DELETE';
+
+export type RefreshAction =
+  | ...
+  | { type: 'CONTACTS' };
+
+case 'CONTACT_CREATE':
+case 'CONTACT_UPDATE':
+case 'CONTACT_DELETE':
+  return [{ type: 'CONTACTS' }];
+```
+
+**C) runRefresh.ts 追加**
+```typescript
+case 'CONTACTS':
+  await refreshContactsCache();
+  break;
+```
+
+**D) executors/list.ts 修正**
+```typescript
+// list.add_member: 連絡先が作成される可能性がある
+if (addedCount > 0) {
+  await Promise.all([
+    refreshLists(),
+    refreshContacts(),
+  ]);
 }
 ```
 
@@ -493,9 +554,9 @@ if (addedCount > 0) {
 
 ### 優先順位: 1 → 2 → 3
 
-#### 1. contactsCache 実装 🔴 最優先
+#### 1. contactsCache 実装 ✅ 完了
 
-**リスク**: 連絡先操作は招待・リスト・メール送信に波及するため、運用事故リスク最高
+**ステータス**: 完了（P1-4）
 
 **実装内容**:
 ```typescript
@@ -507,39 +568,18 @@ export function setContacts(contacts: Contact[]): void;
 export function subscribeContacts(listener): () => void;
 ```
 
-**関連 Executor 修正**:
-- 連絡先作成時: `refreshContacts()`
-- 招待追加時: `refreshContacts()`
-- リストメンバー追加時: `refreshContacts()` + `refreshLists()`
-
-**refreshMap.ts 追加**:
-```typescript
-export type WriteOp =
-  | ...
-  | 'CONTACT_CREATE'
-  | 'CONTACT_UPDATE';
-
-export type RefreshAction =
-  | ...
-  | { type: 'CONTACTS' };
-
-case 'CONTACT_CREATE':
-case 'CONTACT_UPDATE':
-  return [{ type: 'CONTACTS' }];
-```
-
-#### 2. 回帰テスト拡張
+#### 2. 回帰テスト拡張 🟡 次優先
 
 **目的**: WriteOp差し込み漏れをテストで検知
 
 **テスト項目**:
 - [ ] list.create → listsCache更新確認
-- [ ] list.add_member → listsCache更新確認
+- [ ] list.add_member → listsCache + contactsCache更新確認 ★P1-4
 - [ ] contact.create → contactsCache更新確認
 - [ ] users/me/timezone → meCache更新確認
 - [ ] thread.finalize → threadStatusCache更新確認
 
-#### 3. 次フェーズ機能（1完了後）
+#### 3. 次フェーズ機能（2完了後）
 
 - リマインダー機能強化
 - 一括招待バッチ処理最適化

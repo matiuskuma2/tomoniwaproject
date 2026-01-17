@@ -12,6 +12,7 @@ import { refreshThreadsList as refreshThreadsListCache } from '../cache/threadsL
 import { refreshInbox as refreshInboxCache } from '../cache/inboxCache';
 import { refreshMe as refreshMeCache } from '../cache/meCache';
 import { refreshLists as refreshListsCache } from '../cache/listsCache';
+import { refreshContacts as refreshContactsCache } from '../cache/contactsCache';
 import type { RefreshAction } from './refreshMap';
 import { describeRefreshAction } from './refreshMap';
 
@@ -96,6 +97,13 @@ async function executeRefreshAction(action: RefreshAction, debug: boolean): Prom
       await refreshListsCache();
       break;
       
+    case 'CONTACTS':
+      if (debug) {
+        console.log('[runRefresh] Refreshing contacts');
+      }
+      await refreshContactsCache();
+      break;
+      
     default:
       console.warn('[runRefresh] Unknown action type:', action);
   }
@@ -124,4 +132,11 @@ export async function refreshThreadsList(): Promise<void> {
  */
 export async function refreshInbox(): Promise<void> {
   await runRefresh([{ type: 'INBOX' }]);
+}
+
+/**
+ * 連絡先一覧を refresh (P1-4)
+ */
+export async function refreshContacts(): Promise<void> {
+  await runRefresh([{ type: 'CONTACTS' }]);
 }

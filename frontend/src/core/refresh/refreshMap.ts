@@ -22,7 +22,10 @@ export type WriteOp =
   | 'NOTIFY_CONFIRMED'        // 確定通知送信
   | 'USERS_ME_UPDATE_TZ'      // タイムゾーン更新
   | 'LIST_CREATE'             // リスト作成
-  | 'LIST_ADD_MEMBER';        // リストメンバー追加
+  | 'LIST_ADD_MEMBER'         // リストメンバー追加
+  | 'CONTACT_CREATE'          // 連絡先作成 (P1-4)
+  | 'CONTACT_UPDATE'          // 連絡先更新 (P1-4)
+  | 'CONTACT_DELETE';         // 連絡先削除 (P1-4)
 
 // ============================================================
 // Refresh Actions (必要な再取得操作)
@@ -33,7 +36,8 @@ export type RefreshAction =
   | { type: 'THREADS_LIST' }               // スレッド一覧
   | { type: 'INBOX' }                      // 受信箱
   | { type: 'ME' }                         // ユーザー情報
-  | { type: 'LISTS' };                     // リスト一覧
+  | { type: 'LISTS' }                      // リスト一覧
+  | { type: 'CONTACTS' };                  // 連絡先一覧 (P1-4)
 
 // ============================================================
 // Refresh Map (Write操作 → 必要なRefresh)
@@ -102,6 +106,12 @@ export function getRefreshActions(
     case 'LIST_ADD_MEMBER':
       return [{ type: 'LISTS' }];
 
+    // 連絡先操作: 連絡先一覧 (P1-4)
+    case 'CONTACT_CREATE':
+    case 'CONTACT_UPDATE':
+    case 'CONTACT_DELETE':
+      return [{ type: 'CONTACTS' }];
+
     default:
       return [];
   }
@@ -126,6 +136,8 @@ export function describeRefreshAction(action: RefreshAction): string {
       return 'ユーザー情報';
     case 'LISTS':
       return 'リスト一覧';
+    case 'CONTACTS':
+      return '連絡先一覧';
     default:
       return '不明';
   }

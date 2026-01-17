@@ -1,7 +1,7 @@
 # Tomoniwao - ソースコードマップ
 
 **最終更新**: 2026-01-17  
-**コミット**: 27c3363
+**コミット**: P1-4 contactsCache 追加
 
 ---
 
@@ -36,7 +36,7 @@ tomoniwaproject/
 │   ├── src/
 │   │   ├── core/                     # コアロジック
 │   │   │   ├── api/                  # APIクライアント (8ファイル)
-│   │   │   ├── cache/                # キャッシュ (7ファイル) ★P1-3
+│   │   │   ├── cache/                # キャッシュ (8ファイル) ★P1-3/P1-4
 │   │   │   ├── chat/                 # チャット処理
 │   │   │   │   ├── classifier/       # Intent分類
 │   │   │   │   ├── executors/        # Executor (5ファイル) ★P1-1
@@ -96,6 +96,7 @@ tomoniwaproject/
 │  │ index.ts (exports all)                                      │ │
 │  │   ├── meCache.ts         → usersMeApi                       │ │
 │  │   ├── listsCache.ts      → listsApi                         │ │
+│  │   ├── contactsCache.ts   → contactsApi ★P1-4                │ │
 │  │   ├── threadStatusCache.ts → threadsApi                     │ │
 │  │   ├── threadsListCache.ts  → threadsApi                     │ │
 │  │   ├── inboxCache.ts      → inboxApi                         │ │
@@ -137,7 +138,8 @@ tomoniwaproject/
 │  │   ├── list.ts (8,367 lines)                                 │ │
 │  │   │     └── executeListCreate, executeListList,             │ │
 │  │   │         executeListMembers, executeListAddMember        │ │
-│  │   │     └── imports: listsApi, contactsApi, refreshLists    │ │
+│  │   │     └── imports: listsApi, contactsApi                  │ │
+│  │   │     └── imports: refreshLists, refreshContacts ★P1-4    │ │
 │  │   │                                                         │ │
 │  │   ├── thread.ts (14,935 lines)                              │ │
 │  │   │     └── executeCreate, executeStatusCheck,              │ │
@@ -170,7 +172,8 @@ tomoniwaproject/
 │  │   ├── case 'THREADS_LIST': → refreshThreadsListCache()      │ │
 │  │   ├── case 'INBOX':   → refreshInboxCache()                 │ │
 │  │   ├── case 'ME':      → refreshMeCache() ★P1-3              │ │
-│  │   └── case 'LISTS':   → refreshListsCache() ★P1-3           │ │
+│  │   ├── case 'LISTS':   → refreshListsCache() ★P1-3           │ │
+│  │   └── case 'CONTACTS': → refreshContactsCache() ★P1-4       │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └─────────────────────┬───────────────────────────────────────────┘
                       │ uses mapping from
@@ -188,6 +191,9 @@ tomoniwaproject/
 │  │ USERS_ME_UPDATE_TZ  → [ME] ★P1-3                            │ │
 │  │ LIST_CREATE         → [LISTS] ★P1-3                         │ │
 │  │ LIST_ADD_MEMBER     → [LISTS] ★P1-3                         │ │
+│  │ CONTACT_CREATE      → [CONTACTS] ★P1-4                      │ │
+│  │ CONTACT_UPDATE      → [CONTACTS] ★P1-4                      │ │
+│  │ CONTACT_DELETE      → [CONTACTS] ★P1-4                      │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -233,11 +239,12 @@ tomoniwaproject/
 |---------|------|---------|-----|
 | `meCache.ts` | 231 | /api/users/me | 60s |
 | `listsCache.ts` | 236 | /api/lists | 60s |
+| `contactsCache.ts` | 238 | /api/contacts | 60s ★P1-4 |
 | `threadStatusCache.ts` | 303 | /api/threads/:id/status | 15s |
 | `threadsListCache.ts` | 216 | /api/threads | 30s |
 | `inboxCache.ts` | 216 | /api/inbox | 30s |
 | `useThreadStatus.ts` | 197 | React hook | - |
-| `index.ts` | 74 | exports | - |
+| `index.ts` | 87 | exports | - |
 
 ---
 
@@ -271,17 +278,18 @@ tomoniwaproject/
 
 ## ✅ 検証済みファイル
 
-### キャッシュ層（P1-3完了）
+### キャッシュ層（P1-3/P1-4完了）
 
 - [x] `meCache.ts` - TTL 60s, inflight共有, subscribe/unsubscribeログ
 - [x] `listsCache.ts` - TTL 60s, inflight共有, subscribe/unsubscribeログ
-- [x] `index.ts` - meCache/listsCache exports追加
-- [x] `runRefresh.ts` - ME/LISTS refresh追加
-- [x] `refreshMap.ts` - USERS_ME_UPDATE_TZ, LIST_CREATE, LIST_ADD_MEMBER追加
+- [x] `contactsCache.ts` - TTL 60s, inflight共有, subscribe/unsubscribeログ ★P1-4
+- [x] `index.ts` - meCache/listsCache/contactsCache exports追加
+- [x] `runRefresh.ts` - ME/LISTS/CONTACTS refresh追加
+- [x] `refreshMap.ts` - USERS_ME_UPDATE_TZ, LIST_*, CONTACT_* 追加
 
-### Executor層（P1-1完了）
+### Executor層（P1-1/P1-4完了）
 
-- [x] `list.ts` - refreshLists()呼び出し修正
+- [x] `list.ts` - refreshLists() + refreshContacts() 呼び出し修正 ★P1-4
 - [x] `thread.ts` - 分割済み
 - [x] `calendar.ts` - 分割済み
 

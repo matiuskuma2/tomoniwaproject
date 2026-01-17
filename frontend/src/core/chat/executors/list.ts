@@ -10,7 +10,7 @@
 
 import { listsApi } from '../../api/lists';
 import { contactsApi } from '../../api/contacts';
-import { refreshLists } from '../../cache';
+import { refreshLists, refreshContacts } from '../../cache';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 
@@ -240,9 +240,13 @@ export async function executeListAddMember(intentResult: IntentResult): Promise<
       }
     }
     
-    // P1-3: ループ後に一括でキャッシュ更新
+    // P1-3/P1-4: ループ後に一括でキャッシュ更新
+    // 連絡先が作成された可能性があるので両方更新
     if (addedCount > 0) {
-      await refreshLists();
+      await Promise.all([
+        refreshLists(),
+        refreshContacts(),
+      ]);
     }
     
     let message = `✅ ${addedCount}名をリスト「${targetList.name}」に追加しました。`;

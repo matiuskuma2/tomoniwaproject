@@ -72,3 +72,16 @@ export {
 } from './listsCache';
 
 export * as listsCache from './listsCache';
+
+// Contacts cache (P1-4)
+export {
+  getContacts,
+  refreshContacts,
+  invalidateContacts,
+  getCachedContacts,
+  setContacts,
+  subscribeContacts,
+  getContactsCacheStats,
+} from './contactsCache';
+
+export * as contactsCache from './contactsCache';
