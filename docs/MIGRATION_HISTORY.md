@@ -2,9 +2,10 @@
 
 ## 📊 Migration Overview
 
-**Total Migrations**: 19  
-**Current Version**: 0026_threads_and_invites.sql  
-**Database**: Cloudflare D1 (SQLite-based)
+**Total Migrations**: 62  
+**Current Version**: 0073_backfill_thread_timezone.sql  
+**Database**: Cloudflare D1 (SQLite-based)  
+**Last Updated**: 2026-01-17
 
 ---
 
@@ -418,10 +419,109 @@ If foreign key constraint fails:
 
 ---
 
+## 📝 Phase 2 / Beta A Migrations (0065-0073)
+
+### 0065_create_pending_actions.sql
+**Date**: 2026-01  
+**Purpose**: Beta A 送信確認機能
+
+**Tables Created:**
+- `pending_actions` - 送信確認フロー管理
+
+**Key Features:**
+- confirm_token (15分有効)
+- status: pending/confirmed_send/confirmed_cancel/confirmed_new_thread/executed/expired
+- payload_json / summary_json
+- request_id (冪等性)
+
+---
+
+### 0066_create_invite_deliveries.sql
+**Date**: 2026-01  
+**Purpose**: Beta A 配信追跡
+
+**Tables Created:**
+- `invite_deliveries` - メール/in_app通知の配達状況管理
+
+**Key Features:**
+- channel: email/in_app
+- status: queued/sent/delivered/failed/skipped
+- provider_message_id (プロバイダ追跡)
+- retry_count (再送管理)
+
+---
+
+### 0067_add_proposal_version_to_threads.sql
+**Date**: 2026-01  
+**Purpose**: Phase 2 追加候補機能基盤
+
+**Changes:**
+- `scheduling_threads.proposal_version` INTEGER DEFAULT 1
+- `scheduling_threads.additional_propose_count` INTEGER DEFAULT 0
+
+**Notes:**
+- proposal_version: 候補の世代管理
+- additional_propose_count: 追加候補の実行回数（最大2回）
+
+---
+
+### 0068_add_proposal_version_to_slots.sql
+**Date**: 2026-01  
+**Purpose**: スロットへのproposal_version追加
+
+**Changes:**
+- `scheduling_slots.proposal_version` INTEGER DEFAULT 1
+
+---
+
+### 0069_add_proposal_version_to_selections.sql
+**Date**: 2026-01  
+**Purpose**: 選択へのproposal_version追加
+
+**Changes:**
+- `thread_selections.proposal_version` INTEGER DEFAULT 1
+
+---
+
+### 0070_add_additional_slots_action_type.sql
+**Date**: 2026-01  
+**Purpose**: pending_actionsのaction_type拡張
+
+**Changes:**
+- action_typeに 'add_slots' 追加
+
+---
+
+### 0071_fix_pending_actions_action_type_check.sql
+**Date**: 2026-01  
+**Purpose**: action_type CHECK制約修正
+
+---
+
+### 0072_add_timezone_to_threads.sql
+**Date**: 2026-01  
+**Purpose**: P3-TZ3 スレッドにタイムゾーン追加
+
+**Changes:**
+- `scheduling_threads.timezone` TEXT DEFAULT 'Asia/Tokyo'
+
+**Notes:**
+- 主催者のTZをスレッド作成時にコピー
+- 外部ユーザーへのメール表示のフォールバック
+
+---
+
+### 0073_backfill_thread_timezone.sql
+**Date**: 2026-01  
+**Purpose**: 既存スレッドのTZバックフィル
+
+---
+
 ## 📈 Future Migrations (Planned)
 
 ### Upcoming Features
 
+- **contactsCache** - 連絡先キャッシュ対応（アプリケーション層）
 - **Real-time subscriptions** - WebSocket connections table
 - **File attachments** - Attachment metadata table
 - **Advanced search** - Full-text search indexes
@@ -466,6 +566,6 @@ npx wrangler d1 execute webapp-production \
 
 ---
 
-**Last Updated**: 2025-12-25  
-**Current Migration**: 0026_threads_and_invites.sql  
+**Last Updated**: 2026-01-17  
+**Current Migration**: 0073_backfill_thread_timezone.sql  
 **Status**: ✅ All migrations applied (local & production)

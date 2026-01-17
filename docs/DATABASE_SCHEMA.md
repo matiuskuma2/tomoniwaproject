@@ -1,8 +1,8 @@
 # ToMoniWao - データベース設計
 
-**最終更新**: 2025-12-28  
+**最終更新**: 2026-01-17  
 **Database**: Cloudflare D1 (SQLite)  
-**Migration Count**: 40
+**Migration Count**: 73 (0001-0073)
 
 ---
 
@@ -12,15 +12,22 @@
 users (ユーザー)
   ├── google_accounts (Google連携)
   ├── sessions (セッション)
-  ├── threads (スレッド) ────┬─── thread_invites (招待)
-  │                         ├─── thread_participants (参加者)
-  │                         ├─── scheduling_slots (候補日時)
-  │                         ├─── thread_selections (選択)
-  │                         └─── thread_finalize (確定情報)
-  ├── contacts (連絡先)
-  ├── lists (リスト) ────────── list_members (メンバー)
-  ├── business_cards (名刺)
-  └── inbox_items (受信トレイ)
+  ├── scheduling_threads (スレッド) ─┬─── thread_invites (招待)
+  │                                  │     └─── invite_deliveries (配信追跡) [0066]
+  │                                  ├─── thread_participants (参加者)
+  │                                  ├─── scheduling_slots (候補日時)
+  │                                  │     └─── proposal_version [0068]
+  │                                  ├─── thread_selections (選択)
+  │                                  │     └─── proposal_version [0069]
+  │                                  ├─── thread_finalize (確定情報)
+  │                                  ├─── thread_attendance_rules (出欠ルール) [0033]
+  │                                  └─── pending_actions (送信確認) [0065]
+  ├── contacts (連絡先) [0041]
+  │     └─── contact_channels (連絡チャネル) [0054]
+  ├── lists (リスト) [0042] ────────── list_members (メンバー) [0043,0052]
+  ├── business_cards (名刺) [0045]
+  │     └─── contact_touchpoints (接点履歴) [0046]
+  └── inbox_items (受信トレイ) [0028]
 ```
 
 ---
@@ -40,12 +47,20 @@ users (ユーザー)
 
 | テーブル | 説明 | 主要カラム |
 |---------|------|----------|
-| `threads` | 調整スレッド | id, user_id, title, description, status |
+| `scheduling_threads` | 調整スレッド | id, user_id, title, description, status, timezone, proposal_version, additional_propose_count |
 | `thread_invites` | 招待リンク | id, thread_id, token, email, status, invitee_key |
-| `thread_participants` | 参加者 | id, thread_id, user_id, email, role |
-| `scheduling_slots` | 候補日時 | id, thread_id, start_time, end_time, timezone |
-| `thread_selections` | 選択結果 | id, thread_id, invite_id, slot_id, status |
+| `thread_participants` | 参加者 | id, thread_id, user_id, email, role, contact_id |
+| `scheduling_slots` | 候補日時 | id, thread_id, start_time, end_time, timezone, proposal_version |
+| `thread_selections` | 選択結果 | id, thread_id, invite_id, slot_id, status, proposal_version |
 | `thread_finalize` | 確定情報 | id, thread_id, slot_id, google_event_id, meet_link |
+| `thread_attendance_rules` | 出欠ルール | id, thread_id, invitee_key, rule_json |
+
+### Beta A / Phase 2 追加テーブル
+
+| テーブル | 説明 | マイグレーション |
+|---------|------|----------------|
+| `pending_actions` | 送信確認フロー | 0065 |
+| `invite_deliveries` | 配信追跡 | 0066 |
 
 ### 連絡先・リストテーブル
 
@@ -157,16 +172,27 @@ CREATE TABLE sessions (
 
 ---
 
-### 4. threads（スレッド）
+### 4. scheduling_threads（スレッド）
 
 ```sql
-CREATE TABLE threads (
+CREATE TABLE scheduling_threads (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   workspace_id TEXT,
   title TEXT NOT NULL,
   description TEXT,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'archived', 'deleted')),
+  status TEXT DEFAULT 'draft' CHECK (status IN (
+    'draft',      -- 作成中
+    'sent',       -- 招待送信済み（回答収集中）
+    'confirmed',  -- 日程確定済み
+    'cancelled',  -- キャンセル
+    'archived'    -- アーカイブ
+  )),
+  -- Phase 2: 追加候補管理 [0067]
+  proposal_version INTEGER NOT NULL DEFAULT 1,
+  additional_propose_count INTEGER NOT NULL DEFAULT 0,
+  -- P3-TZ3: タイムゾーン [0072]
+  timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -179,9 +205,16 @@ CREATE TABLE threads (
 - 1つのThreadに複数のInviteを紐付け
 
 **ステータス**:
-- `active` - 調整中
-- `archived` - 完了/終了
-- `deleted` - 削除済み
+- `draft` - 作成中
+- `sent` - 招待送信済み（回答収集中 = collecting）
+- `confirmed` - 日程確定済み
+- `cancelled` - キャンセル
+- `archived` - アーカイブ
+
+**Phase 2 カラム**:
+- `proposal_version` - 候補の世代管理（追加候補ごとに +1）
+- `additional_propose_count` - 追加候補の実行回数（最大2回）
+- `timezone` - 主催者のタイムゾーン（外部ユーザーへの表示用）
 
 ---
 
@@ -408,15 +441,26 @@ CREATE TABLE business_cards (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_status ON users(status);
 
--- Threads
-CREATE INDEX idx_threads_user_id ON threads(user_id);
-CREATE INDEX idx_threads_status ON threads(status);
+-- Scheduling Threads
+CREATE INDEX idx_scheduling_threads_user_workspace ON scheduling_threads(user_id, workspace_id, status);
+CREATE INDEX idx_scheduling_threads_proposal_version ON scheduling_threads(id, proposal_version);
+CREATE INDEX idx_scheduling_threads_timezone ON scheduling_threads(timezone);
 
 -- Thread Invites
 CREATE INDEX idx_thread_invites_thread_id ON thread_invites(thread_id);
-CREATE INDEX idx_thread_invites_token ON thread_invites(token);
+CREATE UNIQUE INDEX idx_thread_invites_token ON thread_invites(token);
 CREATE INDEX idx_thread_invites_email ON thread_invites(email);
-CREATE INDEX idx_thread_invites_invitee_key ON thread_invites(invitee_key);
+CREATE UNIQUE INDEX idx_thread_invites_invitee_key ON thread_invites(invitee_key);
+
+-- Pending Actions (Beta A)
+CREATE UNIQUE INDEX idx_pending_actions_confirm_token ON pending_actions(confirm_token);
+CREATE INDEX idx_pending_actions_tenant_status ON pending_actions(workspace_id, owner_user_id, status, created_at DESC);
+CREATE INDEX idx_pending_actions_expires ON pending_actions(expires_at) WHERE status = 'pending';
+
+-- Invite Deliveries (Beta A)
+CREATE INDEX idx_invite_deliveries_thread ON invite_deliveries(thread_id, delivery_type, created_at DESC);
+CREATE INDEX idx_invite_deliveries_invite ON invite_deliveries(invite_id, channel) WHERE invite_id IS NOT NULL;
+CREATE INDEX idx_invite_deliveries_failed ON invite_deliveries(status, retry_count) WHERE status = 'failed';
 
 -- Contacts
 CREATE INDEX idx_contacts_user_id ON contacts(user_id);
