@@ -46,3 +46,16 @@ export {
 } from './inboxCache';
 
 export * as inboxCache from './inboxCache';
+
+// Me cache (P1-3)
+export {
+  getMe,
+  refreshMe,
+  invalidateMe,
+  getCachedMe,
+  setMe,
+  subscribeMe,
+  getMeCacheStats,
+} from './meCache';
+
+export * as meCache from './meCache';

@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usersMeApi, type UserProfile } from '../core/api';
+import { getMe, setMe } from '../core/cache';
 import { SUPPORTED_TIMEZONES, getBrowserTimeZone } from '../utils/datetime';
 
 export default function SettingsPage() {
@@ -19,9 +20,10 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const response = await usersMeApi.getMe();
-        setUser(response.user);
-        setTimezone(response.user.timezone || getBrowserTimeZone());
+        // P1-3: キャッシュ経由で取得（TTL 60秒、inflight共有）
+        const cachedUser = await getMe();
+        setUser(cachedUser);
+        setTimezone(cachedUser.timezone || getBrowserTimeZone());
       } catch (err) {
         console.error('[Settings] Failed to load user:', err);
         setTimezone(getBrowserTimeZone());
@@ -39,6 +41,8 @@ export default function SettingsPage() {
       const response = await usersMeApi.updateTimezone(timezone);
       if (response.success && response.user) {
         setUser(response.user);
+        // P1-3: キャッシュも更新（他コンポーネントで即時反映）
+        setMe(response.user);
         setMessage({ type: 'success', text: '✅ 設定を保存しました' });
       } else {
         setMessage({ type: 'error', text: '❌ 保存に失敗しました' });

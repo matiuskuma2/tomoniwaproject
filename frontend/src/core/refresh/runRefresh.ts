@@ -10,6 +10,7 @@
 import { refreshStatus } from '../cache/threadStatusCache';
 import { refreshThreadsList as refreshThreadsListCache } from '../cache/threadsListCache';
 import { refreshInbox as refreshInboxCache } from '../cache/inboxCache';
+import { refreshMe as refreshMeCache } from '../cache/meCache';
 import type { RefreshAction } from './refreshMap';
 import { describeRefreshAction } from './refreshMap';
 
@@ -81,10 +82,10 @@ async function executeRefreshAction(action: RefreshAction, debug: boolean): Prom
       break;
       
     case 'ME':
-      // TODO: user info キャッシュが実装されたらここで invalidate
       if (debug) {
-        console.log('[runRefresh] ME refresh (not implemented yet)');
+        console.log('[runRefresh] Refreshing user info (ME)');
       }
+      await refreshMeCache();
       break;
       
     case 'LISTS':
