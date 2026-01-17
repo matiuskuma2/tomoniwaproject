@@ -205,7 +205,11 @@ export function setLists(lists: List[]): void {
  */
 export function subscribeLists(listener: ListsListener): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  log.cacheDebug('ListsCache SUBSCRIBE', { module: 'ListsCache', listenerCount: listeners.size });
+  return () => {
+    listeners.delete(listener);
+    log.cacheDebug('ListsCache UNSUBSCRIBE', { module: 'ListsCache', listenerCount: listeners.size });
+  };
 }
 
 // ============================================================

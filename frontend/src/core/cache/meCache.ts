@@ -202,7 +202,11 @@ export function setMe(user: UserProfile): void {
  */
 export function subscribeMe(listener: MeListener): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  log.cacheDebug('MeCache SUBSCRIBE', { module: 'MeCache', listenerCount: listeners.size });
+  return () => {
+    listeners.delete(listener);
+    log.cacheDebug('MeCache UNSUBSCRIBE', { module: 'MeCache', listenerCount: listeners.size });
+  };
 }
 
 // ============================================================

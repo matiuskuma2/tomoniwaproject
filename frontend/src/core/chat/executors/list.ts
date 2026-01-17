@@ -10,6 +10,7 @@
 
 import { listsApi } from '../../api/lists';
 import { contactsApi } from '../../api/contacts';
+import { refreshLists } from '../../cache';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 
@@ -34,6 +35,9 @@ export async function executeListCreate(intentResult: IntentResult): Promise<Exe
     const response = await listsApi.create({
       name: listName,
     });
+    
+    // P1-3: キャッシュ更新（subscribeしているUIが即時追従）
+    await refreshLists();
     
     return {
       success: true,
@@ -230,9 +234,15 @@ export async function executeListAddMember(intentResult: IntentResult): Promise<
         // リストに追加
         await listsApi.addMember(targetList.id, { contact_id: contact.id });
         addedCount++;
+        // P1-3: キャッシュ更新（ループ内で毎回更新すると過剰なので、後で一括）
       } catch (e: any) {
         errors.push(`${email}: ${e.message || '追加失敗'}`);
       }
+    }
+    
+    // P1-3: ループ後に一括でキャッシュ更新
+    if (addedCount > 0) {
+      await refreshLists();
     }
     
     let message = `✅ ${addedCount}名をリスト「${targetList.name}」に追加しました。`;
