@@ -9,6 +9,7 @@
  * - list.ts: list.create, list.list, list.members, list.add_member
  * - thread.ts: schedule.create, schedule.status, schedule.finalize, thread.create, invite.list
  * - remind.ts: remind.status, remind.pending, need_response.list, remind.need_response (P2-R1)
+ * - batch.ts: 一括招待バッチ処理最適化 (P2-B1)
  * 
  * 今後の分割予定:
  * - pending.ts: pending.action.decide, invite.prepare
@@ -58,3 +59,19 @@ export {
   formatRemindSummary,
   formatRemindConfirmation,
 } from './remind';
+
+// Batch executors (P2-B1: 一括招待バッチ処理最適化)
+export {
+  executeBatchAddMembers,
+  // Helper functions
+  chunkArray,
+  formatBatchProgress,
+  formatBatchResult,
+  getBatchChunkSize,
+  // Types
+  type BatchProgress,
+  type BatchProgressCallback,
+  type BatchResult,
+  // Constants
+  BATCH_CHUNK_SIZE,
+} from './batch';
