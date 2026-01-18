@@ -3,13 +3,12 @@
  * E2E テスト設定
  * 
  * プロジェクト構成:
- * - smoke: 認証なし、基本動作確認（CI で常時実行）
- * - authenticated: 認証必須、重要導線テスト（CI で [e2e] タグ時のみ）
+ * - smoke: 認証なし、ローカルビルドの基本動作確認（CI で常時実行）
+ * - authenticated: 認証必須、本番サーバーの重要導線テスト（CI で [e2e] タグ時のみ）
  * 
  * 環境変数:
- * - E2E_BASE_URL: テスト対象のURL（default: http://localhost:5173）
+ * - E2E_BASE_URL: テスト対象のURL（default: http://localhost:4173）
  * - E2E_AUTH_TOKEN: E2E用認証トークン
- * - E2E_AUTH_COOKIE: 認証Cookie（開発用）
  */
 
 import { defineConfig, devices } from '@playwright/test';
@@ -47,7 +46,7 @@ export default defineConfig({
   // グローバル設定
   use: {
     // ベースURL（環境変数で上書き可能）
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:4173',
     
     // スクリーンショット（失敗時のみ - CIで容量節約）
     screenshot: 'only-on-failure',
@@ -68,7 +67,7 @@ export default defineConfig({
   // プロジェクト設定
   projects: [
     // ============================================================
-    // Smoke Test: 認証なし、基本動作確認
+    // Smoke Test: 認証なし、ローカルビルドの基本動作確認
     // ============================================================
     {
       name: 'smoke',
@@ -80,7 +79,7 @@ export default defineConfig({
     },
 
     // ============================================================
-    // Authenticated Test: 認証必須、重要導線テスト
+    // Authenticated Test: 認証必須、本番サーバーの重要導線テスト
     // ============================================================
     // セットアップ（認証状態を生成）
     {
@@ -104,11 +103,11 @@ export default defineConfig({
   // 出力ディレクトリ
   outputDir: 'test-results',
 
-  // CI では webServer を起動
-  webServer: process.env.CI ? {
+  // Smoke Test 用: ローカルサーバーを起動
+  webServer: {
     command: 'npm run preview',
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
-  } : undefined,
+  },
 });

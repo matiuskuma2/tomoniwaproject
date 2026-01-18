@@ -14,7 +14,7 @@ test.describe('Smoke Test: 基本動作確認', () => {
   test('ページが読み込める', async ({ page }) => {
     const response = await page.goto('/');
     
-    // 200 または 304 で成功
+    // 200 または 304 で成功、リダイレクト(3xx)もOK
     expect(response?.status()).toBeLessThan(400);
   });
 

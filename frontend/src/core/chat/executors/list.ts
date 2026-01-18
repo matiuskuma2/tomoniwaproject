@@ -275,8 +275,7 @@ export async function executeListAddMember(intentResult: IntentResult): Promise<
         kind: 'list.member_added',
         payload: {
           listName: targetList.name,
-          addedCount,
-          emails,
+          email: emails[0] || '',
         },
       },
     };

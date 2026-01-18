@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getRefreshActions, type WriteOp, type RefreshAction } from '../refreshMap';
+import { getRefreshActions, type WriteOp } from '../refreshMap';
 
 // ============================================================
 // WriteOp の完全リスト（ここを更新するとテストが落ちて検知できる）

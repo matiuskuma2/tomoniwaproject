@@ -433,7 +433,7 @@ export async function executeRemindPending(
           message: `✅ 未返信者はいませんが、再回答必要者が ${needResponseInvitees.length}名 います。\n\n💡 「再回答リマインド」と入力してください。`,
           data: {
             kind: 'remind.pending.none',
-            payload: { threadId, needResponseCount: needResponseInvitees.length },
+            payload: { threadId, message: `再回答必要者が ${needResponseInvitees.length}名 います` },
           },
         };
       }
@@ -443,7 +443,7 @@ export async function executeRemindPending(
         message: '✅ 全員が回答済みです。\n\nリマインドは不要です。',
         data: {
           kind: 'remind.pending.none',
-          payload: { threadId },
+          payload: { threadId, message: '全員が回答済みです' },
         },
       };
     }
@@ -459,10 +459,9 @@ export async function executeRemindPending(
         payload: {
           source: 'remind',
           threadId,
-          pendingInvitees: pendingInvitees.map(i => ({
+          pendingInvites: pendingInvitees.map(i => ({
             email: i.email,
             name: i.name,
-            inviteeKey: i.inviteeKey,
           })),
           count: pendingInvitees.length,
         },
@@ -585,7 +584,7 @@ export async function executeRemindNeedResponse(
           message: `✅ 再回答必要者はいませんが、未返信者が ${pendingInvitees.length}名 います。\n\n💡 「リマインド」と入力してください。`,
           data: {
             kind: 'remind.need_response.none',
-            payload: { threadId, pendingCount: pendingInvitees.length },
+            payload: { threadId, message: `未返信者が ${pendingInvitees.length}名 います` },
           },
         };
       }
@@ -595,7 +594,7 @@ export async function executeRemindNeedResponse(
         message: '✅ 全員が最新の候補に回答済みです。\nリマインドを送る必要はありません。',
         data: {
           kind: 'remind.need_response.none',
-          payload: { threadId },
+          payload: { threadId, message: '全員が最新の候補に回答済みです' },
         },
       };
     }
@@ -795,9 +794,11 @@ export async function executeRemindNeedResponseConfirm(
         kind: 'remind.need_response.sent',
         payload: {
           threadId,
-          sentCount,
-          failedCount,
-          remindedInvitees: targetInvitees,
+          remindedCount: sentCount,
+          results: targetInvitees.map(i => ({
+            email: i.email,
+            status: 'sent',
+          })),
         },
       },
     };

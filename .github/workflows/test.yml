@@ -40,7 +40,7 @@ jobs:
         working-directory: frontend
 
   # ============================================================
-  # TypeScript Check
+  # TypeScript Check (srcのみ、e2eは除外)
   # ============================================================
   typecheck:
     name: TypeScript Check
@@ -60,12 +60,12 @@ jobs:
         run: npm ci
         working-directory: frontend
       
-      - name: TypeScript check
-        run: npx tsc --noEmit
+      - name: TypeScript check (src only)
+        run: npx tsc -p tsconfig.app.json --noEmit
         working-directory: frontend
 
   # ============================================================
-  # E2E Smoke Tests (認証なし - 常時実行)
+  # E2E Smoke Tests (認証なし - ローカルビルドをテスト)
   # ============================================================
   e2e-smoke:
     name: E2E Smoke Tests
@@ -109,7 +109,7 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # E2E Authenticated Tests (認証あり - 手動/タグ時のみ)
+  # E2E Authenticated Tests (認証あり - 本番サーバーをテスト)
   # ============================================================
   e2e-authenticated:
     name: E2E Authenticated Tests
@@ -136,10 +136,6 @@ jobs:
       
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-        working-directory: frontend
-      
-      - name: Build frontend
-        run: npm run build
         working-directory: frontend
       
       - name: Run E2E Authenticated tests

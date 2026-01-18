@@ -15,7 +15,6 @@
 
 import { listsApi } from '../../api/lists';
 import { contactsApi } from '../../api/contacts';
-import { refreshLists, refreshContacts } from '../../cache';
 import { getRefreshActions, type WriteOp } from '../../refresh/refreshMap';
 import { runRefresh } from '../../refresh/runRefresh';
 import { log } from '../../platform';
@@ -297,9 +296,11 @@ export async function executeBatchAddMembers(
       data: {
         kind: 'batch.add_members.completed',
         payload: {
-          listId: targetList.id,
           listName: targetList.name,
-          ...result,
+          totalCount: result.total,
+          successCount: result.succeeded,
+          errorCount: result.failed,
+          errors: result.errors.length > 0 ? result.errors : undefined,
         },
       },
     };

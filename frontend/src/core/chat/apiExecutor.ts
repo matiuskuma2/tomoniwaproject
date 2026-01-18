@@ -182,7 +182,20 @@ export type ExecutionResultData =
       remindedCount: number;
       results: Array<{ email: string; status: string }>;
     } }
-  | { kind: 'remind.need_response.cancelled'; payload: {} };
+  | { kind: 'remind.need_response.cancelled'; payload: {} }
+  // P2-R1: リマインダー強化
+  | { kind: 'remind.status'; payload: any }
+  | { kind: 'remind.pending.none'; payload: { threadId: string; message: string } }
+  | { kind: 'remind.need_response.none'; payload: { threadId: string; message: string } }
+  // P2-B1: バッチ処理
+  | { kind: 'batch.add_members.completed'; payload: {
+      listName: string;
+      totalCount: number;
+      successCount: number;
+      errorCount: number;
+      errors?: Array<{ email: string; error: string }>;
+    } }
+  | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } };
 
 export interface ExecutionResult {
   success: boolean;
