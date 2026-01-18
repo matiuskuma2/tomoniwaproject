@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: 'Run E2E tests (authenticated)'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   # ============================================================
@@ -33,53 +40,6 @@ jobs:
         working-directory: frontend
 
   # ============================================================
-  # E2E Tests (Playwright) - Optional
-  # ============================================================
-  e2e-test:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    # E2E は unit-test が通ってから実行
-    needs: unit-test
-    # E2E は手動でトリガーした場合のみ実行（オプション）
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[e2e]')
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      
-      - name: Install dependencies
-        run: npm ci
-        working-directory: frontend
-      
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-        working-directory: frontend
-      
-      - name: Build frontend
-        run: npm run build
-        working-directory: frontend
-      
-      - name: Run E2E tests (Smoke only)
-        run: npm run test:e2e -- --grep "Smoke"
-        working-directory: frontend
-        env:
-          E2E_BASE_URL: http://localhost:4173
-      
-      - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report
-          path: frontend/e2e-report/
-          retention-days: 7
-
-  # ============================================================
   # TypeScript Check
   # ============================================================
   typecheck:
@@ -103,3 +63,96 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: frontend
+
+  # ============================================================
+  # E2E Smoke Tests (認証なし - 常時実行)
+  # ============================================================
+  e2e-smoke:
+    name: E2E Smoke Tests
+    runs-on: ubuntu-latest
+    needs: unit-test
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+      
+      - name: Run E2E Smoke tests
+        run: npx playwright test --project=smoke
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:4173
+      
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-smoke
+          path: frontend/e2e-report/
+          retention-days: 7
+
+  # ============================================================
+  # E2E Authenticated Tests (認証あり - 手動/タグ時のみ)
+  # ============================================================
+  e2e-authenticated:
+    name: E2E Authenticated Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test, e2e-smoke]
+    # 実行条件: 手動実行で run_e2e=true、または [e2e] タグ付きコミット
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_e2e == 'true' ||
+      contains(github.event.head_commit.message, '[e2e]')
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+      
+      - name: Run E2E Authenticated tests
+        run: npx playwright test --project=setup --project=authenticated
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_AUTH_TOKEN: ${{ secrets.E2E_AUTH_TOKEN }}
+      
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-authenticated
+          path: frontend/e2e-report/
+          retention-days: 14
