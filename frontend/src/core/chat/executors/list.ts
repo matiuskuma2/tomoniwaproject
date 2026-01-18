@@ -2,10 +2,12 @@
  * List Executors
  * 
  * P1-1: apiExecutor.ts から分離（ロジック変更なし）
+ * P2-B1: 10件以上の場合はバッチ処理を使用
+ * 
  * - list.create
  * - list.list
  * - list.members
- * - list.add_member
+ * - list.add_member (10件以上 → batch.ts へ委譲)
  */
 
 import { listsApi } from '../../api/lists';
@@ -13,6 +15,10 @@ import { contactsApi } from '../../api/contacts';
 import { refreshLists, refreshContacts } from '../../cache';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
+import { executeBatchAddMembers, BATCH_THRESHOLD } from './batch';
+
+/** P2-B1: バッチ処理を使う閾値（デフォルト10件） */
+export { BATCH_THRESHOLD } from './batch';
 
 /**
  * Beta A: list.create - リスト作成
@@ -171,6 +177,7 @@ export async function executeListMembers(intentResult: IntentResult): Promise<Ex
 
 /**
  * Beta A: list.add_member - リストにメンバー追加
+ * P2-B1: 10件以上の場合はバッチ処理を使用
  */
 export async function executeListAddMember(intentResult: IntentResult): Promise<ExecutionResult> {
   const { emails, listName } = intentResult.params;
@@ -197,6 +204,12 @@ export async function executeListAddMember(intentResult: IntentResult): Promise<
     };
   }
   
+  // P2-B1: 10件以上の場合はバッチ処理を使用
+  if (emails.length >= BATCH_THRESHOLD) {
+    return executeBatchAddMembers(intentResult);
+  }
+  
+  // 10件未満は従来の逐次処理（シンプルで高速）
   try {
     // リストIDを取得
     const listsResponse = await listsApi.list() as any;
@@ -262,7 +275,8 @@ export async function executeListAddMember(intentResult: IntentResult): Promise<
         kind: 'list.member_added',
         payload: {
           listName: targetList.name,
-          email: emails[0],
+          addedCount,
+          emails,
         },
       },
     };

@@ -192,8 +192,70 @@ describe('Executor refresh 呼び出しの品質', () => {
   });
 });
 
+describe('P2-B1: バッチ処理接続の検知', () => {
+  describe('B-4: list.ts が 10件以上でバッチ経由になる', () => {
+    let fileContent: string;
+    
+    beforeAll(() => {
+      fileContent = readFileContent('frontend/src/core/chat/executors/list.ts');
+    });
+
+    it('list.ts が executeBatchAddMembers を import している', () => {
+      expect(fileContent).toContain('import');
+      expect(fileContent).toContain('executeBatchAddMembers');
+    });
+
+    it('list.ts が BATCH_THRESHOLD を import している', () => {
+      expect(fileContent).toContain('BATCH_THRESHOLD');
+    });
+
+    it('executeListAddMember が BATCH_THRESHOLD で分岐している', () => {
+      const funcBody = extractFunctionBody(fileContent, 'executeListAddMember');
+      expect(funcBody).not.toBeNull();
+      
+      // BATCH_THRESHOLD での条件分岐が存在することを確認
+      expect(funcBody).toContain('BATCH_THRESHOLD');
+      expect(funcBody).toContain('executeBatchAddMembers');
+    });
+
+    it('10件以上の場合にバッチ処理を使用するロジックが存在する', () => {
+      const funcBody = extractFunctionBody(fileContent, 'executeListAddMember');
+      expect(funcBody).not.toBeNull();
+      
+      // emails.length >= BATCH_THRESHOLD のチェックが存在
+      expect(funcBody).toMatch(/emails\.length\s*>=\s*BATCH_THRESHOLD/);
+    });
+  });
+
+  describe('B-5: batch.ts の refresh 設定', () => {
+    let batchContent: string;
+    
+    beforeAll(() => {
+      batchContent = readFileContent('frontend/src/core/chat/executors/batch.ts');
+    });
+
+    it('BATCH_CHUNK_SIZE が 50 に設定されている', () => {
+      expect(batchContent).toContain('BATCH_CHUNK_SIZE = 50');
+    });
+
+    it('BATCH_THRESHOLD が 10 に設定されている', () => {
+      expect(batchContent).toContain('BATCH_THRESHOLD = 10');
+    });
+
+    it('refreshAfterBatch 関数が存在する', () => {
+      expect(batchContent).toContain('async function refreshAfterBatch');
+    });
+
+    it('executeBatchAddMembers が refreshAfterBatch を呼ぶ', () => {
+      const funcBody = extractFunctionBody(batchContent, 'executeBatchAddMembers');
+      expect(funcBody).not.toBeNull();
+      expect(funcBody).toContain('refreshAfterBatch');
+    });
+  });
+});
+
 describe('Executor refresh のカバレッジ', () => {
-  describe('B-4: 全ての Write 操作が対応する Executor で refresh される', () => {
+  describe('B-6: 全ての Write 操作が対応する Executor で refresh される', () => {
     /**
      * WriteOp と Executor の対応表
      * 各 WriteOp に対して、どの Executor ファイル・関数が refresh を担当するか

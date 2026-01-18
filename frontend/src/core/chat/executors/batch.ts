@@ -29,6 +29,9 @@ import type { ExecutionResult } from './types';
 /** バッチサイズ（1回のAPI呼び出しで処理する件数） */
 export const BATCH_CHUNK_SIZE = 50;
 
+/** P2-B1: バッチ処理を使う閾値（この件数以上でバッチ処理に切り替え） */
+export const BATCH_THRESHOLD = 10;
+
 /** 進捗コールバック型 */
 export type BatchProgressCallback = (progress: BatchProgress) => void;
 

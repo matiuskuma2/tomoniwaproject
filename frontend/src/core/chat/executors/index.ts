@@ -74,4 +74,5 @@ export {
   type BatchResult,
   // Constants
   BATCH_CHUNK_SIZE,
+  BATCH_THRESHOLD,
 } from './batch';
