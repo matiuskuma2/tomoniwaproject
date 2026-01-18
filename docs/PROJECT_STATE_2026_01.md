@@ -1,8 +1,8 @@
 # Tomoniwao - プロジェクト完全ドキュメント
 
-**最終更新**: 2026-01-17  
-**コミット**: (最新)  
-**ステータス**: P1-4 contactsCache 完了
+**最終更新**: 2026-01-18  
+**コミット**: c2f352a  
+**ステータス**: P2-R1 リマインダー強化 Step1 完了
 
 ---
 
@@ -280,7 +280,10 @@ chat/
     ├── types.ts            # ExecutionResult型
     ├── calendar.ts         # schedule.today, week, freebusy
     ├── list.ts             # list.create, list, members, add_member ★P1-3
-    └── thread.ts           # schedule.create, status, finalize
+    ├── thread.ts           # schedule.create, status, finalize
+    ├── remind.ts           # remind.status, pending, need_response ★P2-R1
+    └── __tests__/          # Executorテスト
+        └── remind.test.ts  # 11 tests
 ```
 
 ### Intent → Executor マッピング
@@ -294,6 +297,10 @@ chat/
 | `schedule.create` | `executeCreate` | `refreshThreadsList()` |
 | `schedule.status` | `executeStatusCheck` | - |
 | `schedule.finalize` | `executeFinalize` | `refreshStatus()` |
+| `schedule.remind.status` | `executeRemindStatus` | - | ★P2-R1 |
+| `schedule.remind.pending` | `executeRemindPending` | - | ★P2-R1 |
+| `schedule.need_response.list` | `executeNeedResponseList` | - | ★P2-R1 |
+| `schedule.remind.need_response` | `executeRemindNeedResponse` | - | ★P2-R1 |
 
 ---
 
@@ -552,38 +559,73 @@ if (addedCount > 0) {
 
 ## 8. 次のステップ
 
-### 優先順位: 1 → 2 → 3
+### 完了済み
 
-#### 1. contactsCache 実装 ✅ 完了
+#### P1-4 contactsCache ✅ 完了
+**コミット**: 865b83c
 
-**ステータス**: 完了（P1-4）
+#### 回帰テスト拡張 ✅ 完了
+**コミット**: 216cf86
+- refreshMap.test.ts: WriteOp → RefreshAction マッピングテスト (52件)
+- executorRefresh.test.ts: Executor refresh呼び出し検知 (7件)
+
+#### P2-R1 リマインダー強化 Step1 ✅ 完了
+**コミット**: c2f352a
 
 **実装内容**:
-```typescript
-// frontend/src/core/cache/contactsCache.ts (NEW)
-export async function getContacts(options?): Promise<Contact[]>;
-export async function refreshContacts(): Promise<Contact[]>;
-export function invalidateContacts(): void;
-export function setContacts(contacts: Contact[]): void;
-export function subscribeContacts(listener): () => void;
+- `executors/remind.ts` (NEW): リマインダー統一フォーマット
+  - `analyzeRemindStatus()`: スレッドのリマインド状況分析
+  - `formatRemindSummary()`: 統一フォーマット出力
+  - `formatRemindConfirmation()`: リマインド確認メッセージ
+  - `executeRemindStatus()`: 状況表示
+  - `executeRemindPending()`: 未返信リマインド
+  - `executeNeedResponseList()`: 再回答必要者リスト
+  - `executeRemindNeedResponse()`: 再回答リマインド
+- `executors/__tests__/remind.test.ts` (NEW): 11 unit tests
+
+**統一フォーマット**:
+```
+📋 **スレッドタイトル**
+
+📊 候補: v2 (追加候補あり) | 追加可能: あと 1 回
+👥 招待: 5名 (✅2 ⏳1 🔄1 ❌1)
+
+*✅最新回答済 ⏳未返信 🔄再回答必要 ❌辞退*
+
+**⏳ 未返信 (1名)**
+1. a@example.com (田中) — 未回答
+
+**🔄 再回答必要 (1名)**
+1. b@example.com (鈴木) — v1時点の回答
+
+**💡 次のアクション:**
+- 「リマインド」→ 未返信者 1名 にリマインド
+- 「再回答リマインド」→ 再回答必要者 1名 にリマインド
 ```
 
-#### 2. 回帰テスト拡張 🟡 次優先
+---
 
-**目的**: WriteOp差し込み漏れをテストで検知
+### 進行中/次優先
 
-**テスト項目**:
-- [ ] list.create → listsCache更新確認
-- [ ] list.add_member → listsCache + contactsCache更新確認 ★P1-4
-- [ ] contact.create → contactsCache更新確認
-- [ ] users/me/timezone → meCache更新確認
-- [ ] thread.finalize → threadStatusCache更新確認
+#### P2-R1 リマインダー強化 Step2 🟡 次優先
 
-#### 3. 次フェーズ機能（2完了後）
+**残タスク**:
+- [ ] apiExecutor.ts への接続（新remind.ts関数を呼び出し）
+- [ ] リマインド文面テンプレ選択機能
+- [ ] レート制限(next_reminder_available_at)のUX反映
+- [ ] 送信対象プレビュー＋差分表示
 
-- リマインダー機能強化
-- 一括招待バッチ処理最適化
-- E2Eテスト追加
+#### P2-R2 一括招待バッチ最適化 🟡 次
+
+**目的**: バックエンド負荷・キュー・UI待ち改善
+- chunking（50件/バッチ）
+- UI progress表示（成功/失敗/スキップ）
+- refreshAfterWrite最終バッチ完了時にまとめて実行
+
+#### P2-R3 E2Eテスト追加 🟢 後
+
+**対象導線**:
+スレッド作成 → 招待 → 追加候補 → need_response判定 → リマインド → 確定
 
 ---
 
