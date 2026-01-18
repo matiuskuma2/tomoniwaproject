@@ -41,12 +41,18 @@ export {
   executeInviteList,
 } from './thread';
 
-// Remind executors (P2-R1: 内訳表示の統一)
+// Remind executors (P2-R1: 内訳表示の統一 + confirm/cancel)
 export {
+  // Status & List
   executeRemindStatus,
   executeRemindPending,
   executeNeedResponseList,
   executeRemindNeedResponse,
+  // Confirm & Cancel (P2-R1 Step2)
+  executeRemindPendingConfirm,
+  executeRemindPendingCancel,
+  executeRemindNeedResponseConfirm,
+  executeRemindNeedResponseCancel,
   // Helper functions for testing
   analyzeRemindStatus,
   formatRemindSummary,

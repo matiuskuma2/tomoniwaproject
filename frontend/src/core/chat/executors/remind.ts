@@ -627,3 +627,201 @@ export async function executeRemindNeedResponse(
     };
   }
 }
+
+// ============================================================
+// Confirm / Cancel Executors (P2-R1 Step2)
+// ============================================================
+
+/**
+ * P2-R1: schedule.remind.pending.confirm
+ * 未返信者へのリマインド送信を実行
+ */
+export async function executeRemindPendingConfirm(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId, pendingInvitees } = intentResult.params as {
+    threadId?: string;
+    pendingInvitees?: Array<{ email: string; name?: string; inviteeKey: string }>;
+  };
+
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが指定されていません。',
+    };
+  }
+
+  if (!pendingInvitees || pendingInvitees.length === 0) {
+    return {
+      success: true,
+      message: '✅ リマインド対象者がいないため、送信をスキップしました。',
+    };
+  }
+
+  try {
+    // target_invitee_keys を抽出
+    const targetKeys = pendingInvitees.map(inv => inv.inviteeKey);
+
+    // リマインド送信
+    const response = await threadsApi.remind(threadId, {
+      target_invitee_keys: targetKeys,
+    });
+
+    // 結果メッセージを構築
+    let message = `📩 **リマインド送信完了**\n\n`;
+    message += `📋 スレッド: ${response.thread_id}\n`;
+    message += `📬 送信対象: ${pendingInvitees.length}名\n\n`;
+
+    // 送信結果を表示
+    const sentCount = response.reminded_count ?? pendingInvitees.length;
+    const failedCount = response.warnings?.length ?? 0;
+
+    if (failedCount === 0) {
+      message += `✅ ${sentCount}名 にリマインドを送信しました。\n`;
+    } else {
+      message += `✅ ${sentCount}名 にリマインドを送信しました。\n`;
+      message += `⚠️ ${failedCount}名 への送信に失敗しました。\n`;
+    }
+
+    // 次回リマインド可能時刻
+    if (response.next_reminder_available_at) {
+      message += `\n⏰ 次回リマインド可能: ${formatDateTime(response.next_reminder_available_at)}\n`;
+    }
+
+    // refresh
+    await refreshAfterWrite('REMIND_PENDING', threadId);
+
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.pending.sent',
+        payload: {
+          threadId,
+          sentCount,
+          failedCount,
+          remindedInvitees: pendingInvitees,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ リマインド送信に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-R1: schedule.remind.pending.cancel
+ * 未返信リマインドをキャンセル
+ */
+export async function executeRemindPendingCancel(
+  _intentResult: IntentResult
+): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '❌ リマインドをキャンセルしました。',
+    data: {
+      kind: 'remind.pending.cancelled',
+      payload: {},
+    },
+  };
+}
+
+/**
+ * P2-R1: schedule.remind.need_response.confirm
+ * 再回答必要者へのリマインド送信を実行
+ */
+export async function executeRemindNeedResponseConfirm(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  const { threadId, targetInvitees } = intentResult.params as {
+    threadId?: string;
+    targetInvitees?: Array<{ email: string; name?: string; inviteeKey: string }>;
+  };
+
+  if (!threadId) {
+    return {
+      success: false,
+      message: 'スレッドが指定されていません。',
+    };
+  }
+
+  if (!targetInvitees || targetInvitees.length === 0) {
+    return {
+      success: true,
+      message: '✅ リマインド対象者がいないため、送信をスキップしました。',
+    };
+  }
+
+  try {
+    // target_invitee_keys を抽出
+    const targetKeys = targetInvitees.map(inv => inv.inviteeKey);
+
+    // リマインド送信
+    const response = await threadsApi.remind(threadId, {
+      target_invitee_keys: targetKeys,
+    });
+
+    // 結果メッセージを構築
+    let message = `📩 **再回答リマインド送信完了**\n\n`;
+    message += `📋 スレッド: ${response.thread_id}\n`;
+    message += `📬 送信対象: ${targetInvitees.length}名\n\n`;
+
+    // 送信結果を表示
+    const sentCount = response.reminded_count ?? targetInvitees.length;
+    const failedCount = response.warnings?.length ?? 0;
+
+    if (failedCount === 0) {
+      message += `✅ ${sentCount}名 に再回答リマインドを送信しました。\n`;
+    } else {
+      message += `✅ ${sentCount}名 に再回答リマインドを送信しました。\n`;
+      message += `⚠️ ${failedCount}名 への送信に失敗しました。\n`;
+    }
+
+    // 次回リマインド可能時刻
+    if (response.next_reminder_available_at) {
+      message += `\n⏰ 次回リマインド可能: ${formatDateTime(response.next_reminder_available_at)}\n`;
+    }
+
+    // refresh
+    await refreshAfterWrite('REMIND_NEED_RESPONSE', threadId);
+
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'remind.need_response.sent',
+        payload: {
+          threadId,
+          sentCount,
+          failedCount,
+          remindedInvitees: targetInvitees,
+        },
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ リマインド送信に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-R1: schedule.remind.need_response.cancel
+ * 再回答リマインドをキャンセル
+ */
+export async function executeRemindNeedResponseCancel(
+  _intentResult: IntentResult
+): Promise<ExecutionResult> {
+  return {
+    success: true,
+    message: '❌ 再回答リマインドをキャンセルしました。',
+    data: {
+      kind: 'remind.need_response.cancelled',
+      payload: {},
+    },
+  };
+}
