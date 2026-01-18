@@ -30,3 +30,8 @@ dist-ssr
 
 # Wrangler
 .wrangler
+
+# Playwright
+e2e-report
+playwright-report
+test-results
