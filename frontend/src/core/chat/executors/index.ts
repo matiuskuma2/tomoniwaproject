@@ -8,9 +8,9 @@
  * - calendar.ts: schedule.today, schedule.week, schedule.freebusy
  * - list.ts: list.create, list.list, list.members, list.add_member
  * - thread.ts: schedule.create, schedule.status, schedule.finalize, thread.create, invite.list
+ * - remind.ts: remind.status, remind.pending, need_response.list, remind.need_response (P2-R1)
  * 
  * 今後の分割予定:
- * - remind.ts: remind.pending, remind.need_response
  * - pending.ts: pending.action.decide, invite.prepare
  */
 
@@ -40,3 +40,15 @@ export {
   executeThreadCreate,
   executeInviteList,
 } from './thread';
+
+// Remind executors (P2-R1: 内訳表示の統一)
+export {
+  executeRemindStatus,
+  executeRemindPending,
+  executeNeedResponseList,
+  executeRemindNeedResponse,
+  // Helper functions for testing
+  analyzeRemindStatus,
+  formatRemindSummary,
+  formatRemindConfirmation,
+} from './remind';
