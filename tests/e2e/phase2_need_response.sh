@@ -176,13 +176,14 @@ case3_proposal_info_structure() {
   st="$(curl_json GET "${BASE_URL}/api/threads/${tid}/status" '')"
 
   # Check required fields
+  # NOTE: API returns "current_version" not "current_proposal_version"
   local has_prop has_ver has_count
   has_prop="$(echo "${st}" | jq -r 'has("proposal_info")')"
-  has_ver="$(echo "${st}" | jq -r '.proposal_info | has("current_proposal_version")')"
+  has_ver="$(echo "${st}" | jq -r '.proposal_info | has("current_version")')"
   has_count="$(echo "${st}" | jq -r '.proposal_info | has("invitees_needing_response_count")')"
 
   [[ "${has_prop}" == "true" ]] || die "Missing proposal_info: ${st}"
-  [[ "${has_ver}" == "true" ]] || die "Missing current_proposal_version: ${st}"
+  [[ "${has_ver}" == "true" ]] || die "Missing current_version in proposal_info: ${st}"
   [[ "${has_count}" == "true" ]] || die "Missing invitees_needing_response_count: ${st}"
   ok "Case3 passed"
 }
