@@ -108,8 +108,9 @@ export default defineConfig({
   // 出力ディレクトリ
   outputDir: 'test-results',
 
-  // Smoke Test 用: ローカルサーバーを起動（CI で確実に動作させる設定）
-  webServer: {
+  // Smoke Test 用: ローカルサーバーを起動
+  // NOTE: E2E_BASE_URL が設定されている場合は外部サーバーを使うため webServer を無効化
+  webServer: process.env.E2E_BASE_URL ? undefined : {
     command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false, // CI では常に新規起動
