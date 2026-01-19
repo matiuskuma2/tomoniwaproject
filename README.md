@@ -36,6 +36,66 @@ AI秘書スケジューラー - チャット中心のスケジューリングシ
 
 ---
 
+## 🔧 CI/E2E テスト状況（2026-01-19 更新）
+
+### ✅ 全 CI/テスト グリーン達成
+
+| ワークフロー | 状態 | 説明 |
+|-------------|------|------|
+| **CI (ci.yml)** | ✅ グリーン | lint + typecheck |
+| **Unit Tests** | ✅ グリーン | 単体テスト |
+| **TypeScript Check** | ✅ グリーン | 型チェック |
+| **E2E Smoke Tests** | ✅ グリーン | 認証なし基本動作確認 |
+| **E2E Authenticated Tests** | ✅ グリーン | 認証ありテスト（Step 1 のみ有効） |
+| **Phase2 E2E** | ✅ グリーン | 追加候補・NeedResponse 等 8ケース |
+| **P0 Guardrails** | ✅ グリーン | テナント分離・マイグレーション安全性 |
+
+### 📁 E2E テストファイル構成
+
+```
+tests/e2e/
+├── phase2_additional_slots.sh  # Phase2 E2E: 追加候補 + 各種ガード
+├── phase2_need_response.sh     # Phase2 E2E: NeedResponse 検証
+└── (CI で実行)
+
+frontend/e2e/
+├── auth/auth.setup.ts          # Playwright: 認証セットアップ
+├── critical-path.spec.ts       # Playwright: 認証済みテスト (Step 1 有効, 2-5 skip)
+├── smoke.smoke.spec.ts         # Playwright: Smoke テスト
+└── helpers/test-helpers.ts     # E2E ヘルパー関数
+```
+
+### 🔧 技術負債（意識的に管理中）
+
+| 負債 | 状態 | 撤去計画 |
+|------|------|----------|
+| SQL workaround (status='sent') | Phase2 E2E 内 | バックエンド修正後に撤去 |
+| Critical Path Step 2-5 skip | 一時 skip | アプリ動作確認後に有効化 |
+
+**SQL workaround の詳細**:
+- 場所: `tests/e2e/phase2_additional_slots.sh` の `create_sent_thread_via_pending_send()`
+- 原因: `pending-actions/execute` 後に `scheduling_threads.status` が `draft` のまま
+- 対策: E2E 内で `UPDATE scheduling_threads SET status='sent'` を実行
+- 撤去条件: バックエンドで execute 後に status 更新を実装
+
+### 🔑 E2E 認証設定
+
+**GitHub Secrets に必要な設定**:
+- `E2E_BASE_URL`: staging 環境の URL
+- `E2E_AUTH_TOKEN`: E2E 用認証トークン
+
+**フロントエンド認証方式**:
+- `sessionStorage` に `tomoniwao_token` と `tomoniwao_user` を保存
+- Playwright の `storageState` は sessionStorage を保存しないため、`beforeEach` で設定
+
+### 🔗 CI/Actions リンク
+
+- **GitHub Actions**: https://github.com/matiuskuma2/tomoniwaproject/actions
+- **Test Workflow**: `.github/workflows/test.yml`
+- **CI Workflow**: `.github/workflows/ci.yml`
+
+---
+
 ## 📊 現在の状況（2026-01-11）- Beta A 完了
 
 ### ✅ Beta A 完了項目
