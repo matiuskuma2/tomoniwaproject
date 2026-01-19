@@ -108,18 +108,27 @@ seed_user_and_workspace() {
 # Helpers to create baseline "sent" thread via prepare/confirm/execute
 create_sent_thread_via_pending_send() {
   info "Creating a SENT thread via pending-actions flow (prepare-send -> confirm -> execute) ..."
+  
+  info "Step 1: prepare-send"
   local prep
   prep="$(curl_json POST "${BASE_URL}/api/threads/prepare-send" \
     '{"source_type":"emails","emails":["a@example.com","b@example.com","c@example.com"],"title":"Phase2 E2E Thread"}')"
+  echo "  prepare-send response: ${prep}"
 
   local token
   token="$(echo "${prep}" | jq -r '.confirm_token')"
   [[ "${token}" != "null" && -n "${token}" ]] || die "prepare-send did not return confirm_token: ${prep}"
 
-  curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"送る"}' >/dev/null
+  info "Step 2: confirm (token=${token})"
+  local confirm_res
+  confirm_res="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"送る"}')"
+  echo "  confirm response: ${confirm_res}"
 
+  info "Step 3: execute"
   local exec
   exec="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/execute" '')"
+  echo "  execute response: ${exec}"
+  
   local thread_id
   thread_id="$(echo "${exec}" | jq -r '.thread_id')"
   [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || die "execute did not return thread_id: ${exec}"
@@ -353,5 +362,17 @@ main() {
   ok "ALL Phase2 E2E cases passed ✅"
 }
 
-trap 'stop_dev' EXIT
+cleanup_and_show_log() {
+  local exit_code=$?
+  stop_dev
+  if [[ $exit_code -ne 0 ]]; then
+    echo ""
+    echo "========== WRANGLER DEV LOG (last 100 lines) =========="
+    tail -100 "${DEV_LOG}" 2>/dev/null || echo "(log file not found)"
+    echo "========================================================"
+  fi
+  exit $exit_code
+}
+
+trap 'cleanup_and_show_log' EXIT
 main
