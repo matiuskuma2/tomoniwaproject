@@ -38,12 +38,30 @@ test.describe('Critical Path: E2E核シナリオ', () => {
     cleanup.logCreatedResources();
   });
 
+  // 各テストの前に認証を設定
+  // NOTE: sessionStorage は storageState で保存されないため、各テストで設定が必要
+  test.beforeEach(async ({ page }) => {
+    const authToken = process.env.E2E_AUTH_TOKEN;
+    if (authToken) {
+      // まずベースURLにアクセス（sessionStorage を設定するため）
+      await page.goto('/');
+      await page.evaluate((token) => {
+        sessionStorage.setItem('tomoniwao_token', token);
+        sessionStorage.setItem('tomoniwao_user', JSON.stringify({
+          id: 'e2e-test-user',
+          email: 'e2e@example.com',
+          name: 'E2E Test User',
+        }));
+      }, authToken);
+    }
+  });
+
   // ============================================================
   // Step 1: 認証済み状態で /chat に入れる
   // ============================================================
   
   test('Step 1: 認証済み状態でアクセスできる', async ({ page }) => {
-    // 認証済み状態で /chat に直接アクセス
+    // beforeEach で認証設定済み、/chat にアクセス
     await page.goto('/chat');
     await waitForUIStable(page);
     
