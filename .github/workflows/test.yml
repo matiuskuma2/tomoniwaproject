@@ -94,32 +94,12 @@ jobs:
         run: npm run build
         working-directory: frontend
       
-      - name: Run E2E Smoke tests with preview server
-        run: |
-          # Start preview server in background
-          npm run preview -- --host 0.0.0.0 &
-          SERVER_PID=$!
-          
-          # Wait for server to be ready
-          echo "Waiting for preview server..."
-          for i in {1..30}; do
-            if curl -s http://localhost:4173 > /dev/null 2>&1; then
-              echo "Server is ready!"
-              break
-            fi
-            sleep 1
-          done
-          
-          # Run Playwright tests
-          npx playwright test --project=smoke
-          TEST_EXIT_CODE=$?
-          
-          # Cleanup
-          kill $SERVER_PID 2>/dev/null || true
-          
-          exit $TEST_EXIT_CODE
+      # Playwright の webServer 設定が自動的にサーバーを起動
+      - name: Run E2E Smoke tests
+        run: npx playwright test --project=smoke
         working-directory: frontend
         env:
+          CI: true
           E2E_BASE_URL: http://localhost:4173
       
       - name: Upload Playwright report
