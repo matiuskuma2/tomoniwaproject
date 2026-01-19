@@ -45,8 +45,8 @@ export default defineConfig({
   
   // グローバル設定
   use: {
-    // ベースURL（環境変数で上書き可能）
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:4173',
+    // ベースURL（環境変数で上書き可能、Smoke は 127.0.0.1 固定）
+    baseURL: process.env.E2E_BASE_URL || 'http://127.0.0.1:4173',
     
     // スクリーンショット（失敗時のみ - CIで容量節約）
     screenshot: 'only-on-failure',
@@ -103,11 +103,13 @@ export default defineConfig({
   // 出力ディレクトリ
   outputDir: 'test-results',
 
-  // Smoke Test 用: ローカルサーバーを起動
+  // Smoke Test 用: ローカルサーバーを起動（CI で確実に動作させる設定）
   webServer: {
-    command: 'npm run preview',
-    port: 4173,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: false, // CI では常に新規起動
+    timeout: 180000, // 初回は長めに待つ
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 });
