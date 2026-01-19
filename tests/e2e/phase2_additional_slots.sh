@@ -56,11 +56,14 @@ db_exec_json() {
 db_exec() {
   local sql="$1"
   local result
-  result="$(npx wrangler d1 execute "${DB_NAME}" --local --command="${sql}" 2>&1)" || {
-    echo "  [DB_EXEC ERROR] SQL: ${sql}"
-    echo "  [DB_EXEC ERROR] Result: ${result}"
+  result="$(npx wrangler d1 execute "${DB_NAME}" --local --command="${sql}" 2>&1)"
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]] || echo "${result}" | grep -qi "error"; then
+    echo "  [DB_EXEC WARN] SQL: ${sql}"
+    echo "  [DB_EXEC WARN] Result: ${result}"
     return 1
-  }
+  fi
+  return 0
 }
 
 wait_health() {
@@ -83,8 +86,12 @@ start_dev() {
   pkill -f "wrangler dev.*--port ${API_PORT}" >/dev/null 2>&1 || true
   pkill -f "workerd.*${API_PORT}" >/dev/null 2>&1 || true
 
+  # Determine persist path for D1 (same as wrangler d1 execute uses)
+  local persist_path="${ROOT_DIR}/.wrangler/state/v3"
+  
   # start with ENVIRONMENT=development to enable X-USER-ID header auth
-  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
+  # Use --persist-to to ensure same D1 database as seed
+  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" --persist-to "${persist_path}" > "${DEV_LOG}" 2>&1 &)
   sleep 2
   wait_health
 }
@@ -370,7 +377,20 @@ main() {
 
   apply_migrations_local
   seed_user_and_workspace
+  
+  # Debug: Verify data before starting wrangler dev
+  info "Verifying seed data before wrangler dev starts..."
+  local verify_user verify_ws
+  verify_user="$(npx wrangler d1 execute "${DB_NAME}" --local --command="SELECT id, email FROM users WHERE id='${USER_ID}'" 2>&1)"
+  verify_ws="$(npx wrangler d1 execute "${DB_NAME}" --local --command="SELECT id, name, owner_user_id FROM workspaces WHERE id='${WORKSPACE_ID}'" 2>&1)"
+  echo "  Users: ${verify_user}" | grep -E "id|email" || echo "  [WARN] User not found"
+  echo "  Workspaces: ${verify_ws}" | grep -E "id|name|owner" || echo "  [WARN] Workspace not found"
+  
   start_dev
+  
+  # Debug: Check if wrangler dev can see the data (via API)
+  info "Checking if API can see seeded data..."
+  sleep 2  # Give wrangler time to fully initialize
 
   local base_thread
   base_thread="$(create_sent_thread_via_pending_send)"
