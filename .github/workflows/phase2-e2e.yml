@@ -33,6 +33,13 @@ jobs:
       - name: Apply D1 migrations (local)
         run: npx wrangler d1 migrations apply webapp-production --local
 
+      # Create .dev.vars for development mode (enables X-USER-ID auth)
+      - name: Create .dev.vars for development mode
+        run: |
+          echo "ENVIRONMENT=development" > .dev.vars
+          echo "Created .dev.vars with ENVIRONMENT=development"
+          cat .dev.vars
+
       # ============================================================
       # E2E Test Suite 1: Additional Slots (8 cases)
       # ============================================================
