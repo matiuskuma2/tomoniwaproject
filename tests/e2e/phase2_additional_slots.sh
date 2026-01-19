@@ -229,14 +229,35 @@ case2_all_duplicates() {
   info "Case2: proposals/prepare must fail when all slots duplicate existing"
   local thread_id="$1"
 
-  # Get one existing slot from status
+  # First, add a slot to the thread so we can test duplicate detection
+  # (create_sent_thread_via_pending_send doesn't add slots, just invites)
+  local base_ts
+  base_ts="$(($(date +%s) + 86400 * 100))"  # Far future to avoid conflicts
+  local initial_slot
+  initial_slot="$(jq -n --arg s "$(date -u -d "@${base_ts}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "${base_ts}" +%Y-%m-%dT%H:%M:%SZ)" \
+                        --arg e "$(date -u -d "@$((base_ts + 1800))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$((base_ts + 1800))" +%Y-%m-%dT%H:%M:%SZ)" \
+                        '[{start_at:$s,end_at:$e,label:"initial"}]')"
+  
+  info "  Adding initial slot to thread for duplicate test..."
+  local prep_init
+  prep_init="$(curl_json POST "${BASE_URL}/api/threads/${thread_id}/proposals/prepare" "$(jq -n --argjson slots "${initial_slot}" '{slots:$slots}')")"
+  local token_init
+  token_init="$(echo "${prep_init}" | jq -r '.confirm_token')"
+  [[ -n "${token_init}" && "${token_init}" != "null" ]] || die "Failed to prepare initial slot: ${prep_init}"
+  
+  curl_json POST "${BASE_URL}/api/pending-actions/${token_init}/confirm" '{"decision":"追加"}' >/dev/null
+  curl_json POST "${BASE_URL}/api/pending-actions/${token_init}/execute" '' >/dev/null
+  info "  Initial slot added"
+
+  # Now get the slot we just added
   local status
   status="$(curl_json GET "${BASE_URL}/api/threads/${thread_id}/status" '')"
   local s e
   s="$(echo "${status}" | jq -r '.slots[0].start_at')"
   e="$(echo "${status}" | jq -r '.slots[0].end_at')"
-  [[ -n "${s}" && "${s}" != "null" ]] || die "status.slots[0] missing: ${status}"
+  [[ -n "${s}" && "${s}" != "null" ]] || die "status.slots[0] missing after adding: ${status}"
 
+  # Try to add the same slot again - should fail with all_duplicates
   local res
   res="$(curl_json POST "${BASE_URL}/api/threads/${thread_id}/proposals/prepare" \
     "$(jq -n --arg s "${s}" --arg e "${e}" '{slots:[{start_at:$s,end_at:$e,label:"dup"}]}')" || true)"
