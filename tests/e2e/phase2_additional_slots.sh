@@ -73,13 +73,13 @@ wait_health() {
 }
 
 start_dev() {
-  info "Starting wrangler dev on port ${API_PORT} ..."
+  info "Starting wrangler dev on port ${API_PORT} (ENVIRONMENT=development) ..."
   # kill any previous (best effort)
   pkill -f "wrangler dev.*--port ${API_PORT}" >/dev/null 2>&1 || true
   pkill -f "workerd.*${API_PORT}" >/dev/null 2>&1 || true
 
-  # start
-  (cd "${ROOT_DIR}" && nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
+  # start with ENVIRONMENT=development to enable X-USER-ID header auth
+  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
   sleep 2
   wait_health
 }

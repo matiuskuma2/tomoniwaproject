@@ -74,7 +74,7 @@ start_dev() {
   info "Starting wrangler dev on port ${API_PORT} ..."
   pkill -f "wrangler dev.*--port ${API_PORT}" >/dev/null 2>&1 || true
   pkill -f "workerd.*${API_PORT}" >/dev/null 2>&1 || true
-  (cd "${ROOT_DIR}" && nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
+  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
   sleep 2
   wait_health
 }
