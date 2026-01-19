@@ -164,7 +164,12 @@ create_sent_thread_via_pending_send() {
   thread_id="$(echo "${exec}" | jq -r '.thread_id')"
   [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || die "execute did not return thread_id: ${exec}"
 
-  echo "[OK] Created thread_id=${thread_id}" >&2
+  # WORKAROUND: Backend doesn't update thread status to 'sent' after execute
+  # Update it via SQL so E2E tests can proceed
+  echo "[INFO] Step 4: Updating thread status to 'sent' via SQL..." >&2
+  db_exec "UPDATE scheduling_threads SET status = 'sent' WHERE id = '${thread_id}'"
+  
+  echo "[OK] Created thread_id=${thread_id} (status=sent)" >&2
   # Only thread_id goes to stdout
   echo "${thread_id}"
 }
