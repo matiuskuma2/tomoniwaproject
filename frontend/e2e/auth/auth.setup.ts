@@ -48,23 +48,27 @@ setup('authenticate', async ({ page, context }) => {
 
   console.log(`[Auth Setup] Setting up authentication for ${baseURL}`);
 
-  // 方式1: 認証トークンを使用
+  // まずページにアクセス（sessionStorage を設定するため）
+  await page.goto(baseURL);
+  await page.waitForTimeout(500);
+
+  // 方式1: 認証トークンを使用（sessionStorage に保存）
   if (authToken) {
-    console.log('[Auth Setup] Using E2E_AUTH_TOKEN');
+    console.log('[Auth Setup] Using E2E_AUTH_TOKEN (setting in sessionStorage)');
     
-    // トークンを Cookie として設定
-    await context.addCookies([{
-      name: 'auth_token',
-      value: authToken,
-      domain: new URL(baseURL).hostname,
-      path: '/',
-      httpOnly: true,
-      secure: baseURL.startsWith('https'),
-      sameSite: 'Lax',
-    }]);
+    // フロントエンドと同じキーで sessionStorage に保存
+    await page.evaluate((token) => {
+      sessionStorage.setItem('tomoniwao_token', token);
+      // ダミーユーザー情報も設定
+      sessionStorage.setItem('tomoniwao_user', JSON.stringify({
+        id: 'e2e-test-user',
+        email: 'e2e@example.com',
+        name: 'E2E Test User',
+      }));
+    }, authToken);
   }
 
-  // 方式2: Cookie を直接設定
+  // 方式2: Cookie を直接設定（バックエンド認証用）
   if (authCookie) {
     console.log('[Auth Setup] Using E2E_AUTH_COOKIE');
     
@@ -81,12 +85,14 @@ setup('authenticate', async ({ page, context }) => {
     }]);
   }
 
-  // ページにアクセスして認証を確認
-  await page.goto(baseURL);
+  // /chat にアクセスして認証を確認
+  await page.goto(`${baseURL}/chat`);
   await page.waitForTimeout(1000);
 
-  // 認証が成功したか確認（ログイン画面にリダイレクトされないこと）
+  // 認証が成功したか確認（/chat に留まっていること）
   const url = page.url();
+  console.log(`[Auth Setup] Current URL: ${url}`);
+  expect(url).toContain('/chat');
   expect(url).not.toContain('/login');
   expect(url).not.toContain('/auth');
 
