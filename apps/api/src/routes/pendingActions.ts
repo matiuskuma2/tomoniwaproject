@@ -461,6 +461,18 @@ app.post('/:token/execute', async (c) => {
     // ====== pending_action を executed に更新 ======
     await pendingRepo.markExecuted(pa.id, threadId);
 
+    // ====== スレッドの status を 'sent' に更新 ======
+    // 条件: 招待が1件以上成功した場合のみ (draft → sent への遷移)
+    if (batchResult.insertedIds.length > 0) {
+      const updatedAt = new Date().toISOString();
+      await env.DB.prepare(`
+        UPDATE scheduling_threads
+        SET status = ?, updated_at = ?
+        WHERE id = ? AND workspace_id = ? AND status = ?
+      `).bind(THREAD_STATUS.SENT, updatedAt, threadId, workspaceId, THREAD_STATUS.DRAFT).run();
+      console.log(`[Execute] Thread ${threadId} status updated to 'sent'`);
+    }
+
     // ====== レスポンス ======
     return c.json({
       request_id: requestId,
