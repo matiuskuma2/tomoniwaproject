@@ -137,33 +137,35 @@ seed_user_and_workspace() {
 
 # Helpers to create baseline "sent" thread via prepare/confirm/execute
 create_sent_thread_via_pending_send() {
-  info "Creating a SENT thread via pending-actions flow (prepare-send -> confirm -> execute) ..."
+  # NOTE: All info/debug output goes to stderr so that only thread_id is returned via stdout
+  echo "[INFO] Creating a SENT thread via pending-actions flow (prepare-send -> confirm -> execute) ..." >&2
   
-  info "Step 1: prepare-send"
+  echo "[INFO] Step 1: prepare-send" >&2
   local prep
   prep="$(curl_json POST "${BASE_URL}/api/threads/prepare-send" \
     '{"source_type":"emails","emails":["a@example.com","b@example.com","c@example.com"],"title":"Phase2 E2E Thread"}')"
-  echo "  prepare-send response: ${prep}"
+  echo "  prepare-send response: ${prep}" >&2
 
   local token
   token="$(echo "${prep}" | jq -r '.confirm_token')"
   [[ "${token}" != "null" && -n "${token}" ]] || die "prepare-send did not return confirm_token: ${prep}"
 
-  info "Step 2: confirm (token=${token})"
+  echo "[INFO] Step 2: confirm (token=${token})" >&2
   local confirm_res
   confirm_res="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"送る"}')"
-  echo "  confirm response: ${confirm_res}"
+  echo "  confirm response: ${confirm_res}" >&2
 
-  info "Step 3: execute"
+  echo "[INFO] Step 3: execute" >&2
   local exec
   exec="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/execute" '')"
-  echo "  execute response: ${exec}"
+  echo "  execute response: ${exec}" >&2
   
   local thread_id
   thread_id="$(echo "${exec}" | jq -r '.thread_id')"
   [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || die "execute did not return thread_id: ${exec}"
 
-  ok "Created thread_id=${thread_id}"
+  echo "[OK] Created thread_id=${thread_id}" >&2
+  # Only thread_id goes to stdout
   echo "${thread_id}"
 }
 
