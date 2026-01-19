@@ -12,10 +12,15 @@
  */
 
 import { defineConfig, devices } from '@playwright/test';
-import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// ES Module で __dirname を再現
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // 認証状態の保存先
-const AUTH_STATE_PATH = path.join(__dirname, '.auth/user.json');
+const AUTH_STATE_PATH = join(__dirname, '.auth/user.json');
 
 export default defineConfig({
   // テストディレクトリ
