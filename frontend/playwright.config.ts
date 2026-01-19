@@ -109,13 +109,20 @@ export default defineConfig({
   outputDir: 'test-results',
 
   // Smoke Test 用: ローカルサーバーを起動
-  // NOTE: E2E_BASE_URL が設定されている場合は外部サーバーを使うため webServer を無効化
-  webServer: process.env.E2E_BASE_URL ? undefined : {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: false, // CI では常に新規起動
-    timeout: 180000, // 初回は長めに待つ
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  // NOTE: E2E_BASE_URL が外部URL（127.0.0.1/localhost 以外）の場合は webServer を無効化
+  webServer: (() => {
+    const baseUrl = process.env.E2E_BASE_URL || '';
+    const isExternalUrl = baseUrl && !baseUrl.includes('127.0.0.1') && !baseUrl.includes('localhost');
+    if (isExternalUrl) {
+      return undefined; // 外部サーバーを使用
+    }
+    return {
+      command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
+      url: 'http://127.0.0.1:4173',
+      reuseExistingServer: false, // CI では常に新規起動
+      timeout: 180000, // 初回は長めに待つ
+      stdout: 'pipe',
+      stderr: 'pipe',
+    };
+  })(),
 });
