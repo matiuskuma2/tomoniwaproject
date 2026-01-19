@@ -194,7 +194,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
-        } catch (e) {
+        } catch {
           // abort が失敗しても無視
         }
       }

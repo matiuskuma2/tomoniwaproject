@@ -584,7 +584,7 @@ async function executePendingDecision(
       }
       
       // 通常の招待送信
-      let message = executeResponse.message_for_chat || 
+      const message = executeResponse.message_for_chat || 
         `✅ ${executeResponse.result.inserted}名に招待を送信しました。`;
       
       // P0-2: Write 後の refresh 強制

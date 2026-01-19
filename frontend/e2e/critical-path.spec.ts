@@ -167,23 +167,23 @@ test.describe.skip('Critical Path Phase B: フルシナリオ', () => {
   // TODO: Phase B で実装
   // 招待 → 追加候補 → need_response → リマインド → 確定
   
-  test('招待を送信できる', async ({ page }) => {
+  test('招待を送信できる', async ({ page: _page }) => {
     // 実装予定
   });
 
-  test('追加候補を提案できる', async ({ page }) => {
+  test('追加候補を提案できる', async ({ page: _page }) => {
     // 実装予定
   });
 
-  test('need_response リストを確認できる', async ({ page }) => {
+  test('need_response リストを確認できる', async ({ page: _page }) => {
     // 実装予定
   });
 
-  test('リマインドを送信できる', async ({ page }) => {
+  test('リマインドを送信できる', async ({ page: _page }) => {
     // 実装予定
   });
 
-  test('日程を確定できる', async ({ page }) => {
+  test('日程を確定できる', async ({ page: _page }) => {
     // 実装予定
   });
 });

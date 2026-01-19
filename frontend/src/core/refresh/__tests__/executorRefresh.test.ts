@@ -96,7 +96,7 @@ function extractFunctionBody(content: string, functionName: string): string | nu
   }
   
   // 関数開始位置から { を探す
-  let braceStart = content.indexOf('{', match.index);
+  const braceStart = content.indexOf('{', match.index);
   if (braceStart === -1) return null;
   
   // 対応する } を探す（ネストを考慮）
