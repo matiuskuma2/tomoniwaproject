@@ -324,18 +324,30 @@ case4_max_two_times() {
   info "Case4: third additional propose must fail (max 2)"
   local thread_id="$1"
 
-  # run add_slots twice more total to reach max=2 (note: Case3 already used 1)
-  for n in 1 1; do
+  # Check current additional_propose_count
+  # Case2 added 1 slot (count=1), Case3 added slots (count=2)
+  # So we should already be at max=2
+  local tq ac
+  tq="$(db_exec_json "SELECT COALESCE(additional_propose_count,0) as c FROM scheduling_threads WHERE id='${thread_id}';")"
+  ac="$(echo "${tq}" | jq -r '.[0].results[0].c // 0')"
+  info "  Current additional_propose_count: ${ac}"
+
+  # If not yet at max=2, add more until we reach it
+  while [[ "${ac}" -lt 2 ]]; do
     local slots prep token
-    slots="$(gen_slots_json "$(( $(date +%s) + (n*100000) ))" 3)"
+    slots="$(gen_slots_json "$(( $(date +%s) + (ac*100000) ))" 3)"
     prep="$(curl_json POST "${BASE_URL}/api/threads/${thread_id}/proposals/prepare" "$(jq -n --argjson slots "${slots}" '{slots:$slots}')" )"
     token="$(echo "${prep}" | jq -r '.confirm_token')"
     [[ "${token}" != "null" && -n "${token}" ]] || die "prepare failed unexpectedly: ${prep}"
     curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"追加"}' >/dev/null
     curl_json POST "${BASE_URL}/api/pending-actions/${token}/execute" '' >/dev/null
+    
+    # Re-check count
+    tq="$(db_exec_json "SELECT COALESCE(additional_propose_count,0) as c FROM scheduling_threads WHERE id='${thread_id}';")"
+    ac="$(echo "${tq}" | jq -r '.[0].results[0].c // 0')"
   done
 
-  # now third prepare should fail
+  # Now at max=2, the next prepare should fail
   local slots res err
   slots="$(gen_slots_json "$(( $(date +%s) + 999999 ))" 1)"
   res="$(curl_json POST "${BASE_URL}/api/threads/${thread_id}/proposals/prepare" "$(jq -n --argjson slots "${slots}" '{slots:$slots}')" || true)"
