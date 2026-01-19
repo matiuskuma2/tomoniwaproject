@@ -169,9 +169,20 @@ create_sent_thread_via_pending_send() {
 
 # Create a minimal "draft" thread via SQL (used for Case1 invalid_status)
 create_draft_thread_sql() {
-  # TODO: 要確認 — scheduling_threads の必須カラムが増えたらINSERTを更新する
   local tid="th_draft_$(date +%s)_$RANDOM"
-  db_exec "INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, status, mode, created_at, updated_at) VALUES ('${tid}', '${WORKSPACE_ID}', '${USER_ID}', 'Draft Thread', 'draft', 'external', datetime('now'), datetime('now'))"
+  # mode を 'one_on_one' に変更（CHECK制約: 'one_on_one', 'group', 'public'）
+  local sql="INSERT INTO scheduling_threads (id, workspace_id, organizer_user_id, title, status, mode, created_at, updated_at) VALUES ('${tid}', '${WORKSPACE_ID}', '${USER_ID}', 'Draft Thread', 'draft', 'one_on_one', datetime('now'), datetime('now'))"
+  
+  local result
+  result="$(npx wrangler d1 execute "${DB_NAME}" --local --command="${sql}" 2>&1)"
+  local exit_code=$?
+  
+  if [[ $exit_code -ne 0 ]] || echo "${result}" | grep -qi "error"; then
+    echo "  [create_draft_thread_sql] SQL failed: ${sql}" >&2
+    echo "  [create_draft_thread_sql] Result: ${result}" >&2
+    return 1
+  fi
+  
   echo "${tid}"
 }
 
@@ -196,7 +207,10 @@ gen_slots_json() {
 case1_collecting_only() {
   info "Case1: proposals/prepare must fail when status != sent"
   local draft_id
-  draft_id="$(create_draft_thread_sql)"
+  draft_id="$(create_draft_thread_sql)" || die "Failed to create draft thread"
+  
+  [[ -n "${draft_id}" ]] || die "draft_id is empty"
+  info "  Created draft thread: ${draft_id}"
 
   local slots
   slots="$(gen_slots_json "$(date +%s)" 1)"
