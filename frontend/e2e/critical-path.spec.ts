@@ -43,12 +43,14 @@ test.describe('Critical Path: E2E核シナリオ', () => {
   // ============================================================
   
   test('Step 1: 認証済み状態でアクセスできる', async ({ page }) => {
-    await page.goto('/');
+    // 認証済み状態で /chat に直接アクセス
+    await page.goto('/chat');
     await waitForUIStable(page);
     
     // 認証が必要なページにリダイレクトされないことを確認
     // （ログイン画面に飛ばされないこと）
     const url = page.url();
+    expect(url).toContain('/chat');
     expect(url).not.toContain('/login');
     expect(url).not.toContain('/auth');
     
@@ -61,7 +63,7 @@ test.describe('Critical Path: E2E核シナリオ', () => {
   // ============================================================
 
   test('Step 2: スレッドを作成できる', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/chat');
     await waitForUIStable(page);
     
     const threadTitle = generateE2EThreadTitle(PREFIX);
@@ -86,7 +88,7 @@ test.describe('Critical Path: E2E核シナリオ', () => {
   // ============================================================
 
   test('Step 3: リストを作成できる', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/chat');
     await waitForUIStable(page);
     
     const listName = generateE2EListName(PREFIX);
@@ -111,7 +113,7 @@ test.describe('Critical Path: E2E核シナリオ', () => {
   // ============================================================
 
   test('Step 4: 10件以上のメンバー追加でバッチ処理が動く', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/chat');
     await waitForUIStable(page);
     
     const listName = generateE2EListName(PREFIX);
@@ -141,7 +143,7 @@ test.describe('Critical Path: E2E核シナリオ', () => {
   // ============================================================
 
   test('Step 5: UIが更新される（refresh追従）', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/chat');
     await waitForUIStable(page);
     
     // リスト一覧を要求
