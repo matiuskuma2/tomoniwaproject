@@ -14,6 +14,11 @@
 import { test as setup, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ES Module で __dirname を再現
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 認証状態の保存先（playwright.config.ts と同じパス）
 const AUTH_STATE_PATH = path.join(__dirname, '../../.auth/user.json');
