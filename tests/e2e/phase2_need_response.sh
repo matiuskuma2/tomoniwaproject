@@ -61,12 +61,10 @@ start_dev() {
   pkill -f "wrangler dev.*--port ${API_PORT}" >/dev/null 2>&1 || true
   pkill -f "workerd.*${API_PORT}" >/dev/null 2>&1 || true
   
-  # Determine persist path for D1 (same as wrangler d1 execute uses)
-  local persist_path="${ROOT_DIR}/.wrangler/state/v3"
-  
-  # Use --persist-to to ensure same D1 database as seed
-  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" --persist-to "${persist_path}" > "${DEV_LOG}" 2>&1 &)
-  sleep 2
+  # IMPORTANT: Do NOT use --persist-to, let wrangler use default path (.wrangler/state/v3)
+  # This ensures wrangler dev uses the same D1 as wrangler d1 execute
+  (cd "${ROOT_DIR}" && ENVIRONMENT=development nohup npx wrangler dev --local --port "${API_PORT}" > "${DEV_LOG}" 2>&1 &)
+  sleep 3  # Give more time for dev server to initialize
   wait_health
   ok "dev up"
 }
