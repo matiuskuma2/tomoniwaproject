@@ -93,9 +93,15 @@ apply_migrations_local() {
 
 seed_user_and_workspace() {
   info "Seeding workspace/users (local DB) if missing ..."
-  db_exec "INSERT OR IGNORE INTO workspaces (id, name, created_at, updated_at) VALUES ('${WORKSPACE_ID}', 'Default Workspace', datetime('now'), datetime('now'))"
+  
+  # IMPORTANT: Order matters due to foreign key constraints!
+  # 1. users first (no FK dependencies)
+  # 2. workspaces second (FK: owner_user_id -> users.id)
+  
   db_exec "INSERT OR IGNORE INTO users (id, email, display_name, created_at, updated_at) VALUES ('${USER_ID}', 'test@example.com', 'Test User', datetime('now'), datetime('now'))"
   db_exec "INSERT OR IGNORE INTO users (id, email, display_name, created_at, updated_at) VALUES ('${USER_ID_2}', 'test2@example.com', 'Test User2', datetime('now'), datetime('now'))"
+  db_exec "INSERT OR IGNORE INTO workspaces (id, name, slug, owner_user_id, created_at, updated_at) VALUES ('${WORKSPACE_ID}', 'Default Workspace', 'default', '${USER_ID}', datetime('now'), datetime('now'))"
+  
   ok "Seeded ws-default and users"
 }
 

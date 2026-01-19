@@ -55,7 +55,12 @@ db_exec_json() {
 
 db_exec() {
   local sql="$1"
-  npx wrangler d1 execute "${DB_NAME}" --local --command="${sql}" >/dev/null 2>&1
+  local result
+  result="$(npx wrangler d1 execute "${DB_NAME}" --local --command="${sql}" 2>&1)" || {
+    echo "  [DB_EXEC ERROR] SQL: ${sql}"
+    echo "  [DB_EXEC ERROR] Result: ${result}"
+    return 1
+  }
 }
 
 wait_health() {
@@ -98,11 +103,31 @@ apply_migrations_local() {
 
 seed_user_and_workspace() {
   info "Seeding workspace/user (local DB) if missing ..."
-  # workspace
-  db_exec "INSERT OR IGNORE INTO workspaces (id, name, created_at, updated_at) VALUES ('${WORKSPACE_ID}', 'Default Workspace', datetime('now'), datetime('now'))"
-  # user
-  db_exec "INSERT OR IGNORE INTO users (id, email, display_name, created_at, updated_at) VALUES ('${USER_ID}', 'test@example.com', 'Test User', datetime('now'), datetime('now'))"
-  ok "Seeded ws-default and test user"
+  
+  # IMPORTANT: Order matters due to foreign key constraints!
+  # 1. users (no FK dependencies)
+  # 2. workspaces (FK: owner_user_id -> users.id)
+  
+  # 1. Create user first (workspaces.owner_user_id references users.id)
+  info "  Step 1: Inserting user: ${USER_ID}"
+  db_exec "INSERT OR IGNORE INTO users (id, email, display_name, created_at, updated_at) VALUES ('${USER_ID}', 'test@example.com', 'Test User', datetime('now'), datetime('now'))" || die "Failed to seed user"
+  
+  # 2. Create workspace (requires owner_user_id, slug)
+  info "  Step 2: Inserting workspace: ${WORKSPACE_ID}"
+  db_exec "INSERT OR IGNORE INTO workspaces (id, name, slug, owner_user_id, created_at, updated_at) VALUES ('${WORKSPACE_ID}', 'Default Workspace', 'default', '${USER_ID}', datetime('now'), datetime('now'))" || die "Failed to seed workspace"
+  
+  # Verify seed was successful
+  info "  Step 3: Verifying seed data..."
+  local ws_count user_count
+  ws_count="$(npx wrangler d1 execute "${DB_NAME}" --local --command="SELECT COUNT(*) as c FROM workspaces WHERE id='${WORKSPACE_ID}'" 2>&1 | grep -o '"c": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")"
+  user_count="$(npx wrangler d1 execute "${DB_NAME}" --local --command="SELECT COUNT(*) as c FROM users WHERE id='${USER_ID}'" 2>&1 | grep -o '"c": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")"
+  
+  echo "  Workspace count: ${ws_count}, User count: ${user_count}"
+  
+  [[ "${ws_count}" -ge 1 ]] || die "Workspace not found after seed"
+  [[ "${user_count}" -ge 1 ]] || die "User not found after seed"
+  
+  ok "Seeded ws-default and test user (verified)"
 }
 
 # Helpers to create baseline "sent" thread via prepare/confirm/execute
