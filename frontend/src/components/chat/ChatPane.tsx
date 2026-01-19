@@ -389,6 +389,7 @@ export function ChatPane({
           {/* Input field - 標準的なチャットUIに合わせて左側に配置 */}
           <input
             type="text"
+            data-testid="chat-input"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
@@ -410,6 +411,7 @@ export function ChatPane({
           {/* Send button - 最も右側に配置 */}
           {/* Phase Next-4 Day2.5: 音声補正中もロック */}
           <button
+            data-testid="chat-send-button"
             onClick={handleSendClick}
             disabled={isProcessing || isVoiceProcessing || !message.trim()}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
