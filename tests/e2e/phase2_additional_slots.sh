@@ -358,7 +358,13 @@ case4_max_two_times() {
 
 case5_declined_excluded_from_notify_targets() {
   info "Case5: declined must be excluded from notify targets"
-  local thread_id="$1"
+  # NOTE: We need a fresh thread because the main thread has reached max additional_propose_count=2
+  
+  # Create a new thread for this test
+  info "  Creating fresh thread for Case5..."
+  local thread_id
+  thread_id="$(create_sent_thread_via_pending_send_case5)"
+  [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || die "Failed to create thread for Case5"
 
   # pick one invite and mark declined in DB
   local inv
@@ -380,6 +386,7 @@ case5_declined_excluded_from_notify_targets() {
   slots="$(gen_slots_json "$(( $(date +%s) + 222222 ))" 2)"
   prep="$(curl_json POST "${BASE_URL}/api/threads/${thread_id}/proposals/prepare" "$(jq -n --argjson slots "${slots}" '{slots:$slots}')" )"
   token="$(echo "${prep}" | jq -r '.confirm_token')"
+  [[ -n "${token}" && "${token}" != "null" ]] || die "prepare failed for Case5: ${prep}"
   curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"追加"}' >/dev/null
   exec="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/execute" '')"
   total="$(echo "${exec}" | jq -r '.result.notifications.total_recipients')"
@@ -391,6 +398,25 @@ case5_declined_excluded_from_notify_targets() {
 
   [[ "${total}" == "${cnt}" ]] || die "Expected recipients=${cnt}, got ${total}. exec=${exec}"
   ok "Case5 passed"
+}
+
+# Helper for Case5: Create a fresh thread (different title to avoid conflicts)
+create_sent_thread_via_pending_send_case5() {
+  local prep token confirm_res exec thread_id
+  prep="$(curl_json POST "${BASE_URL}/api/threads/prepare-send" \
+    '{"source_type":"emails","emails":["d@example.com","e@example.com","f@example.com"],"title":"Phase2 E2E Thread Case5"}')"
+  token="$(echo "${prep}" | jq -r '.confirm_token')"
+  [[ "${token}" != "null" && -n "${token}" ]] || { echo "prepare-send failed: ${prep}" >&2; return 1; }
+  
+  curl_json POST "${BASE_URL}/api/pending-actions/${token}/confirm" '{"decision":"送る"}' >/dev/null
+  exec="$(curl_json POST "${BASE_URL}/api/pending-actions/${token}/execute" '')"
+  thread_id="$(echo "${exec}" | jq -r '.thread_id')"
+  [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || { echo "execute failed: ${exec}" >&2; return 1; }
+  
+  # Update status to 'sent' (workaround for backend bug)
+  db_exec "UPDATE scheduling_threads SET status = 'sent' WHERE id = '${thread_id}'"
+  
+  echo "${thread_id}"
 }
 
 case6_version_at_response_static_guard() {
