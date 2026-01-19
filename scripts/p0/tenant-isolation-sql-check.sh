@@ -39,30 +39,44 @@ npx wrangler d1 execute webapp-production --local --command="
 # ============================================================
 
 echo "[4] Check: userB should NOT see userA's thread"
-THREAD_COUNT=$(npx wrangler d1 execute webapp-production --local --command="
+THREAD_OUTPUT=$(npx wrangler d1 execute webapp-production --local --command="
   SELECT COUNT(*) as count FROM scheduling_threads 
   WHERE id = '${THREAD_ID}' 
     AND workspace_id = 'ws-default' 
     AND organizer_user_id = 'sql-check-user-b';
-" 2>&1 | grep -oP '\d+' | tail -1 || echo "0")
+" 2>&1)
+# JSON出力から count の値を抽出
+THREAD_COUNT=$(echo "$THREAD_OUTPUT" | grep -o '"count": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")
+
+if [ -z "$THREAD_COUNT" ]; then
+  THREAD_COUNT="0"
+fi
 
 if [ "$THREAD_COUNT" != "0" ]; then
-  echo "❌ Tenant isolation FAILED: userB can see userA's thread"
+  echo "❌ Tenant isolation FAILED: userB can see userA's thread (count: $THREAD_COUNT)"
+  echo "Debug output: $THREAD_OUTPUT"
   exit 1
 fi
 
 echo "✅ userB cannot see userA's thread (tenant isolation working)"
 
 echo "[5] Check: userB should NOT see userA's list"
-LIST_COUNT=$(npx wrangler d1 execute webapp-production --local --command="
+LIST_OUTPUT=$(npx wrangler d1 execute webapp-production --local --command="
   SELECT COUNT(*) as count FROM lists 
   WHERE id = '${LIST_ID}' 
     AND workspace_id = 'ws-default' 
     AND owner_user_id = 'sql-check-user-b';
-" 2>&1 | grep -oP '\d+' | tail -1 || echo "0")
+" 2>&1)
+# JSON出力から count の値を抽出
+LIST_COUNT=$(echo "$LIST_OUTPUT" | grep -o '"count": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")
+
+if [ -z "$LIST_COUNT" ]; then
+  LIST_COUNT="0"
+fi
 
 if [ "$LIST_COUNT" != "0" ]; then
-  echo "❌ Tenant isolation FAILED: userB can see userA's list"
+  echo "❌ Tenant isolation FAILED: userB can see userA's list (count: $LIST_COUNT)"
+  echo "Debug output: $LIST_OUTPUT"
   exit 1
 fi
 
@@ -73,30 +87,44 @@ echo "✅ userB cannot see userA's list (tenant isolation working)"
 # ============================================================
 
 echo "[6] Check: userA SHOULD see their own thread"
-THREAD_COUNT_A=$(npx wrangler d1 execute webapp-production --local --command="
+THREAD_OUTPUT_A=$(npx wrangler d1 execute webapp-production --local --command="
   SELECT COUNT(*) as count FROM scheduling_threads 
   WHERE id = '${THREAD_ID}' 
     AND workspace_id = 'ws-default' 
     AND organizer_user_id = 'sql-check-user-a';
-" 2>&1 | grep -oP '\d+' | tail -1 || echo "0")
+" 2>&1)
+# JSON出力から count の値を抽出
+THREAD_COUNT_A=$(echo "$THREAD_OUTPUT_A" | grep -o '"count": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")
+
+if [ -z "$THREAD_COUNT_A" ]; then
+  THREAD_COUNT_A="0"
+fi
 
 if [ "$THREAD_COUNT_A" != "1" ]; then
-  echo "❌ Data access FAILED: userA cannot see their own thread"
+  echo "❌ Data access FAILED: userA cannot see their own thread (count: $THREAD_COUNT_A)"
+  echo "Debug output: $THREAD_OUTPUT_A"
   exit 1
 fi
 
 echo "✅ userA can see their own thread"
 
 echo "[7] Check: userA SHOULD see their own list"
-LIST_COUNT_A=$(npx wrangler d1 execute webapp-production --local --command="
+LIST_OUTPUT_A=$(npx wrangler d1 execute webapp-production --local --command="
   SELECT COUNT(*) as count FROM lists 
   WHERE id = '${LIST_ID}' 
     AND workspace_id = 'ws-default' 
     AND owner_user_id = 'sql-check-user-a';
-" 2>&1 | grep -oP '\d+' | tail -1 || echo "0")
+" 2>&1)
+# JSON出力から count の値を抽出
+LIST_COUNT_A=$(echo "$LIST_OUTPUT_A" | grep -o '"count": *[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0")
+
+if [ -z "$LIST_COUNT_A" ]; then
+  LIST_COUNT_A="0"
+fi
 
 if [ "$LIST_COUNT_A" != "1" ]; then
-  echo "❌ Data access FAILED: userA cannot see their own list"
+  echo "❌ Data access FAILED: userA cannot see their own list (count: $LIST_COUNT_A)"
+  echo "Debug output: $LIST_OUTPUT_A"
   exit 1
 fi
 
