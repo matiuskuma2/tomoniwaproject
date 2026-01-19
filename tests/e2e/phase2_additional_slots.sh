@@ -413,8 +413,17 @@ create_sent_thread_via_pending_send_case5() {
   thread_id="$(echo "${exec}" | jq -r '.thread_id')"
   [[ -n "${thread_id}" && "${thread_id}" != "null" ]] || { echo "execute failed: ${exec}" >&2; return 1; }
   
-  # Update status to 'sent' (workaround for backend bug)
-  db_exec "UPDATE scheduling_threads SET status = 'sent' WHERE id = '${thread_id}'"
+  # Verify backend correctly updated status to 'sent' (workaround removed - backend now handles this)
+  echo "[INFO] Verifying thread status is 'sent' (Case5)..." >&2
+  local status_check
+  status_check="$(npx wrangler d1 execute "${DB_NAME}" --local --command="SELECT status FROM scheduling_threads WHERE id='${thread_id}'" 2>&1)"
+  if echo "${status_check}" | grep -q '"status": "sent"'; then
+    echo "[OK] Thread status verified as 'sent'" >&2
+  else
+    echo "[WARN] Thread status may not be 'sent': ${status_check}" >&2
+    echo "[ERROR] Backend should update status to 'sent' after execute. Failing test." >&2
+    return 1
+  fi
   
   echo "${thread_id}"
 }
