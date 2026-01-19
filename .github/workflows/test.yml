@@ -154,3 +154,4 @@ jobs:
           name: playwright-report-authenticated
           path: frontend/e2e-report/
           retention-days: 14
+# Authenticated E2E trigger: 20260119-121127
