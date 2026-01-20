@@ -213,6 +213,30 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 
 ---
 
+### 2026-01-20 TD-REMIND-UNIFY 重複実装の整理
+
+| Commit | 変更内容 |
+|--------|----------|
+| `3a0c96b` | TD-REMIND-UNIFY: remind 系の実装を executors に統一 |
+
+**削減効果:**
+- apiExecutor.ts: 1907行 → 1417行 (約490行削減)
+
+**統一された配線:**
+- `schedule.remind.pending` → `executors/remind.ts`
+- `schedule.remind.pending.confirm/cancel` → `executors/remind.ts`
+- `schedule.need_response.list` → `executors/remind.ts`
+- `schedule.remind.need_response` → `executors/remind.ts`
+- `schedule.remind.need_response.confirm/cancel` → `executors/remind.ts`
+- `schedule.remind.responded` → `executors/remind.ts` (P2-D2 で追加時から統一済み)
+
+**設計変更:**
+- classifier/confirmCancel.ts で `activePending` の情報を `params` に設定
+- executors は `IntentResult.params` からデータを取得（context 依存を排除）
+- P0-1 の設計思想に完全準拠
+
+---
+
 ## 再スタート手順
 
 ### 1. リポジトリクローン
