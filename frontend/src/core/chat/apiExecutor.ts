@@ -1495,7 +1495,8 @@ async function executeReschedule(intentResult: IntentResult): Promise<ExecutionR
  * → その後「送る/キャンセル/別スレッドで」で pending.action.decide に流れる
  */
 async function executeRescheduleConfirm(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { originalThreadId, originalTitle, participants, suggestedTitle } = intentResult.params;
+  // originalThreadId は今後のログ/追跡用に予約（現時点では使用しない）
+  const { originalTitle, participants, suggestedTitle } = intentResult.params;
   
   if (!participants || participants.length === 0) {
     return {
