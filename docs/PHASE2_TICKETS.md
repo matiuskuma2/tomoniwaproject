@@ -680,11 +680,87 @@ bash tests/e2e/phase2_need_response.sh
 
 ---
 
+## ✅ P2-D2: 回答済みの人へのリマインド（実装完了）
+
+**優先度**: 高  
+**見積もり**: 1日  
+**担当**: フロントエンド  
+**ステータス**: ✅ 完了（2026-01-20）
+
+### 目的
+追加候補後に「最新候補に回答済みの人」にもリマインド/お礼を送れるようにし、リマインド対象の選択肢を拡充する。
+
+### 完了条件（DoD）
+- [x] `schedule.remind.responded` インテント追加
+- [x] キーワード: 回答済み.*リマインド、回答者.*リマインド、答えた人.*リマインド
+- [x] confirm 必須（誤送信防止）
+- [x] declined は除外
+- [x] reason === 'responded'（最新候補に回答済み）を対象
+- [x] 既存 /remind API の `target_invitee_keys` を活用（バックエンド変更なし）
+
+### 使い方
+チャットで以下のように入力:
+- 「回答済みの人にリマインド」
+- 「回答者にリマインド」
+
+### 確認フロー
+```
+ユーザー: 「回答済みの人にリマインド」
+
+システム:
+📩 **回答済みの方へのリマインド確認**
+
+📋 スレッド: 〇〇会議
+📊 候補バージョン: v2
+📬 送信対象: 2名
+
+**対象者:**
+1. yamamoto@example.com (山本) — v2時点の回答
+2. tanaka@example.com (田中) — v2時点の回答
+
+⚠️ この 2名 にリマインドを送りますか？
+（最新候補に回答済みの招待者に送信されます）
+
+「はい」で送信
+「いいえ」でキャンセル
+
+ユーザー: 「はい」
+
+システム:
+📩 **回答済みの方へのリマインド送信完了**
+
+📋 スレッド: xxx-xxx-xxx
+📬 送信対象: 2名
+
+✅ 2名 にリマインドを送信しました。
+```
+
+### 送信対象オプションまとめ
+| オプション | キーワード | 対象 | 備考 |
+|------------|-----------|------|------|
+| 未返信リマインド | 「リマインド」 | 一度も回答していない人 | Phase Next-6 |
+| 再回答リマインド | 「再回答.*リマインド」 | 旧世代回答の人 + 未回答 | P2-D1 |
+| 回答済みリマインド | 「回答済み.*リマインド」 | 最新候補に回答済みの人 | P2-D2 |
+
+### 実装ファイル
+- `frontend/src/core/chat/classifier/types.ts` - インテント型追加
+- `frontend/src/core/chat/classifier/remind.ts` - キーワード分類
+- `frontend/src/core/chat/classifier/confirmCancel.ts` - confirm/cancel
+- `frontend/src/core/chat/pendingTypes.ts` - remind.responded kind
+- `frontend/src/core/chat/executors/remind.ts` - executor
+- `frontend/src/core/chat/executors/types.ts` - ResultData型
+- `frontend/src/core/chat/apiExecutor.ts` - case分岐
+- `frontend/src/core/chat/messageFormatter.ts` - フォーマッター
+
+### コミット
+- `0b1be5b` - feat: P2-D2 - 回答済みの人へのリマインド機能
+
+---
+
 ## ⏭️ 次ターム候補チケット（優先度順）
 
 | ID | 内容 | 見積もり | 備考 |
 |----|------|----------|------|
-| P2-D2 | 回答者だけ再通知オプション | 1日 | P2-D1と同様の構造 |
 | P2-D3 | 確定後のやり直し（別スレッド化） | 3日 | 履歴混乱リスク高 |
 | P2-E1 | Slack/Chatwork送達 | 5日 | 送達チャネル拡張 |
 | P3-A1 | 清掃の「時間×場所×人」最適化 | 10日+ | n対n配置エンジン |
