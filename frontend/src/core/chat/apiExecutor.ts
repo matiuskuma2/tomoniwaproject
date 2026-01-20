@@ -213,6 +213,14 @@ export type ExecutionResultData =
     } }
   | { kind: 'remind.responded.cancelled'; payload: {} }
   | { kind: 'remind.responded.none'; payload: { threadId: string; message: string } }
+  // P2-D3: 再調整
+  | { kind: 'reschedule.pending'; payload: {
+      originalThreadId: string;
+      originalThreadTitle: string;
+      suggestedTitle: string;
+      participants: Array<{ email: string; name?: string; selection_status: string }>;
+      emails: string[];
+    }}
   // P2-B1: バッチ処理
   | { kind: 'batch.add_members.completed'; payload: {
       listName: string;

@@ -237,6 +237,57 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 
 ---
 
+### 2026-01-20 P3-TZ2 タイムゾーン対応
+
+| Commit | 変更内容 |
+|--------|----------|
+| `b44a62b` | P3-TZ2: リマインドメールの期限表示を受信者タイムゾーン対応 |
+
+**完了済み:**
+- ✅ users テーブル timezone カラム（P3-TZ1）
+- ✅ 設定画面から timezone 変更可能
+- ✅ フロント側 viewerTz による表示統一
+- ✅ 追加候補メールの slot_description（受信者TZ対応済み）
+- ✅ リマインドメールの期限表示（受信者TZ対応）
+
+**設計:**
+- アプリユーザー → users.timezone
+- 外部ユーザー → thread.timezone（オーガナイザーのTZ）
+
+---
+
+### 2026-01-20 P3-INV1 送信前プレビュー
+
+| Commit | 変更内容 |
+|--------|----------|
+| `bfc9d27` | P3-INV1: prepare API に email_preview フィールド追加 |
+
+**追加情報:**
+- subject: メール件名プレビュー
+- summary: メール内容の概要
+- note: 補足説明
+
+---
+
+### 2026-01-20 P2-D3 確定後やり直し（再調整）
+
+| Commit | 変更内容 |
+|--------|----------|
+| `c70ca9e` | P2-D3: 再調整機能の基盤実装 |
+
+**実装済み:**
+- schedule.reschedule インテント
+- GET /threads/:id/reschedule/info API
+- executeReschedule executor
+
+**キーワード:**
+- 再調整、やり直し、日程変更、リスケ
+
+**未実装:**
+- confirm/cancel フロー（「はい」で新スレッド作成）
+
+---
+
 ## 再スタート手順
 
 ### 1. リポジトリクローン
