@@ -63,8 +63,8 @@ test.describe('P2-D3 Reschedule', () => {
     await sendChatMessage(page, testEmail);
     
     // 招待準備のレスポンスを待つ
-    const prepareMsg = await waitForAssistantMessage(page, 30000);
-    console.log(`[P2-D3 E2E] Prepare response received`);
+    const _prepareMsg = await waitForAssistantMessage(page, 30000);
+    console.log(`[P2-D3 E2E] Prepare response received: ${_prepareMsg.slice(0, 50)}...`);
     
     // 「送る」で送信
     await sendChatMessage(page, '送る');
