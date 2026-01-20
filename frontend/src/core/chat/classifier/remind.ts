@@ -4,6 +4,7 @@
  * 
  * - schedule.need_response.list: 再回答必要者リスト表示
  * - schedule.remind.need_response: 再回答必要者にリマインド
+ * - schedule.remind.responded: 最新回答済みの人にリマインド (P2-D2)
  * - schedule.remind.pending: 未返信リマインド
  */
 
@@ -73,6 +74,39 @@ export const classifyRemind: ClassifierFn = (
 
     return {
       intent: 'schedule.remind.need_response',
+      confidence: 0.95,
+      params: {
+        threadId: context.selectedThreadId,
+      },
+    };
+  }
+
+  // ============================================================
+  // P2-D2: schedule.remind.responded
+  // Keywords: 回答済みの人にリマインド、回答者にリマインド、答えた人に
+  // NOTE: need_response より後、pending より前に判定
+  // ============================================================
+  if (
+    /(回答済み.*リマインド|回答者.*リマインド|答えた人.*リマインド|回答した人.*リマインド|回答済み.*送|回答者.*送)/.test(
+      normalizedInput
+    )
+  ) {
+    // Require threadId context
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.remind.responded',
+        confidence: 0.95,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message:
+            'どのスレッドの回答済みの人にリマインドを送りますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+
+    return {
+      intent: 'schedule.remind.responded',
       confidence: 0.95,
       params: {
         threadId: context.selectedThreadId,

@@ -16,6 +16,7 @@ export type PendingKind =
   | 'pending.action'           // Beta A: send/add_invites/add_slots
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
+  | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
   | 'notify.confirmed'         // Phase Next-6 Day3: 確定通知
   | 'split.propose'            // Phase Next-6 Day2: 票割れ追加提案
   | 'auto_propose';            // Phase Next-5 Day2: 自動候補提案
@@ -62,6 +63,13 @@ export type PendingState =
   // Phase2 P2-D1: 再回答が必要な人へのリマインド
   | (PendingBase & {
       kind: 'remind.need_response';
+      targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+      count: number;
+    })
+  
+  // Phase2 P2-D2: 最新回答済みの人へのリマインド
+  | (PendingBase & {
+      kind: 'remind.responded';
       targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
       count: number;
     })
@@ -124,6 +132,10 @@ export function isPendingRemindNeedResponse(pending: PendingState | null): pendi
   return pending?.kind === 'remind.need_response';
 }
 
+export function isPendingRemindResponded(pending: PendingState | null): pending is PendingState & { kind: 'remind.responded' } {
+  return pending?.kind === 'remind.responded';
+}
+
 export function isPendingNotify(pending: PendingState | null): pending is PendingState & { kind: 'notify.confirmed' } {
   return pending?.kind === 'notify.confirmed';
 }
@@ -145,6 +157,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'pending.action',
     'remind.pending',
     'remind.need_response',
+    'remind.responded',
     'notify.confirmed',
     'split.propose',
     'auto_propose',
@@ -164,6 +177,8 @@ export function describePending(pending: PendingState | null): string {
       return `未回答リマインド待ち (${pending.count}名)`;
     case 'remind.need_response':
       return `再回答リマインド待ち (${pending.count}名)`;
+    case 'remind.responded':
+      return `回答済みリマインド待ち (${pending.count}名)`;
     case 'notify.confirmed':
       return `確定通知待ち (${pending.invites.length}名)`;
     case 'split.propose':

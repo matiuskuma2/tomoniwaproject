@@ -49,6 +49,10 @@ export {
   executeRemindPending,
   executeNeedResponseList,
   executeRemindNeedResponse,
+  // P2-D2: 回答済みリマインド
+  executeRemindResponded,
+  executeRemindRespondedConfirm,
+  executeRemindRespondedCancel,
   // Confirm & Cancel (P2-R1 Step2)
   executeRemindPendingConfirm,
   executeRemindPendingCancel,

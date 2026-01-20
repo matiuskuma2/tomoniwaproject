@@ -37,6 +37,9 @@ export type IntentType =
   | 'schedule.remind.need_response'       // Phase2 P2-D1 - 再回答必要者にリマインド
   | 'schedule.remind.need_response.confirm' // Phase2 P2-D1 - リマインド確定
   | 'schedule.remind.need_response.cancel'  // Phase2 P2-D1 - リマインドキャンセル
+  | 'schedule.remind.responded'            // Phase2 P2-D2 - 最新回答済みの人にリマインド
+  | 'schedule.remind.responded.confirm'    // Phase2 P2-D2 - リマインド確定
+  | 'schedule.remind.responded.cancel'     // Phase2 P2-D2 - リマインドキャンセル
   // Beta A: 送信フロー
   | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
   | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API

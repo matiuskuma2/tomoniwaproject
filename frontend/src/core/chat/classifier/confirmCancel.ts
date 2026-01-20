@@ -3,7 +3,7 @@
  * TD-003: はい/いいえ系の確認・キャンセル判定
  * 
  * 優先順位: 2（pending.action の次）
- * 対象: split → notify → remind → remind_need_response → auto_propose
+ * 対象: split → notify → remind → remind_need_response → remind_responded → auto_propose
  */
 
 import type { IntentResult, IntentContext, ClassifierFn } from './types';
@@ -13,6 +13,7 @@ import {
   isPendingNotify,
   isPendingRemind,
   isPendingRemindNeedResponse,
+  isPendingRemindResponded,
 } from '../pendingTypes';
 
 /**
@@ -68,6 +69,14 @@ export const classifyConfirmCancel: ClassifierFn = (
       };
     }
 
+    if (isPendingRemindResponded(activePending)) {
+      return {
+        intent: 'schedule.remind.responded.confirm',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+
     // Default to auto_propose flow
     return {
       intent: 'schedule.auto_propose.confirm',
@@ -108,6 +117,14 @@ export const classifyConfirmCancel: ClassifierFn = (
     if (isPendingRemindNeedResponse(activePending)) {
       return {
         intent: 'schedule.remind.need_response.cancel',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+
+    if (isPendingRemindResponded(activePending)) {
+      return {
+        intent: 'schedule.remind.responded.cancel',
         confidence: 0.9,
         params: {},
       };

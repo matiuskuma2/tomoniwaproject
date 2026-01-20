@@ -252,6 +252,71 @@ export function formatRemindNeedResponseNone(context: MessageContext): string {
 }
 
 // ============================================================
+// 2.5 回答済みリマインド（responded）- P2-D2
+// ============================================================
+
+/**
+ * 回答済みリマインド - 確認メッセージ
+ */
+export function formatRemindRespondedConfirm(
+  context: MessageContext,
+  targetInvitees: InviteeInfo[]
+): string {
+  const count = targetInvitees.length;
+  
+  let message = `📩 **回答済みの方へのリマインド確認**\n\n`;
+  message += `📋 スレッド: ${context.threadTitle}\n`;
+  message += formatVersionInfo(context);
+  message += `📬 送信対象: ${count}名\n\n`;
+  
+  message += `**対象者:**\n`;
+  message += formatInviteeList(targetInvitees, { showStatus: true });
+  
+  message += `\n⚠️ この ${count}名 にリマインドを送りますか？\n`;
+  message += `（最新候補に回答済みの招待者に送信されます）\n\n`;
+  message += `「はい」で送信\n`;
+  message += `「いいえ」でキャンセル`;
+  
+  return message;
+}
+
+/**
+ * 回答済みリマインド - 送信完了メッセージ
+ */
+export function formatRemindRespondedSent(
+  _context: MessageContext,
+  results: Array<{ email: string; status: string }>,
+  nextRemindAt?: string
+): string {
+  const sentCount = results.filter(r => r.status === 'sent').length;
+  
+  let message = `✅ 回答済みの方にリマインドを送信しました！\n\n`;
+  message += `📬 送信: ${sentCount}名\n`;
+  
+  if (results.length > 0) {
+    message += `\n**送信先:**\n`;
+    results.forEach((result, index) => {
+      const statusIcon = result.status === 'sent' ? '✅' : '❌';
+      const statusText = result.status === 'sent' ? '送信完了' : '失敗';
+      message += `${index + 1}. ${result.email} - ${statusIcon}${statusText}\n`;
+    });
+  }
+  
+  if (nextRemindAt) {
+    message += `\n⏰ 次回リマインド可能: ${nextRemindAt}`;
+  }
+  
+  return message;
+}
+
+/**
+ * 回答済みリマインド - 対象者なしメッセージ
+ */
+export function formatRemindRespondedNone(context: MessageContext): string {
+  return `✅ 「${context.threadTitle}」には回答済みの方がいません。\nリマインドを送る対象がありません。`;
+}
+
+// ============================================================
 // 3. 追加候補通知（additional_slots）
 // ============================================================
 

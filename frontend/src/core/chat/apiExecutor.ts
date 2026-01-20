@@ -63,6 +63,10 @@ import {
   executeFinalize as executeFinalizeFromThread,
   executeThreadCreate as executeThreadCreateFromThread,
   executeInviteList as executeInviteListFromThread,
+  // P2-D2: 回答済みリマインド
+  executeRemindResponded as executeRemindRespondedFromExecutors,
+  executeRemindRespondedConfirm as executeRemindRespondedConfirmFromExecutors,
+  executeRemindRespondedCancel as executeRemindRespondedCancelFromExecutors,
 } from './executors';
 
 // ============================================================
@@ -200,6 +204,20 @@ export type ExecutionResultData =
   | { kind: 'remind.status'; payload: any }
   | { kind: 'remind.pending.none'; payload: { threadId: string; message: string } }
   | { kind: 'remind.need_response.none'; payload: { threadId: string; message: string } }
+  // P2-D2: 回答済みリマインド
+  | { kind: 'remind.responded.generated'; payload: {
+      threadId: string;
+      threadTitle: string;
+      targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
+      count: number;
+    } }
+  | { kind: 'remind.responded.sent'; payload: {
+      threadId: string;
+      remindedCount: number;
+      results: Array<{ email: string; status: string }>;
+    } }
+  | { kind: 'remind.responded.cancelled'; payload: {} }
+  | { kind: 'remind.responded.none'; payload: { threadId: string; message: string } }
   // P2-B1: バッチ処理
   | { kind: 'batch.add_members.completed'; payload: {
       listName: string;
@@ -307,6 +325,16 @@ export async function executeIntent(
     
     case 'schedule.remind.need_response.cancel':
       return executeRemindNeedResponseCancel();
+    
+    // Phase2 P2-D2: 回答済みの人へのリマインド
+    case 'schedule.remind.responded':
+      return executeRemindRespondedFromExecutors(intentResult);
+    
+    case 'schedule.remind.responded.confirm':
+      return executeRemindRespondedConfirmFromExecutors(intentResult);
+    
+    case 'schedule.remind.responded.cancel':
+      return executeRemindRespondedCancelFromExecutors(intentResult);
     
     case 'schedule.notify.confirmed':
       return executeNotifyConfirmed(intentResult);
