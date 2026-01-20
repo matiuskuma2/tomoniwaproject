@@ -65,6 +65,7 @@ export type PendingState =
       kind: 'remind.need_response';
       targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
       count: number;
+      threadTitle?: string;  // TD-REMIND-UNIFY: classifier から渡す用
     })
   
   // Phase2 P2-D2: 最新回答済みの人へのリマインド
@@ -72,6 +73,7 @@ export type PendingState =
       kind: 'remind.responded';
       targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;
       count: number;
+      threadTitle?: string;  // TD-REMIND-UNIFY: classifier から渡す用
     })
   
   // Phase Next-6 Day3: 確定通知

@@ -26,29 +26,17 @@ import { getRefreshActions, type WriteOp } from '../refresh/refreshMap';
 import { runRefresh } from '../refresh/runRefresh';
 // P1-2: Structured logger
 import { log } from '../platform';
+// TD-REMIND-UNIFY: remind 系は executors に統一したため、以下の import は不要になった
+// isPendingRemind, isPendingRemindNeedResponse, messageFormatter 関連
 import { 
   isPendingAction, 
-  isPendingRemind, 
-  isPendingRemindNeedResponse,
   isPendingNotify,
   isPendingSplit,
   isPendingAutoPropose,
 } from './pendingTypes';
 
-// P2-B2: 統一メッセージフォーマッター
-import {
-  formatNeedResponseList,
-  formatRemindNeedResponseConfirm,
-  formatRemindNeedResponseSent,
-  formatRemindNeedResponseNone,
-  formatRemindPendingConfirm,
-  formatRemindPendingNone,
-  formatThreadStatusError,
-  type MessageContext,
-  type InviteeInfo,
-} from './messageFormatter';
-
 // P1-1: 分割した executor をインポート
+// TD-REMIND-UNIFY: remind 系も executors に統一
 import {
   executeToday,
   executeWeek,
@@ -63,7 +51,14 @@ import {
   executeFinalize as executeFinalizeFromThread,
   executeThreadCreate as executeThreadCreateFromThread,
   executeInviteList as executeInviteListFromThread,
-  // P2-D2: 回答済みリマインド
+  // TD-REMIND-UNIFY: Remind executors (全て executors/remind.ts に統一)
+  executeRemindPending as executeRemindPendingFromExecutors,
+  executeRemindPendingConfirm as executeRemindPendingConfirmFromExecutors,
+  executeRemindPendingCancel as executeRemindPendingCancelFromExecutors,
+  executeNeedResponseList as executeNeedResponseListFromExecutors,
+  executeRemindNeedResponse as executeRemindNeedResponseFromExecutors,
+  executeRemindNeedResponseConfirm as executeRemindNeedResponseConfirmFromExecutors,
+  executeRemindNeedResponseCancel as executeRemindNeedResponseCancelFromExecutors,
   executeRemindResponded as executeRemindRespondedFromExecutors,
   executeRemindRespondedConfirm as executeRemindRespondedConfirmFromExecutors,
   executeRemindRespondedCancel as executeRemindRespondedCancelFromExecutors,
@@ -306,25 +301,24 @@ export async function executeIntent(
     case 'schedule.additional_propose':
       return executeAdditionalPropose(intentResult, context);
     
-    // Phase Next-6: Reminder & Notification
+    // TD-REMIND-UNIFY: Reminder executors (全て executors/remind.ts に統一)
     case 'schedule.remind.pending':
-      return executeRemindPending(intentResult, context);
+      return executeRemindPendingFromExecutors(intentResult);
     
     case 'schedule.remind.pending.confirm':
-      return executeRemindPendingConfirm(context);
+      return executeRemindPendingConfirmFromExecutors(intentResult);
     
     case 'schedule.remind.pending.cancel':
-      return executeRemindPendingCancel();
+      return executeRemindPendingCancelFromExecutors(intentResult);
     
-    // Phase2 P2-D1: 再回答必要者へのリマインド
     case 'schedule.remind.need_response':
-      return executeRemindNeedResponse(intentResult);
+      return executeRemindNeedResponseFromExecutors(intentResult);
     
     case 'schedule.remind.need_response.confirm':
-      return executeRemindNeedResponseConfirm(context);
+      return executeRemindNeedResponseConfirmFromExecutors(intentResult);
     
     case 'schedule.remind.need_response.cancel':
-      return executeRemindNeedResponseCancel();
+      return executeRemindNeedResponseCancelFromExecutors(intentResult);
     
     // Phase2 P2-D2: 回答済みの人へのリマインド
     case 'schedule.remind.responded':
@@ -378,9 +372,9 @@ export async function executeIntent(
     case 'schedule.invite.list':
       return executeInviteListFromThread(intentResult);
     
-    // Phase2 P2-D0: 再回答必要者リスト表示
+    // TD-REMIND-UNIFY: 再回答必要者リスト表示 (executors に統一)
     case 'schedule.need_response.list':
-      return executeNeedResponseList(intentResult);
+      return executeNeedResponseListFromExecutors(intentResult);
     
     case 'unknown':
       return {
@@ -896,183 +890,8 @@ async function executeAutoProposeCancel(): Promise<ExecutionResult> {
   };
 }
 
-// ============================================================
-// Phase Next-6: Reminder (リマインド)
-// ============================================================
-
-/**
- * P3-1: schedule.remind.pending
- * Phase Next-6 Day1: 未返信リマインド（提案のみ、POSTなし）
- * 
- * Flow:
- * 1. 実行回数チェック（最大2回まで）
- * 2. status を取得
- * 3. 未返信者をチェック
- * 4. 未返信者がいない場合: 「全員が回答済みです」
- * 5. 未返信者がいる場合: リマインド提案を表示（まだPOSTしない）
- * 6. 「はい」で confirm フロー → POST
- */
-async function executeRemindPending(
-  intentResult: IntentResult,
-  context?: ExecutionContext
-): Promise<ExecutionResult> {
-  const { threadId } = intentResult.params;
-  
-  if (!threadId) {
-    return {
-      success: false,
-      message: 'スレッドが選択されていません。',
-      needsClarification: {
-        field: 'threadId',
-        message: 'どのスレッドにリマインドを送りますか？\n左のスレッド一覧から選択してください。',
-      },
-    };
-  }
-  
-  // Phase Next-6 Day1: 実行回数チェック（最大2回まで）
-  const executionCount = context?.remindCount || 0;
-  if (executionCount >= 2) {
-    return {
-      success: false,
-      message: '❌ リマインドの送信は最大2回までです。\n\nこれ以上はスレッドのステータスを確認してください。',
-    };
-  }
-  
-  try {
-    // Get thread status
-    const status = await getStatusWithCache(threadId);
-    
-    // Get pending invites
-    const pendingInvites = status.invites
-      .filter((invite) => invite.status === 'pending' || invite.status === null)
-      .map((invite) => ({
-        email: invite.email,
-        name: invite.candidate_name,
-      }));
-    
-    // P2-B2: 統一フォーマッター使用
-    const msgContext: MessageContext = {
-      threadTitle: status.thread.title,
-      threadId,
-    };
-    
-    if (pendingInvites.length === 0) {
-      return {
-        success: true,
-        message: formatRemindPendingNone(msgContext),
-      };
-    }
-    
-    // P2-B2: 統一フォーマッターでメッセージ生成
-    const inviteeInfos: InviteeInfo[] = pendingInvites.map(inv => ({
-      email: inv.email,
-      name: inv.name,
-    }));
-    let message = formatRemindPendingConfirm(msgContext, inviteeInfos);
-    message += `\n⚠️ 残りリマインド回数: ${2 - executionCount - 1}回`;
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'remind.pending.generated',
-        payload: {
-          source: 'remind', // Phase Next-6 Day1: 明示フラグ
-          threadId, // Phase Next-6 Day1: 提案生成時のスレッドID
-          pendingInvites,
-          count: pendingInvites.length,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P3-2: schedule.remind.pending.confirm
- * Phase Next-6 Day1: リマインド確定 → POST
- * P0-1: 正規化された pending を使用
- */
-async function executeRemindPendingConfirm(
-  context?: ExecutionContext
-): Promise<ExecutionResult> {
-  // P0-1: 正規化された pending から remind.pending を取得
-  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
-  const pending = isPendingRemind(activePending) ? activePending : null;
-  
-  if (!pending) {
-    return {
-      success: false,
-      message: '❌ リマインド対象が選択されていません。\n先に「リマインド送って」と入力してください。',
-    };
-  }
-  
-  try {
-    // Phase Next-6 Day1.5: POST /api/threads/:id/remind (A案: 送信用セット返す)
-    const { threadId } = pending;
-    
-    const response = await threadsApi.sendReminder(threadId);
-    
-    if (!response.success || response.reminded_count === 0) {
-      return {
-        success: true,
-        message: '✅ 未返信者がいません。\n\nリマインドは不要です。',
-      };
-    }
-    
-    // A案: 送信用セットを表示（コピー用）
-    let message = `✅ リマインド用の文面を生成しました（${response.reminded_count}名）\n\n`;
-    message += '📋 以下をコピーして各自にメールで送信してください:\n\n';
-    message += '────────────────────────────\n\n';
-    
-    response.reminded_invites.forEach((invite, index) => {
-      message += `【${index + 1}. ${invite.email}${invite.name ? ` (${invite.name})` : ''}】\n\n`;
-      message += `件名: 日程調整のリマインド\n\n`;
-      message += invite.template_message;
-      message += '\n\n────────────────────────────\n\n';
-    });
-    
-    // P0-2: Write 後の refresh 強制
-    await refreshAfterWrite('REMIND_PENDING', threadId);
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'remind.pending.sent',
-        payload: {
-          threadId,
-          remindedInvites: response.reminded_invites,
-          count: response.reminded_count,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P3-3: schedule.remind.pending.cancel
- * Phase Next-6 Day1: リマインドキャンセル
- */
-async function executeRemindPendingCancel(): Promise<ExecutionResult> {
-  return {
-    success: true,
-    message: '✅ リマインドをキャンセルしました。',
-    data: {
-      kind: 'remind.pending.cancelled',
-      payload: {},
-    },
-  };
-}
+// TD-REMIND-UNIFY: remind.pending 系は executors/remind.ts に統一
+// 削除: executeRemindPending, executeRemindPendingConfirm, executeRemindPendingCancel
 
 // ============================================================
 // Phase Next-6 Day3: Confirmed Notification (確定通知)
@@ -1573,328 +1392,8 @@ function formatDateTime(dateStr: string): string {
   return formatDateTimeForViewer(dateStr, DEFAULT_TIMEZONE);
 }
 
-// ============================================================
-// Phase2 P2-D0: 再回答必要者リスト表示
-// ============================================================
-
-/**
- * P2-D0: schedule.need_response.list
- * 再回答が必要な招待者のリストを表示
- * 
- * 条件:
- * - declined は除外
- * - 未回答（selection無し）は要
- * - proposal_version_at_response < current_proposal_version は要
- */
-async function executeNeedResponseList(
-  intentResult: IntentResult
-): Promise<ExecutionResult> {
-  const { threadId } = intentResult.params;
-  
-  if (!threadId) {
-    return {
-      success: false,
-      message: 'スレッドが選択されていません。',
-      needsClarification: {
-        field: 'threadId',
-        message: 'どのスレッドの再回答必要者を確認しますか？\n左のスレッド一覧から選択してください。',
-      },
-    };
-  }
-  
-  try {
-    // Get thread status
-    const status = await getStatusWithCache(threadId);
-    
-    // Phase2: proposal_info が無い環境でも落ちないガード
-    const proposalInfo = (status as any).proposal_info || null;
-    const currentVersion = proposalInfo?.current_version || 1;
-    const remainingProposals = proposalInfo?.remaining_proposals ?? 2;
-    
-    // Phase2: API側で計算済みの invitees_needing_response を使用
-    // ただし古いAPIの場合は手動計算にフォールバック
-    let inviteesNeedingResponse: Array<{ email: string; name?: string; respondedVersion?: number }> = [];
-    
-    if (proposalInfo?.invitees_needing_response && Array.isArray(proposalInfo.invitees_needing_response)) {
-      // API側で計算済み
-      inviteesNeedingResponse = proposalInfo.invitees_needing_response.map((inv: any) => ({
-        email: inv.email,
-        name: inv.candidate_name || inv.name,
-        respondedVersion: inv.proposal_version_at_response || undefined,
-      }));
-    } else {
-      // フォールバック: 手動計算
-      // declined除外、未回答または旧世代回答を抽出
-      const selectionsMap = new Map<string, any>();
-      if (status.selections) {
-        status.selections.forEach((sel: any) => {
-          selectionsMap.set(sel.invitee_key, sel);
-        });
-      }
-      
-      inviteesNeedingResponse = status.invites
-        .filter((inv: any) => {
-          // declined は除外
-          if (inv.status === 'declined') return false;
-          
-          const selection = selectionsMap.get(inv.invitee_key);
-          if (!selection) {
-            // 未回答
-            return true;
-          }
-          
-          // proposal_version_at_response < currentVersion なら再回答必要
-          const respondedVersion = selection.proposal_version_at_response || 1;
-          return respondedVersion < currentVersion;
-        })
-        .map((inv: any) => {
-          const selection = selectionsMap.get(inv.invitee_key);
-          return {
-            email: inv.email,
-            name: inv.candidate_name,
-            respondedVersion: selection?.proposal_version_at_response || undefined,
-          };
-        });
-    }
-    
-    const count = inviteesNeedingResponse.length;
-    
-    // P2-B2: 統一フォーマッターを使用
-    const context: MessageContext = {
-      threadTitle: status.thread.title,
-      threadId,
-      currentVersion,
-      remainingProposals,
-    };
-    const message = formatNeedResponseList(context, inviteesNeedingResponse);
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'need_response.list',
-        payload: {
-          threadId,
-          threadTitle: status.thread.title,
-          currentVersion,
-          inviteesNeedingResponse,
-          inviteesNeedingResponseCount: count,
-          remainingProposals,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-// ============================================================
-// Phase2 P2-D1: 再回答必要者へのリマインド
-// ============================================================
-
-/**
- * P2-D1: schedule.remind.need_response
- * 再回答が必要な人だけにリマインドを送る（確認必須）
- * 
- * 対象:
- * - declined は除外
- * - 未回答 または proposal_version_at_response < current_version
- */
-async function executeRemindNeedResponse(
-  intentResult: IntentResult
-): Promise<ExecutionResult> {
-  const { threadId } = intentResult.params;
-  
-  if (!threadId) {
-    return {
-      success: false,
-      message: 'スレッドが選択されていません。',
-      needsClarification: {
-        field: 'threadId',
-        message: 'どのスレッドの再回答必要者にリマインドを送りますか？\n左のスレッド一覧から選択してください。',
-      },
-    };
-  }
-  
-  try {
-    // Get thread status
-    const status = await getStatusWithCache(threadId);
-    
-    // Check if thread is active - P2-B2: 統一フォーマッター使用
-    if (status.thread.status === 'confirmed' || status.thread.status === 'cancelled') {
-      return {
-        success: false,
-        message: formatThreadStatusError(status.thread.status),
-      };
-    }
-    
-    // Get proposal info with fallback
-    const proposalInfo = (status as any).proposal_info || null;
-    const currentVersion = proposalInfo?.current_version || 1;
-    
-    // Build selections map
-    const selectionsMap = new Map<string, any>();
-    if (status.selections) {
-      status.selections.forEach((sel: any) => {
-        selectionsMap.set(sel.invitee_key, sel);
-      });
-    }
-    
-    // Filter: need response only (declined excluded)
-    const targetInvitees = status.invites
-      .filter((inv: any) => {
-        // declined は除外
-        if (inv.status === 'declined') return false;
-        
-        const selection = selectionsMap.get(inv.invitee_key);
-        if (!selection) {
-          // 未回答
-          return true;
-        }
-        
-        // proposal_version_at_response < currentVersion なら再回答必要
-        const respondedVersion = selection.proposal_version_at_response || 1;
-        return respondedVersion < currentVersion;
-      })
-      .map((inv: any) => ({
-        email: inv.email,
-        name: inv.candidate_name,
-        inviteeKey: inv.invitee_key,
-      }));
-    
-    // P2-B2: 統一フォーマッター使用
-    const context: MessageContext = {
-      threadTitle: status.thread.title,
-      threadId,
-      currentVersion,
-    };
-    
-    if (targetInvitees.length === 0) {
-      return {
-        success: true,
-        message: formatRemindNeedResponseNone(context),
-      };
-    }
-    
-    // Build confirmation message using formatter
-    const message = formatRemindNeedResponseConfirm(context, targetInvitees);
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'remind.need_response.generated',
-        payload: {
-          threadId,
-          threadTitle: status.thread.title,
-          targetInvitees,
-          count: targetInvitees.length,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P2-D1: schedule.remind.need_response.confirm
- * 再回答必要者へのリマインドを実行
- * P0-1: 正規化された pending を使用
- */
-async function executeRemindNeedResponseConfirm(
-  context?: ExecutionContext
-): Promise<ExecutionResult> {
-  // P0-1: 正規化された pending から remind.need_response を取得
-  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
-  const pending = isPendingRemindNeedResponse(activePending) ? activePending : null;
-  
-  if (!pending) {
-    return {
-      success: false,
-      message: '❌ リマインド対象が選択されていません。\n先に「再回答必要な人にリマインド」と入力してください。',
-    };
-  }
-  
-  try {
-    const { threadId, targetInvitees } = pending;
-    
-    // Extract invitee_keys for API call
-    const targetInviteeKeys = targetInvitees.map((inv: { inviteeKey: string }) => inv.inviteeKey);
-    
-    // Call remind API with target_invitee_keys
-    const response = await threadsApi.remind(threadId, {
-      target_invitee_keys: targetInviteeKeys,
-    });
-    
-    // P2-B2: 統一フォーマッター使用
-    // pending.threadTitle が存在しない場合は空文字を使用
-    const msgContext: MessageContext = {
-      threadTitle: (pending as any).threadTitle || '',
-      threadId,
-    };
-    
-    const nextRemindAt = response.next_reminder_available_at
-      ? formatDateTime(response.next_reminder_available_at)
-      : undefined;
-    
-    let message = formatRemindNeedResponseSent(
-      msgContext,
-      response.results || [],
-      nextRemindAt
-    );
-    
-    // 警告がある場合は追加
-    if (response.warnings && response.warnings.length > 0) {
-      message += `\n⚠️ 警告:\n`;
-      response.warnings.forEach((warn: any) => {
-        message += `- ${warn.email}: ${warn.error}\n`;
-      });
-    }
-    
-    // P0-2: Write 後の refresh 強制
-    await refreshAfterWrite('REMIND_NEED_RESPONSE', threadId);
-    
-    return {
-      success: true,
-      message,
-      data: {
-        kind: 'remind.need_response.sent',
-        payload: {
-          threadId,
-          remindedCount: response.reminded_count,
-          results: response.results || [],
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ リマインド送信に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
-
-/**
- * P2-D1: schedule.remind.need_response.cancel
- * 再回答必要者へのリマインドをキャンセル
- */
-async function executeRemindNeedResponseCancel(): Promise<ExecutionResult> {
-  return {
-    success: true,
-    message: '✅ リマインド送信をキャンセルしました。',
-    data: {
-      kind: 'remind.need_response.cancelled',
-      payload: {},
-    },
-  };
-}
+// TD-REMIND-UNIFY: need_response 系は executors/remind.ts に統一
+// 削除: executeNeedResponseList, executeRemindNeedResponse, executeRemindNeedResponseConfirm, executeRemindNeedResponseCancel
 
 // Export type for external use
 export type { CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse };

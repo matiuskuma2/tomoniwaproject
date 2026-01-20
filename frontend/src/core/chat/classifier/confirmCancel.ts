@@ -53,11 +53,16 @@ export const classifyConfirmCancel: ClassifierFn = (
       };
     }
 
+    // TD-REMIND-UNIFY: pending の情報を params に設定して executors に渡す
     if (isPendingRemind(activePending)) {
       return {
         intent: 'schedule.remind.pending.confirm',
         confidence: 0.9,
-        params: {},
+        params: {
+          threadId: activePending.threadId,
+          pendingInvitees: activePending.pendingInvites,
+          count: activePending.count,
+        },
       };
     }
 
@@ -65,7 +70,12 @@ export const classifyConfirmCancel: ClassifierFn = (
       return {
         intent: 'schedule.remind.need_response.confirm',
         confidence: 0.9,
-        params: {},
+        params: {
+          threadId: activePending.threadId,
+          threadTitle: activePending.threadTitle,
+          targetInvitees: activePending.targetInvitees,
+          count: activePending.count,
+        },
       };
     }
 
@@ -73,7 +83,12 @@ export const classifyConfirmCancel: ClassifierFn = (
       return {
         intent: 'schedule.remind.responded.confirm',
         confidence: 0.9,
-        params: {},
+        params: {
+          threadId: activePending.threadId,
+          threadTitle: activePending.threadTitle,
+          targetInvitees: activePending.targetInvitees,
+          count: activePending.count,
+        },
       };
     }
 
