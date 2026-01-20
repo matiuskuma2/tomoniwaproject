@@ -661,18 +661,30 @@ async function executePendingDecision(
 
 /**
  * Build prepare message from response
+ * P3-INV1: メールプレビュー情報を追加表示
  */
 function buildPrepareMessage(response: PrepareSendResponse): string {
   const summary = response.summary;
   let message = `📧 送信先: ${summary.valid_count}件\n`;
   
   if (summary.preview && summary.preview.length > 0) {
-    message += '\n送信先プレビュー:\n';
+    message += '\n**送信先プレビュー:**\n';
     summary.preview.forEach((p: any) => {
       message += `- ${p.email}${p.is_app_user ? ' (アプリユーザー)' : ''}\n`;
     });
     if (summary.valid_count > summary.preview.length) {
       message += `... 他 ${summary.valid_count - summary.preview.length}名\n`;
+    }
+  }
+  
+  // P3-INV1: メールプレビュー情報を表示
+  const emailPreview = (response as any).email_preview;
+  if (emailPreview) {
+    message += '\n**📬 メール内容:**\n';
+    message += `件名: ${emailPreview.subject}\n`;
+    message += `${emailPreview.summary}\n`;
+    if (emailPreview.note) {
+      message += `（${emailPreview.note}）\n`;
     }
   }
   

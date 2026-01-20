@@ -1462,6 +1462,13 @@ app.post('/prepare-send', async (c) => {
       ? `${listName}リスト`
       : `${emails.length}件のメールアドレス`;
 
+    // P3-INV1: メールプレビュー情報を追加
+    const emailPreview = {
+      subject: `【日程調整】○○さんより「${title}」のご依頼`,
+      summary: '日程調整の招待メールが送信されます。受信者は候補日時から都合の良い日を選択できます。',
+      note: '※ 実際のメールでは送信者名が表示されます',
+    };
+
     return c.json({
       request_id: requestId,
       confirm_token: confirmToken,
@@ -1472,6 +1479,7 @@ app.post('/prepare-send', async (c) => {
         source_label: sourceLabel,
       },
       default_decision: 'send',
+      email_preview: emailPreview,  // P3-INV1: メールプレビュー
       message_for_chat: `送信先: ${emails.length}件 / スキップ: ${summary.skipped.invalid_email + summary.skipped.missing_email}件\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
     });
 
@@ -1673,6 +1681,13 @@ app.post('/:id/invites/prepare', async (c) => {
       ? `${listName}リスト`
       : `${newEmails.length}件のメールアドレス`;
 
+    // P3-INV1: メールプレビュー情報を追加
+    const emailPreview = {
+      subject: `【日程調整】○○さんより「${thread.title}」のご依頼`,
+      summary: '日程調整の招待メールが送信されます。受信者は候補日時から都合の良い日を選択できます。',
+      note: '※ 実際のメールでは送信者名が表示されます',
+    };
+
     return c.json({
       request_id: requestId,
       confirm_token: confirmToken,
@@ -1685,6 +1700,7 @@ app.post('/:id/invites/prepare', async (c) => {
         source_label: sourceLabel,
       },
       default_decision: 'send',
+      email_preview: emailPreview,  // P3-INV1: メールプレビュー
       message_for_chat: `「${thread.title}」に${newEmails.length}名を追加招待します。\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
     });
 
