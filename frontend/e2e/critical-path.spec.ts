@@ -85,8 +85,8 @@ test.describe('Critical Path: E2E核シナリオ', () => {
     await page.goto('/chat');
     await waitForUIStable(page);
     
-    // スレッドリストの初期カウントを取得
-    const threadListBefore = await page.locator('[data-testid="thread-item"]').count();
+    // スレッドリストの初期カウントを取得（将来の検証用）
+    const _threadListBefore = await page.locator('[data-testid="thread-item"]').count();
     
     // メールアドレスを入力してスレッドを作成
     // （アプリの仕様: メールアドレス入力 → 自動的にスレッド作成 + 招待準備）
