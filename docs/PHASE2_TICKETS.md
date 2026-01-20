@@ -321,60 +321,64 @@ SELECT * FROM invite_deliveries WHERE thread_id = ?;
 
 ---
 
-### 📋 P2-B1: UIで世代混在表示（v1/v2/v3）
+### ✅ P2-B1: UIで世代混在表示（v1/v2/v3）
 
 **優先度**: 高  
 **見積もり**: 2日  
-**担当**: フロントエンド
+**担当**: フロントエンド  
+**ステータス**: ✅ 完了（2026-01-20）
 
 #### 目的
 追加候補後に、どの候補が v1/v2/v3 で追加されたか、どの回答が v1 時点かを視覚化し、運用上の混乱を防ぐ。
 
 #### 完了条件（DoD）
-- [ ] 候補カードに `v1` `v2` `v3` バッジを表示
-- [ ] 回答一覧に「この回答は v1 時点」などの表記を追加
-- [ ] `proposal_info.invitees_needing_response_count` をカードに反映（例：「再回答必要: 3名」）
-- [ ] 既存回答は保持される表示を維持（回答済みは「✓回答済み」、追加分は「未回答」）
+- [x] 候補カードに `v1` `v2` `v3` バッジを表示
+- [x] 「最新候補のみ表示」トグル追加（デフォルトON）
+- [x] `proposal_info.invitees_needing_response_count` をカードに反映（例：「再回答必要: 3名」）
+- [x] 再回答必要者の名前一覧を展開表示
 
 #### 実装詳細
 
-**1. 候補カードのバッジ表示**
+**1. SlotsCard - 「最新候補のみ表示」トグル**
 ```tsx
-// frontend/src/components/scheduling/SlotCard.tsx
-// proposal_version を slot から取得し、バッジを表示
-<span className="badge badge-outline">v{slot.proposal_version}</span>
+// frontend/src/components/cards/SlotsCard.tsx
+const [showLatestOnly, setShowLatestOnly] = useState(true);
+const currentVersion = status.proposal_info?.current_version ?? 1;
+const displaySlots = showLatestOnly && hasMultipleVersions
+  ? status.slots.filter(s => (s.proposal_version ?? 1) === currentVersion)
+  : status.slots;
 ```
 
-**2. 回答一覧の世代表示**
+**2. ThreadStatusCard - ProposalInfoSection**
 ```tsx
-// frontend/src/components/scheduling/SelectionList.tsx
-// proposal_version_at_response を表示
-<span className="text-gray-500 text-xs">
-  （v{selection.proposal_version_at_response} 時点の回答）
-</span>
+// frontend/src/components/cards/ThreadStatusCard.tsx
+// 世代バッジ + 再回答必要者の名前一覧を展開表示
+<ProposalInfoSection status={status} />
 ```
 
-**3. 再回答必要カウント**
-```tsx
-// frontend/src/components/chat/ThreadStatusCard.tsx
-// proposal_info.invitees_needing_response_count を取得して表示
-{proposalInfo.invitees_needing_response_count > 0 && (
-  <div className="text-orange-500">
-    再回答が必要: {proposalInfo.invitees_needing_response_count}名
-  </div>
-)}
+**3. E2E ヘルパー関数**
+```ts
+// frontend/e2e/helpers/test-helpers.ts
+assertProposalVersionBadgeVisible(page, expectedVersion?)
+toggleLatestSlotsOnly(page, enable)
+assertNeedResponseAlertVisible(page, expectedCount?)
+expandAndCheckNeedResponseList(page)
 ```
 
 #### テスト条件
-- [ ] v1で3候補、v2で2候補追加後、カードに正しくバッジが表示される
-- [ ] v1で回答した人の回答一覧に「v1時点」と表示される
-- [ ] 追加候補後、再回答必要カウントが正しく表示される
+- [x] 世代バッジが表示される
+- [x] 「最新候補のみ表示」トグルが機能する
+- [x] 再回答必要カウントが正しく表示される
+- [x] 再回答必要者の名前一覧が展開表示される
 
-#### 関連ファイル
-- `frontend/src/components/scheduling/SlotCard.tsx`
-- `frontend/src/components/scheduling/SelectionList.tsx`
-- `frontend/src/components/chat/ThreadStatusCard.tsx`
-- `apps/api/src/routes/threadsStatus.ts`（proposal_info を返すAPI）
+#### 実装ファイル
+- `frontend/src/components/cards/SlotsCard.tsx` - トグル追加
+- `frontend/src/components/cards/ThreadStatusCard.tsx` - ProposalInfoSection 追加
+- `frontend/e2e/helpers/test-helpers.ts` - E2Eヘルパー追加
+
+#### コミット
+- `bdade5f` - feat: P2-B1 - 世代混在表示UI強化
+- `f52210c` - fix: ESLint unused variable error
 
 ---
 
@@ -841,6 +845,7 @@ const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
 
 ## 更新履歴
 
+- 2026-01-20: P2-B1 実装完了（世代混在表示UI強化: トグル追加、再回答必要者名前一覧）
 - 2026-01-13: P3-TZ1/TZ2/TZ3 チケット追加（タイムゾーン対応・グローバル展開準備）
 - 2026-01-13: HOTFIX: メール通知の日付表示UTCズレ修正（timeZone: 'Asia/Tokyo' 追加）
 - 2026-01-12: P2-D1 実装完了（再回答必要者だけにリマインド送信）

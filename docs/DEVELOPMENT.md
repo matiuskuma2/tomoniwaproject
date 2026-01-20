@@ -108,6 +108,12 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 | ThreadsList | `data-testid="threads-list"` | スレッド一覧 |
 | ThreadsList | `data-testid="thread-item"` | 各スレッドアイテム |
 | ThreadsList | `data-thread-id="<uuid>"` | スレッドID |
+| SlotsCard | `data-testid="slots-latest-only-toggle"` | P2-B1: 最新候補のみ表示トグル |
+| ThreadStatusCard | `data-testid="proposal-info-section"` | P2-B1: 世代情報セクション |
+| ThreadStatusCard | `data-testid="proposal-version-badge"` | P2-B1: 世代バッジ |
+| ThreadStatusCard | `data-testid="need-response-alert"` | P2-B1: 再回答必要アラート |
+| ThreadStatusCard | `data-testid="need-response-toggle"` | P2-B1: 詳細展開ボタン |
+| ThreadStatusCard | `data-testid="need-response-list"` | P2-B1: 再回答必要者リスト |
 
 ### E2E ヘルパー関数
 
@@ -123,6 +129,10 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 | `sendChatMessage(page, message)` | メッセージ送信 |
 | `getChatInput(page)` | チャット入力欄を取得 |
 | `waitForUIStable(page, timeout)` | UIが安定するまで待つ |
+| `assertProposalVersionBadgeVisible(page, expectedVersion?)` | P2-B1: 世代バッジ表示確認 |
+| `toggleLatestSlotsOnly(page, enable)` | P2-B1: 最新のみトグル操作 |
+| `assertNeedResponseAlertVisible(page, expectedCount?)` | P2-B1: 再回答必要アラート確認 |
+| `expandAndCheckNeedResponseList(page)` | P2-B1: 再回答必要者リスト展開・取得 |
 
 ---
 
@@ -145,6 +155,13 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 | `820d7cc` | Step 2-5 のセレクタ不一致 | 一時 skip |
 | `11f32a6` | SQL workaround が残存 | バックエンド確認後に撤去 |
 | `4d83b43` | Step 2-5 が skip のまま | 状態ベース待機で復活 |
+
+### 2026-01-20 P2-B1 世代混在表示UI強化
+
+| Commit | 変更内容 |
+|--------|----------|
+| `bdade5f` | P2-B1: SlotsCard に「最新候補のみ表示」トグル追加、ThreadStatusCard に再回答必要者の名前一覧表示、E2Eヘルパー追加 |
+| `f52210c` | ESLint 未使用変数エラー修正 |
 
 ---
 
