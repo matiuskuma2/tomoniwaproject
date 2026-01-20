@@ -583,6 +583,33 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
         dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
+    
+    // P2-D3: Reschedule (reschedule.pending → 再調整確認待ち)
+    else if (kind === 'reschedule.pending') {
+      // 元スレッドのIDで pending を保存
+      const threadId = payload.originalThreadId ?? currentThreadId;
+      if (threadId) {
+        dispatch({
+          type: 'SET_PENDING_FOR_THREAD',
+          payload: {
+            threadId,
+            pending: {
+              kind: 'reschedule.pending',
+              threadId,
+              createdAt: Date.now(),
+              originalThreadId: payload.originalThreadId,
+              originalTitle: payload.originalThreadTitle,
+              participants: payload.participants,
+              suggestedTitle: payload.suggestedTitle,
+            },
+          },
+        });
+      }
+    } else if (kind === 'reschedule.cancelled') {
+      if (currentThreadId) {
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
+      }
+    }
   }, [currentThreadId, navigate]);
 
   // P0-1: pendingForThread ヘルパー

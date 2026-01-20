@@ -221,12 +221,7 @@ export type ExecutionResultData =
       participants: Array<{ email: string; name?: string; selection_status: string }>;
       emails: string[];
     }}
-  | { kind: 'reschedule.confirmed'; payload: {
-      originalThreadId: string;
-      newThreadId: string;
-      newThreadTitle: string;
-      inviteCount: number;
-    }}
+  // reschedule.confirm は pending.action.created を返す（既存フローに合流）
   | { kind: 'reschedule.cancelled'; payload: {} }
   // P2-B1: バッチ処理
   | { kind: 'batch.add_members.completed'; payload: {
@@ -1495,6 +1490,9 @@ async function executeReschedule(intentResult: IntentResult): Promise<ExecutionR
 /**
  * P2-D3: schedule.reschedule.confirm
  * 再調整を確定し、新スレッドを作成して同じ参加者に招待準備
+ * 
+ * 重要: pending.action.created を返して既存フローに合流させる
+ * → その後「送る/キャンセル/別スレッドで」で pending.action.decide に流れる
  */
 async function executeRescheduleConfirm(intentResult: IntentResult): Promise<ExecutionResult> {
   const { originalThreadId, originalTitle, participants, suggestedTitle } = intentResult.params;
@@ -1507,35 +1505,42 @@ async function executeRescheduleConfirm(intentResult: IntentResult): Promise<Exe
   }
   
   const emails = participants.map((p: { email: string }) => p.email);
+  const newTitle = suggestedTitle || `【再調整】${originalTitle || '日程調整'}`;
   
   try {
     // prepareSend を使用して新規スレッド作成を準備
     const response = await threadsApi.prepareSend({
       source_type: 'emails',
       emails,
-      title: suggestedTitle || `【再調整】${originalTitle || '日程調整'}`,
+      title: newTitle,
     });
     
-    // 成功メッセージを作成
+    // 成功メッセージを作成（既存の buildPrepareMessage と同形式）
     const message = [
       '🔄 再調整の準備ができました',
       '',
-      `📋 新しいスレッド: 「${suggestedTitle || '【再調整】' + originalTitle}」`,
+      `📋 新しいスレッド: 「${newTitle}」`,
       `📧 送信先: ${emails.length}名`,
       '',
-      response.message_for_chat || '次に「送る」「キャンセル」のいずれかを入力してください。',
+      buildPrepareMessage(response),
     ].join('\n');
     
+    // pending.action.created を返して既存フローに合流
+    // → 「送る/キャンセル/別スレッドで」で pending.action.decide に流れる
     return {
       success: true,
       message,
       data: {
-        kind: 'reschedule.confirmed',
+        kind: 'pending.action.created',
         payload: {
-          originalThreadId: originalThreadId || '',
-          newThreadId: response.thread_id || '',
-          newThreadTitle: suggestedTitle || `【再調整】${originalTitle || '日程調整'}`,
-          inviteCount: emails.length,
+          confirmToken: response.confirm_token,
+          expiresAt: response.expires_at,
+          summary: response.summary,
+          mode: 'new_thread',
+          threadId: response.thread_id,
+          threadTitle: newTitle,
+          // 再調整元の情報（デバッグ/ログ用）
+          // actionType は 'send_invites' のまま（新規招待と同じ扱い）
         },
       },
     };
