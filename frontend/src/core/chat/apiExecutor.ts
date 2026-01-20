@@ -41,8 +41,11 @@ import {
   formatRemindNeedResponseConfirm,
   formatRemindNeedResponseSent,
   formatRemindNeedResponseNone,
+  formatRemindPendingConfirm,
+  formatRemindPendingNone,
   formatThreadStatusError,
   type MessageContext,
+  type InviteeInfo,
 } from './messageFormatter';
 
 // P1-1: 分割した executor をインポート
@@ -919,25 +922,25 @@ async function executeRemindPending(
         name: invite.candidate_name,
       }));
     
+    // P2-B2: 統一フォーマッター使用
+    const msgContext: MessageContext = {
+      threadTitle: status.thread.title,
+      threadId,
+    };
+    
     if (pendingInvites.length === 0) {
       return {
         success: true,
-        message: '✅ 全員が回答済みです。\n\nリマインドは不要です。',
+        message: formatRemindPendingNone(msgContext),
       };
     }
     
-    // Build reminder message
-    let message = `💡 未返信者が${pendingInvites.length}名います:\n\n`;
-    pendingInvites.forEach((invite) => {
-      message += `- ${invite.email}`;
-      if (invite.name) {
-        message += ` (${invite.name})`;
-      }
-      message += '\n';
-    });
-    message += '\nリマインドを送信しますか？\n\n';
-    message += '「はい」でリマインド送信\n';
-    message += '「いいえ」でキャンセル\n';
+    // P2-B2: 統一フォーマッターでメッセージ生成
+    const inviteeInfos: InviteeInfo[] = pendingInvites.map(inv => ({
+      email: inv.email,
+      name: inv.name,
+    }));
+    let message = formatRemindPendingConfirm(msgContext, inviteeInfos);
     message += `\n⚠️ 残りリマインド回数: ${2 - executionCount - 1}回`;
     
     return {
