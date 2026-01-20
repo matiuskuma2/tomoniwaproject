@@ -58,7 +58,7 @@ export function ThreadsList() {
   }
 
   return (
-    <div className="h-full bg-gray-50 border-r border-gray-200 overflow-y-auto">
+    <div data-testid="threads-list" className="h-full bg-gray-50 border-r border-gray-200 overflow-y-auto">
       <div className="p-4 border-b border-gray-200 bg-white">
         <h2 className="text-lg font-semibold text-gray-900">スレッド一覧</h2>
       </div>
@@ -72,6 +72,8 @@ export function ThreadsList() {
           threads.map((thread) => (
             <div
               key={thread.id}
+              data-testid="thread-item"
+              data-thread-id={thread.id}
               onClick={() => navigate(`/chat/${thread.id}`)}
               className={`p-4 cursor-pointer hover:bg-gray-100 transition-colors ${
                 threadId === thread.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''

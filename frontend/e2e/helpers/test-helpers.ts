@@ -100,12 +100,123 @@ export async function waitForChatResponse(
 }
 
 /**
- * 成功メッセージを待つ
+ * 成功メッセージを待つ（文言ベース - レガシー）
+ * @deprecated 新しいテストでは waitForAssistantMessage または waitForThreadCreated を使用
  */
 export async function waitForSuccess(page: Page, timeout = 15000): Promise<void> {
   await expect(
     page.locator('text=/✅|成功|作成しました|追加しました|送信しました|完了/').first()
   ).toBeVisible({ timeout });
+}
+
+/**
+ * アシスタントメッセージが追加されるのを待つ（状態ベース）
+ * チャット入力後にアシスタントからの応答を確認
+ */
+export async function waitForAssistantMessage(
+  page: Page, 
+  timeout = 30000
+): Promise<string> {
+  // chat-message[data-message-role="assistant"] を待つ
+  const assistantMessages = page.locator('[data-testid="chat-message"][data-message-role="assistant"]');
+  
+  await expect(async () => {
+    const count = await assistantMessages.count();
+    expect(count).toBeGreaterThan(0);
+  }).toPass({ timeout });
+  
+  // 最新のアシスタントメッセージの内容を取得
+  const lastMessage = assistantMessages.last();
+  await expect(lastMessage).toBeVisible({ timeout: 5000 });
+  const content = await lastMessage.textContent() || '';
+  return content;
+}
+
+/**
+ * 特定のパターンを含むアシスタントメッセージを待つ
+ */
+export async function waitForAssistantMessageMatching(
+  page: Page, 
+  pattern: RegExp,
+  timeout = 30000
+): Promise<string> {
+  const assistantMessages = page.locator('[data-testid="chat-message"][data-message-role="assistant"]');
+  
+  let matchedContent = '';
+  await expect(async () => {
+    const count = await assistantMessages.count();
+    for (let i = count - 1; i >= 0; i--) {
+      const content = await assistantMessages.nth(i).textContent() || '';
+      if (pattern.test(content)) {
+        matchedContent = content;
+        return;
+      }
+    }
+    throw new Error(`No assistant message matching ${pattern}`);
+  }).toPass({ timeout });
+  
+  return matchedContent;
+}
+
+/**
+ * スレッドが作成されるのを待つ（URL変更またはスレッドリスト更新）
+ */
+export async function waitForThreadCreated(
+  page: Page, 
+  timeout = 30000
+): Promise<string> {
+  // 方法1: URL が /chat/<uuid> に変わるのを待つ
+  await expect(async () => {
+    const url = page.url();
+    const match = url.match(/\/chat\/([a-f0-9-]{36})/);
+    expect(match).toBeTruthy();
+  }).toPass({ timeout });
+  
+  const url = page.url();
+  const match = url.match(/\/chat\/([a-f0-9-]{36})/);
+  return match ? match[1] : '';
+}
+
+/**
+ * スレッドリストにアイテムが追加されるのを待つ
+ */
+export async function waitForThreadListUpdate(
+  page: Page,
+  initialCount: number,
+  timeout = 15000
+): Promise<void> {
+  const threadItems = page.locator('[data-testid="thread-item"]');
+  
+  await expect(async () => {
+    const currentCount = await threadItems.count();
+    expect(currentCount).toBeGreaterThan(initialCount);
+  }).toPass({ timeout });
+}
+
+/**
+ * エラーメッセージがないことを確認（強化版）
+ * チャットメッセージ内のエラーもチェック
+ */
+export async function assertNoErrorEnhanced(page: Page): Promise<void> {
+  // 通常のエラー表示
+  const errorLocator = page.locator('text=/❌|エラー|失敗しました/');
+  const errorCount = await errorLocator.count();
+  
+  if (errorCount > 0) {
+    const errorText = await errorLocator.first().textContent();
+    throw new Error(`Unexpected error on page: ${errorText}`);
+  }
+  
+  // チャットメッセージ内のエラー確認
+  const assistantMessages = page.locator('[data-testid="chat-message"][data-message-role="assistant"]');
+  const msgCount = await assistantMessages.count();
+  
+  for (let i = 0; i < msgCount; i++) {
+    const content = await assistantMessages.nth(i).textContent() || '';
+    if (/❌|エラー|失敗しました/.test(content)) {
+      throw new Error(`Error in assistant message: ${content}`);
+    }
+  }
 }
 
 /**
