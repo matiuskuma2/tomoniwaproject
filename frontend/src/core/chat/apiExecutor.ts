@@ -35,6 +35,16 @@ import {
   isPendingAutoPropose,
 } from './pendingTypes';
 
+// P2-B2: 統一メッセージフォーマッター
+import {
+  formatNeedResponseList,
+  formatRemindNeedResponseConfirm,
+  formatRemindNeedResponseSent,
+  formatRemindNeedResponseNone,
+  formatThreadStatusError,
+  type MessageContext,
+} from './messageFormatter';
+
 // P1-1: 分割した executor をインポート
 import {
   executeToday,
@@ -1618,40 +1628,14 @@ async function executeNeedResponseList(
     
     const count = inviteesNeedingResponse.length;
     
-    // Build message
-    let message = `📋 **「${status.thread.title}」の再回答必要者**\n\n`;
-    message += `📊 候補バージョン: v${currentVersion}`;
-    if (currentVersion > 1) {
-      message += ` （追加候補あり）`;
-    }
-    message += `\n`;
-    message += `🔢 追加候補: あと ${remainingProposals} 回\n\n`;
-    
-    if (count === 0) {
-      message += `✅ 全員が最新の候補に回答済みです！\n`;
-      message += `\n日程を確定できる状態です。「1番で確定」などと入力してください。`;
-    } else {
-      message += `⚠️ **再回答が必要: ${count}名**\n\n`;
-      
-      inviteesNeedingResponse.forEach((inv, index) => {
-        message += `${index + 1}. ${inv.email}`;
-        if (inv.name) {
-          message += ` (${inv.name})`;
-        }
-        if (inv.respondedVersion) {
-          message += ` — v${inv.respondedVersion}時点の回答`;
-        } else {
-          message += ` — 未回答`;
-        }
-        message += `\n`;
-      });
-      
-      message += `\n💡 ヒント:\n`;
-      message += `- 「リマインド」と入力すると未返信者にリマインドを送れます\n`;
-      if (remainingProposals > 0) {
-        message += `- 「追加候補」と入力すると新しい候補日を追加できます\n`;
-      }
-    }
+    // P2-B2: 統一フォーマッターを使用
+    const context: MessageContext = {
+      threadTitle: status.thread.title,
+      threadId,
+      currentVersion,
+      remainingProposals,
+    };
+    const message = formatNeedResponseList(context, inviteesNeedingResponse);
     
     return {
       success: true,
@@ -1708,11 +1692,11 @@ async function executeRemindNeedResponse(
     // Get thread status
     const status = await getStatusWithCache(threadId);
     
-    // Check if thread is active
+    // Check if thread is active - P2-B2: 統一フォーマッター使用
     if (status.thread.status === 'confirmed' || status.thread.status === 'cancelled') {
       return {
         success: false,
-        message: `❌ このスレッドは既に ${status.thread.status === 'confirmed' ? '確定' : 'キャンセル'} されています。\nリマインドは送れません。`,
+        message: formatThreadStatusError(status.thread.status),
       };
     }
     
@@ -1750,31 +1734,22 @@ async function executeRemindNeedResponse(
         inviteeKey: inv.invitee_key,
       }));
     
+    // P2-B2: 統一フォーマッター使用
+    const context: MessageContext = {
+      threadTitle: status.thread.title,
+      threadId,
+      currentVersion,
+    };
+    
     if (targetInvitees.length === 0) {
       return {
         success: true,
-        message: '✅ 全員が最新の候補に回答済みです。\nリマインドを送る必要はありません。',
+        message: formatRemindNeedResponseNone(context),
       };
     }
     
-    // Build confirmation message
-    let message = `📩 **再回答必要者へのリマインド確認**\n\n`;
-    message += `📋 スレッド: ${status.thread.title}\n`;
-    message += `📊 候補バージョン: v${currentVersion}\n`;
-    message += `📬 送信対象: ${targetInvitees.length}名\n\n`;
-    
-    message += `**対象者:**\n`;
-    targetInvitees.forEach((inv, index) => {
-      message += `${index + 1}. ${inv.email}`;
-      if (inv.name) {
-        message += ` (${inv.name})`;
-      }
-      message += `\n`;
-    });
-    
-    message += `\n⚠️ この ${targetInvitees.length}名 にリマインドを送りますか？\n\n`;
-    message += `「はい」で送信\n`;
-    message += `「いいえ」でキャンセル`;
+    // Build confirmation message using formatter
+    const message = formatRemindNeedResponseConfirm(context, targetInvitees);
     
     return {
       success: true,
@@ -1827,27 +1802,29 @@ async function executeRemindNeedResponseConfirm(
       target_invitee_keys: targetInviteeKeys,
     });
     
-    // Build success message
-    let message = `✅ リマインドを送信しました！\n\n`;
-    message += `📬 送信: ${response.reminded_count}名\n`;
+    // P2-B2: 統一フォーマッター使用
+    // pending.threadTitle が存在しない場合は空文字を使用
+    const msgContext: MessageContext = {
+      threadTitle: (pending as any).threadTitle || '',
+      threadId,
+    };
     
-    if (response.results && response.results.length > 0) {
-      message += `\n**送信先:**\n`;
-      response.results.forEach((result: any, index: number) => {
-        message += `${index + 1}. ${result.email} - ${result.status === 'sent' ? '✅送信完了' : '❌失敗'}\n`;
-      });
-    }
+    const nextRemindAt = response.next_reminder_available_at
+      ? formatDateTime(response.next_reminder_available_at)
+      : undefined;
     
+    let message = formatRemindNeedResponseSent(
+      msgContext,
+      response.results || [],
+      nextRemindAt
+    );
+    
+    // 警告がある場合は追加
     if (response.warnings && response.warnings.length > 0) {
       message += `\n⚠️ 警告:\n`;
       response.warnings.forEach((warn: any) => {
         message += `- ${warn.email}: ${warn.error}\n`;
       });
-    }
-    
-    if (response.next_reminder_available_at) {
-      const nextAvailable = new Date(response.next_reminder_available_at);
-      message += `\n⏰ 次回リマインド可能: ${formatDateTime(nextAvailable.toISOString())}`;
     }
     
     // P0-2: Write 後の refresh 強制
