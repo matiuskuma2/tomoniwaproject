@@ -163,6 +163,26 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 | `bdade5f` | P2-B1: SlotsCard に「最新候補のみ表示」トグル追加、ThreadStatusCard に再回答必要者の名前一覧表示、E2Eヘルパー追加 |
 | `f52210c` | ESLint 未使用変数エラー修正 |
 
+### 2026-01-20 P2-B2 文面統一フォーマッター
+
+| Commit | 変更内容 |
+|--------|----------|
+| `fc3afb4` | P2-B2: messageFormatter.ts 新規作成、統一フォーマット関数追加 |
+| `676e898` | P2-B2: 未返信リマインドも統一フォーマッターを使用 |
+
+**統一フォーマット構造:**
+```
+見出し → 要点 → 対象者 → 次アクション → 注意書き（世代/期限）
+```
+
+**統一済みの機能:**
+- ✅ need_response.list（再回答必要者リスト）
+- ✅ remind.need_response.confirm/sent（再回答リマインド確認/送信完了）
+- ✅ remind.pending.confirm（未返信リマインド確認）
+
+**未統一（バックエンドメッセージ使用）:**
+- additional_slots（追加候補通知）- バックエンド側の message_for_chat を使用
+
 ---
 
 ## 再スタート手順
