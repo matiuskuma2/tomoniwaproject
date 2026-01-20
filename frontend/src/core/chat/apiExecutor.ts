@@ -221,6 +221,13 @@ export type ExecutionResultData =
       participants: Array<{ email: string; name?: string; selection_status: string }>;
       emails: string[];
     }}
+  | { kind: 'reschedule.confirmed'; payload: {
+      originalThreadId: string;
+      newThreadId: string;
+      newThreadTitle: string;
+      inviteCount: number;
+    }}
+  | { kind: 'reschedule.cancelled'; payload: {} }
   // P2-B1: バッチ処理
   | { kind: 'batch.add_members.completed'; payload: {
       listName: string;
@@ -387,6 +394,12 @@ export async function executeIntent(
     // P2-D3: 確定後やり直し（再調整）
     case 'schedule.reschedule':
       return executeReschedule(intentResult);
+    
+    case 'schedule.reschedule.confirm':
+      return executeRescheduleConfirm(intentResult);
+    
+    case 'schedule.reschedule.cancel':
+      return executeRescheduleCancel();
     
     case 'unknown':
       return {
@@ -1477,6 +1490,77 @@ async function executeReschedule(intentResult: IntentResult): Promise<ExecutionR
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+}
+
+/**
+ * P2-D3: schedule.reschedule.confirm
+ * 再調整を確定し、新スレッドを作成して同じ参加者に招待準備
+ */
+async function executeRescheduleConfirm(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { originalThreadId, originalTitle, participants, suggestedTitle } = intentResult.params;
+  
+  if (!participants || participants.length === 0) {
+    return {
+      success: false,
+      message: '❌ 参加者情報がありません。再度「再調整」と入力してください。',
+    };
+  }
+  
+  const emails = participants.map((p: { email: string }) => p.email);
+  
+  try {
+    // prepareSend を使用して新規スレッド作成を準備
+    const response = await threadsApi.prepareSend({
+      source_type: 'emails',
+      emails,
+      title: suggestedTitle || `【再調整】${originalTitle || '日程調整'}`,
+    });
+    
+    // 成功メッセージを作成
+    const message = [
+      '🔄 再調整の準備ができました',
+      '',
+      `📋 新しいスレッド: 「${suggestedTitle || '【再調整】' + originalTitle}」`,
+      `📧 送信先: ${emails.length}名`,
+      '',
+      response.message_for_chat || '次に「送る」「キャンセル」のいずれかを入力してください。',
+    ].join('\n');
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'reschedule.confirmed',
+        payload: {
+          originalThreadId: originalThreadId || '',
+          newThreadId: response.thread_id || '',
+          newThreadTitle: suggestedTitle || `【再調整】${originalTitle || '日程調整'}`,
+          inviteCount: emails.length,
+        },
+      },
+    };
+  } catch (error) {
+    console.error('[executeRescheduleConfirm] Error:', error);
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P2-D3: schedule.reschedule.cancel
+ * 再調整をキャンセル
+ */
+function executeRescheduleCancel(): ExecutionResult {
+  return {
+    success: true,
+    message: '✅ 再調整をキャンセルしました。',
+    data: {
+      kind: 'reschedule.cancelled',
+      payload: {},
+    },
+  };
 }
 
 // Export type for external use

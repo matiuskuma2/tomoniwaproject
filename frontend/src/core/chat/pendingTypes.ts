@@ -19,7 +19,8 @@ export type PendingKind =
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
   | 'notify.confirmed'         // Phase Next-6 Day3: 確定通知
   | 'split.propose'            // Phase Next-6 Day2: 票割れ追加提案
-  | 'auto_propose';            // Phase Next-5 Day2: 自動候補提案
+  | 'auto_propose'             // Phase Next-5 Day2: 自動候補提案
+  | 'reschedule.pending';      // P2-D3: 確定後やり直し（再調整）
 
 // ============================================================
 // Base Interface (全 PendingState 共通)
@@ -98,6 +99,15 @@ export type PendingState =
       duration?: number;
       range?: string;
       proposals: Array<{ start_at: string; end_at: string; label: string }>;
+    })
+  
+  // P2-D3: 確定後やり直し（再調整）
+  | (PendingBase & {
+      kind: 'reschedule.pending';
+      originalThreadId: string;
+      originalTitle: string;
+      participants: Array<{ email: string; name?: string }>;
+      suggestedTitle: string;
     });
 
 // ============================================================
@@ -150,6 +160,10 @@ export function isPendingAutoPropose(pending: PendingState | null): pending is P
   return pending?.kind === 'auto_propose';
 }
 
+export function isPendingReschedule(pending: PendingState | null): pending is PendingState & { kind: 'reschedule.pending' } {
+  return pending?.kind === 'reschedule.pending';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -163,6 +177,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'notify.confirmed',
     'split.propose',
     'auto_propose',
+    'reschedule.pending',
   ].includes(pending.kind);
 }
 
@@ -187,6 +202,8 @@ export function describePending(pending: PendingState | null): string {
       return `追加候補提案待ち`;
     case 'auto_propose':
       return `自動提案待ち (${pending.proposals.length}件)`;
+    case 'reschedule.pending':
+      return `再調整待ち (${pending.participants.length}名)`;
     default:
       return `不明な状態`;
   }

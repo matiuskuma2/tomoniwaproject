@@ -14,6 +14,7 @@ import {
   isPendingRemind,
   isPendingRemindNeedResponse,
   isPendingRemindResponded,
+  isPendingReschedule,
 } from '../pendingTypes';
 
 /**
@@ -92,6 +93,20 @@ export const classifyConfirmCancel: ClassifierFn = (
       };
     }
 
+    // P2-D3: 確定後やり直し（再調整）
+    if (isPendingReschedule(activePending)) {
+      return {
+        intent: 'schedule.reschedule.confirm',
+        confidence: 0.9,
+        params: {
+          originalThreadId: activePending.originalThreadId,
+          originalTitle: activePending.originalTitle,
+          participants: activePending.participants,
+          suggestedTitle: activePending.suggestedTitle,
+        },
+      };
+    }
+
     // Default to auto_propose flow
     return {
       intent: 'schedule.auto_propose.confirm',
@@ -140,6 +155,15 @@ export const classifyConfirmCancel: ClassifierFn = (
     if (isPendingRemindResponded(activePending)) {
       return {
         intent: 'schedule.remind.responded.cancel',
+        confidence: 0.9,
+        params: {},
+      };
+    }
+
+    // P2-D3: 確定後やり直し（再調整）キャンセル
+    if (isPendingReschedule(activePending)) {
+      return {
+        intent: 'schedule.reschedule.cancel',
         confidence: 0.9,
         params: {},
       };

@@ -41,6 +41,8 @@ export type IntentType =
   | 'schedule.remind.responded.confirm'    // Phase2 P2-D2 - リマインド確定
   | 'schedule.remind.responded.cancel'     // Phase2 P2-D2 - リマインドキャンセル
   | 'schedule.reschedule'                  // Phase2 P2-D3 - 確定後やり直し（再調整）
+  | 'schedule.reschedule.confirm'          // Phase2 P2-D3 - 再調整確定
+  | 'schedule.reschedule.cancel'           // Phase2 P2-D3 - 再調整キャンセル
   // Beta A: 送信フロー
   | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
   | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API
