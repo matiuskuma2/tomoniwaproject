@@ -60,6 +60,7 @@ export interface ReminderEmailJob extends EmailJobBase {
     inviter_name: string;
     custom_message?: string | null;
     expires_at: string;
+    recipient_timezone?: string;  // P3-TZ2: 受信者のタイムゾーン（期限表示用）
   };
 }
 

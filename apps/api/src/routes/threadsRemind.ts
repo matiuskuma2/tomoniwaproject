@@ -174,6 +174,12 @@ app.post('/:id/remind', async (c) => {
     const warnings: any[] = [];
     const host = c.req.header('host') || 'webapp.snsrilarc.workers.dev';
     
+    // P3-TZ2: スレッドのタイムゾーンを取得（外部ユーザーのフォールバック用）
+    const threadTzRow = await env.DB.prepare(
+      `SELECT timezone FROM scheduling_threads WHERE id = ? LIMIT 1`
+    ).bind(threadId).first<{ timezone: string }>();
+    const threadTimeZone = threadTzRow?.timezone || 'Asia/Tokyo';
+    
     // P2-B2: リマインドメールは 'reminder' タイプを使用
     // 統一フォーマットで「日程回答のお願い」文面を送信
     for (const invite of pending) {
@@ -184,6 +190,12 @@ app.post('/:id/remind', async (c) => {
           : new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
         
         const inviteUrl = `${host.includes('localhost') ? 'http' : 'https'}://${host}/i/${invite.token}`;
+        
+        // P3-TZ2: 受信者のタイムゾーンを解決（アプリユーザー → users.timezone / 外部 → thread.timezone）
+        const appUser = await env.DB.prepare(`
+          SELECT id, timezone FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
+        `).bind(invite.email).first<{ id: string; timezone: string }>();
+        const recipientTimezone = appUser?.timezone || threadTimeZone;
         
         const emailJob = {
           job_id: `remind-${invite.id}-${Date.now()}`,
@@ -198,6 +210,7 @@ app.post('/:id/remind', async (c) => {
             inviter_name: 'Tomoniwao',  // TODO: get organizer name from user
             custom_message: body.message || null,
             expires_at: expiresAt,
+            recipient_timezone: recipientTimezone,  // P3-TZ2: 期限表示用
           }
         };
         

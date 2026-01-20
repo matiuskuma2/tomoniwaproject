@@ -586,16 +586,19 @@ function generateReminderEmail(job: EmailJob & {
     inviter_name: string;
     custom_message?: string | null;
     expires_at: string;
+    recipient_timezone?: string;  // P3-TZ2: 受信者のタイムゾーン
   };
 }): { html: string; text: string } {
-  const { invite_url, thread_title, inviter_name, custom_message, expires_at } = job.data;
+  const { invite_url, thread_title, inviter_name, custom_message, expires_at, recipient_timezone } = job.data;
   const displayTitle = escapeHtml(thread_title || '日程調整');
   const safeInviterName = escapeHtml(inviter_name);
   const safeCustomMessage = custom_message ? escapeHtml(custom_message).replace(/\n/g, '<br>') : null;
   
-  // 期限表示（72時間後を想定）
+  // P3-TZ2: 受信者のタイムゾーンで期限を表示（デフォルト: JST）
+  const timezone = recipient_timezone || 'Asia/Tokyo';
   const expiresDate = new Date(expires_at);
-  const expiresFormatted = expiresDate.toLocaleDateString('ja-JP', {
+  const expiresFormatted = expiresDate.toLocaleString('ja-JP', {
+    timeZone: timezone,
     year: 'numeric',
     month: 'long',
     day: 'numeric',
