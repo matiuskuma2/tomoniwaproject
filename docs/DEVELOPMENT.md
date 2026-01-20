@@ -1,6 +1,6 @@
 # 開発ドキュメント - Tomoniwao
 
-最終更新: 2026-01-19
+最終更新: 2026-01-20
 
 ---
 
@@ -8,10 +8,9 @@
 
 1. [現在の CI/E2E 状況](#現在の-cie2e-状況)
 2. [技術負債と撤去計画](#技術負債と撤去計画)
-3. [次のステップ（優先順）](#次のステップ優先順)
-4. [E2E テスト詳細](#e2e-テスト詳細)
-5. [解決済みの問題](#解決済みの問題)
-6. [再スタート手順](#再スタート手順)
+3. [E2E テスト詳細](#e2e-テスト詳細)
+4. [解決済みの問題](#解決済みの問題)
+5. [再スタート手順](#再スタート手順)
 
 ---
 
@@ -24,8 +23,8 @@ CI (ci.yml)                    ✅ グリーン - lint + typecheck
 Unit Tests                     ✅ グリーン - 単体テスト
 TypeScript Check               ✅ グリーン - 型チェック
 E2E Smoke Tests                ✅ グリーン - 認証なし基本動作
-E2E Authenticated Tests        ✅ グリーン - 認証あり（Step 1 のみ）
-Phase2 E2E                     ✅ グリーン - 追加候補・NeedResponse
+E2E Authenticated Tests        ✅ グリーン - 認証あり（Step 1-5 全通過）
+Phase2 E2E                     ✅ グリーン - 追加候補・NeedResponse（workaround なし）
 P0 Guardrails                  ✅ グリーン - テナント分離・Migration安全性
 ```
 
@@ -37,95 +36,23 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 | 2) Smoke E2E 常時グリーン | ✅ 完了 | webServer 設定修正 |
 | 3) Phase2 E2E グリーン | ✅ 完了 | 8ケース全パス |
 | 4) Authenticated E2E 基盤 | ✅ 完了 | 認証確認（Step 1）グリーン |
-| 5) ワークアラウンド撤去 | ⏳ 未着手 | 次のステップ |
+| 5) ワークアラウンド撤去 | ✅ 完了 | Step B: SQL workaround 撤去 |
+| 6) Authenticated Step 2-5 | ✅ 完了 | Step D: 状態ベース待機で復活 |
 
 ---
 
 ## 技術負債と撤去計画
 
-### 1. SQL Workaround (status='sent') 【優先度: 高】
+### 回収済みの負債
 
-**場所**: `tests/e2e/phase2_additional_slots.sh` Line 180-185
+| 負債 | 状態 | 回収日 | コミット |
+|------|------|--------|----------|
+| SQL Workaround (status='sent') | ✅ 撤去完了 | 2026-01-20 | `11f32a6` |
+| Critical Path Step 2-5 skip | ✅ 復活完了 | 2026-01-20 | `4d83b43` |
 
-**問題**:
-- `pending-actions/execute` 実行後、`scheduling_threads.status` が `draft` のまま
-- 本来はバックエンドで `sent` に更新されるべき
+### 現在の技術負債
 
-**現在の回避策**:
-```bash
-# create_sent_thread_via_pending_send() 内
-npx wrangler d1 execute ... --command="UPDATE scheduling_threads SET status='sent' WHERE id='${thread_id}'"
-```
-
-**撤去計画**:
-1. バックエンド修正: `apps/api/src/routes/pendingActions.ts` で execute 後に status 更新
-2. E2E から SQL workaround を削除
-3. 再テストで確認
-
-**関連コード**:
-- `apps/api/src/routes/pendingActions.ts` Line 276-278: スレッド作成時に `THREAD_STATUS.DRAFT` で INSERT
-- 招待送信後に status 更新がない
-
-### 2. Critical Path Step 2-5 Skip 【優先度: 中】
-
-**場所**: `frontend/e2e/critical-path.spec.ts`
-
-**問題**:
-- Step 2-5 が `waitForSuccess` でタイムアウト
-- アプリの実際の応答パターンがテストの期待値と不一致
-
-**現在の回避策**:
-```typescript
-test.skip('Step 2: スレッドを作成できる', ...)
-test.skip('Step 3: リストを作成できる', ...)
-test.skip('Step 4: 10件以上のメンバー追加...', ...)
-test.skip('Step 5: UIが更新される...', ...)
-```
-
-**撤去計画**:
-1. `E2E_BASE_URL` の実際のアプリで動作確認
-2. 応答パターン（成功メッセージ）を特定
-3. `waitForSuccess` のセレクタを調整
-4. `test.skip` を `test` に戻す
-
----
-
-## 次のステップ（優先順）
-
-### Step B: バックエンド修正 → SQL workaround 撤去 【推奨】
-
-**修正箇所**: `apps/api/src/routes/pendingActions.ts`
-
-**変更内容**:
-```typescript
-// execute 成功後に追加
-await env.DB.prepare(
-  'UPDATE scheduling_threads SET status = ? WHERE id = ?'
-).bind('sent', threadId).run();
-```
-
-**影響範囲**:
-- `pending-actions/execute` API
-- Phase2 E2E のテスト結果
-
-### Step C: Phase2 スクリプト整理
-
-**目的**: 保守性向上
-
-**変更内容**:
-- `info()`, `ok()`, `die()` 関数を stderr 出力に統一
-- 共通関数をヘルパーファイルに抽出
-- ログ出力の整理
-
-### Step D: Critical Path Step 2-5 有効化
-
-**前提条件**:
-- `E2E_BASE_URL` のアプリで動作確認
-- 応答パターンの特定
-
-**変更内容**:
-- `test.skip` → `test` に変更
-- `waitForSuccess` のセレクタを調整
+**なし** - 意図的な負債はすべて回収済み
 
 ---
 
@@ -159,12 +86,43 @@ await env.DB.prepare(
 - 基本 UI 表示確認
 
 **Authenticated Tests** (`frontend/e2e/critical-path.spec.ts`):
-- Step 1: 認証済み状態でアクセス ✅ 有効
-- Step 2-5: 一時 skip
+- Step 1: 認証済み状態でアクセス ✅
+- Step 2: スレッド作成（メールアドレス入力）✅
+- Step 3: リスト作成 ✅
+- Step 4: バッチ処理（10件メンバー追加）✅
+- Step 5: UI更新確認 ✅
 
 **認証設定**:
 - `frontend/e2e/auth/auth.setup.ts` で sessionStorage に設定
 - `critical-path.spec.ts` の `beforeEach` で各テスト前に再設定
+
+### E2E 用 data-testid 一覧
+
+| コンポーネント | 属性 | 用途 |
+|---------------|------|------|
+| ChatPane | `data-testid="chat-input"` | チャット入力欄 |
+| ChatPane | `data-testid="chat-send-button"` | 送信ボタン |
+| ChatPane | `data-testid="chat-messages"` | メッセージエリア |
+| ChatPane | `data-testid="chat-message"` | 各メッセージ |
+| ChatPane | `data-message-role="user\|assistant"` | メッセージの役割 |
+| ThreadsList | `data-testid="threads-list"` | スレッド一覧 |
+| ThreadsList | `data-testid="thread-item"` | 各スレッドアイテム |
+| ThreadsList | `data-thread-id="<uuid>"` | スレッドID |
+
+### E2E ヘルパー関数
+
+**ファイル**: `frontend/e2e/helpers/test-helpers.ts`
+
+| 関数 | 用途 |
+|------|------|
+| `waitForAssistantMessage(page, timeout)` | アシスタントメッセージの追加を待つ |
+| `waitForAssistantMessageMatching(page, pattern, timeout)` | 特定パターンのメッセージを待つ |
+| `waitForThreadCreated(page, timeout)` | URL変更でスレッド作成を確認 |
+| `waitForThreadListUpdate(page, initialCount, timeout)` | スレッドリスト更新を待つ |
+| `assertNoErrorEnhanced(page)` | チャット内エラーも検出 |
+| `sendChatMessage(page, message)` | メッセージ送信 |
+| `getChatInput(page)` | チャット入力欄を取得 |
+| `waitForUIStable(page, timeout)` | UIが安定するまで待つ |
 
 ---
 
@@ -185,6 +143,8 @@ await env.DB.prepare(
 | `377b2b5` | 認証 Cookie が sessionStorage と不一致 | sessionStorage に設定 |
 | `272b8c7` | テスト間で認証が引き継がれない | beforeEach で毎回設定 |
 | `820d7cc` | Step 2-5 のセレクタ不一致 | 一時 skip |
+| `11f32a6` | SQL workaround が残存 | バックエンド確認後に撤去 |
+| `4d83b43` | Step 2-5 が skip のまま | 状態ベース待機で復活 |
 
 ---
 
