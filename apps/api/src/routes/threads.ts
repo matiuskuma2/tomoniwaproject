@@ -1714,4 +1714,128 @@ app.post('/:id/invites/prepare', async (c) => {
   }
 });
 
+// ============================================================
+// P2-D3: 確定後やり直し（再調整）
+// GET /threads/:id/reschedule/info
+// ============================================================
+app.get('/:id/reschedule/info', async (c) => {
+  const requestId = crypto.randomUUID();
+  const { env } = c;
+  const threadId = c.req.param('id');
+  
+  console.log('[reschedule/info] Starting request:', requestId, 'threadId:', threadId);
+  
+  try {
+    // Get authentication context
+    let workspaceId: string;
+    let ownerUserId: string;
+    
+    try {
+      const tenant = getTenant(c);
+      workspaceId = tenant.workspaceId;
+      ownerUserId = tenant.ownerUserId;
+    } catch (authError) {
+      return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
+    }
+    
+    // スレッド存在確認（P0-1: tenant isolation）
+    const thread = await env.DB.prepare(`
+      SELECT 
+        id, 
+        title, 
+        status,
+        COALESCE(proposal_version, 1) as proposal_version
+      FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first<{
+      id: string;
+      title: string;
+      status: string;
+      proposal_version: number;
+    }>();
+    
+    if (!thread) {
+      return c.json({ error: 'thread_not_found', request_id: requestId }, 404);
+    }
+    
+    // 確定情報を取得
+    const finalized = await env.DB.prepare(`
+      SELECT finalized_at, selected_slot_id, reason
+      FROM thread_finalized
+      WHERE thread_id = ?
+    `).bind(threadId).first<{
+      finalized_at: string;
+      selected_slot_id: string;
+      reason: string | null;
+    }>();
+    
+    // 参加者リストを取得（declined を除く）
+    const invitesResult = await env.DB.prepare(`
+      SELECT 
+        ti.email,
+        ti.candidate_name as name,
+        COALESCE(ts.status, 'pending') as selection_status
+      FROM thread_invites ti
+      LEFT JOIN thread_selections ts ON ts.invite_id = ti.id
+      WHERE ti.thread_id = ?
+        AND (ts.status IS NULL OR ts.status != 'declined')
+      ORDER BY ti.created_at ASC
+    `).bind(threadId).all<{
+      email: string;
+      name: string | null;
+      selection_status: string;
+    }>();
+    
+    const participants = (invitesResult.results || []).map(p => ({
+      email: p.email,
+      name: p.name || undefined,
+      selection_status: p.selection_status,
+    }));
+    
+    // 提案タイトル
+    const suggestedTitle = `${thread.title}（再調整）`;
+    
+    // メッセージ生成
+    const statusLabel = thread.status === 'confirmed' ? '確定済み' : 
+                       thread.status === 'cancelled' ? 'キャンセル済み' : '進行中';
+    
+    let messageForChat = `📅 「${thread.title}」の再調整\n\n`;
+    messageForChat += `**元のスレッド:**\n`;
+    messageForChat += `- ステータス: ${statusLabel}\n`;
+    if (finalized) {
+      messageForChat += `- 確定日時: ${finalized.finalized_at}\n`;
+    }
+    messageForChat += `\n**参加者（${participants.length}名）:**\n`;
+    participants.slice(0, 5).forEach(p => {
+      messageForChat += `- ${p.name || p.email}\n`;
+    });
+    if (participants.length > 5) {
+      messageForChat += `... 他${participants.length - 5}名\n`;
+    }
+    messageForChat += `\n💡 同じメンバーで新しい日程調整を開始しますか？\n`;
+    messageForChat += `「はい」で開始、「いいえ」でキャンセルします。`;
+    
+    return c.json({
+      original_thread: {
+        id: thread.id,
+        title: thread.title,
+        status: thread.status,
+        finalized_at: finalized?.finalized_at,
+      },
+      participants,
+      suggested_title: suggestedTitle,
+      message_for_chat: messageForChat,
+      request_id: requestId,
+    });
+    
+  } catch (error) {
+    console.error('[reschedule/info] Error:', error);
+    return c.json({
+      error: 'internal_error',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      request_id: requestId,
+    }, 500);
+  }
+});
+
 export default app;

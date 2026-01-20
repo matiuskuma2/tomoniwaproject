@@ -233,4 +233,33 @@ export const threadsApi = {
   }> {
     return api.post(`/api/threads/${threadId}/proposals/prepare`, { slots });
   },
+
+  // ============================================================
+  // P2-D3: 確定後やり直し（再調整）
+  // ============================================================
+
+  /**
+   * 再調整準備
+   * GET /api/threads/:threadId/reschedule/info
+   * 
+   * 確定済みスレッドの参加者リストを取得し、
+   * 新規スレッド作成のための情報を返す
+   */
+  async getRescheduleInfo(threadId: string): Promise<{
+    original_thread: {
+      id: string;
+      title: string;
+      status: string;
+      finalized_at?: string;
+    };
+    participants: Array<{
+      email: string;
+      name?: string;
+      selection_status: string;
+    }>;
+    suggested_title: string;
+    message_for_chat: string;
+  }> {
+    return api.get(`/api/threads/${threadId}/reschedule/info`);
+  },
 };

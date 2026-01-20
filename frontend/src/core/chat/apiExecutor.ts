@@ -376,6 +376,10 @@ export async function executeIntent(
     case 'schedule.need_response.list':
       return executeNeedResponseListFromExecutors(intentResult);
     
+    // P2-D3: 確定後やり直し（再調整）
+    case 'schedule.reschedule':
+      return executeReschedule(intentResult);
+    
     case 'unknown':
       return {
         success: false,
@@ -1406,6 +1410,66 @@ function formatDateTime(dateStr: string): string {
 
 // TD-REMIND-UNIFY: need_response 系は executors/remind.ts に統一
 // 削除: executeNeedResponseList, executeRemindNeedResponse, executeRemindNeedResponseConfirm, executeRemindNeedResponseCancel
+
+// ============================================================
+// P2-D3: 確定後やり直し（再調整）
+// ============================================================
+
+/**
+ * P2-D3: schedule.reschedule
+ * 確定済み/進行中のスレッドを再調整
+ * 同じ参加者で新しいスレッドを作成する準備
+ */
+async function executeReschedule(intentResult: IntentResult): Promise<ExecutionResult> {
+  const { threadId } = intentResult.params;
+  
+  if (!threadId) {
+    return {
+      success: false,
+      message: '❌ 再調整するスレッドを選択してください。\n左のスレッド一覧から選択後、再度「再調整」と入力してください。',
+      needsClarification: {
+        field: 'threadId',
+        message: '再調整するスレッドを選択してください。',
+      },
+    };
+  }
+  
+  try {
+    // 再調整情報を取得
+    const info = await threadsApi.getRescheduleInfo(threadId);
+    
+    // 参加者のメールアドレスリストを抽出
+    const emails = info.participants.map(p => p.email);
+    
+    if (emails.length === 0) {
+      return {
+        success: false,
+        message: '❌ このスレッドには参加者がいません。',
+      };
+    }
+    
+    return {
+      success: true,
+      message: info.message_for_chat,
+      data: {
+        kind: 'reschedule.pending',
+        payload: {
+          originalThreadId: info.original_thread.id,
+          originalThreadTitle: info.original_thread.title,
+          suggestedTitle: info.suggested_title,
+          participants: info.participants,
+          emails,
+        },
+      },
+    };
+  } catch (error) {
+    console.error('[executeReschedule] Error:', error);
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
 
 // Export type for external use
 export type { CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse };

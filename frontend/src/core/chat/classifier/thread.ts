@@ -186,6 +186,33 @@ export const classifyThread: ClassifierFn = (
     };
   }
 
+  // ============================================================
+  // P2-D3: schedule.reschedule
+  // Keywords: 再調整、やり直し、日程変更、リスケ
+  // 確定済みスレッドを選択中に「日程を変更したい」で発動
+  // ============================================================
+  if (/(再調整|やり直し|日程変更|リスケ|改めて|もう一度|別の日|変更したい)/.test(normalizedInput)) {
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.reschedule',
+        confidence: 0.9,
+        params: {},
+        needsClarification: {
+          field: 'threadId',
+          message: 'どのスレッドを再調整しますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+
+    return {
+      intent: 'schedule.reschedule',
+      confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+      },
+    };
+  }
+
   // マッチしない場合は null（次の分類器へ）
   return null;
 };
