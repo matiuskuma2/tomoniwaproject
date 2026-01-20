@@ -3,8 +3,10 @@
  * Displays slots with start_at, end_at, and vote counts
  * 
  * P1-3: viewerTz for consistent timezone display
+ * P2-B1: 「最新候補のみ表示」トグル追加
  */
 
+import { useState } from 'react';
 import type { ThreadStatus_API, Slot } from '../../core/models';
 import { formatDateTimeForViewer } from '../../utils/datetime';
 
@@ -14,6 +16,9 @@ interface SlotsCardProps {
 }
 
 export function SlotsCard({ status, viewerTz }: SlotsCardProps) {
+  // P2-B1: 最新候補のみ表示トグル（デフォルトON）
+  const [showLatestOnly, setShowLatestOnly] = useState(true);
+  
   if (status.slots.length === 0) {
     return null;
   }
@@ -24,12 +29,53 @@ export function SlotsCard({ status, viewerTz }: SlotsCardProps) {
   // P1-3: Use viewerTz for consistent timezone display
   const formatDateTime = (dateStr: string) => formatDateTimeForViewer(dateStr, viewerTz);
 
+  // P2-B1: 最新世代を特定
+  const currentVersion = status.proposal_info?.current_version ?? 1;
+  const hasMultipleVersions = status.slots.some(s => (s.proposal_version ?? 1) !== currentVersion);
+  
+  // P2-B1: 表示するスロットをフィルタ
+  const displaySlots = showLatestOnly && hasMultipleVersions
+    ? status.slots.filter(s => (s.proposal_version ?? 1) === currentVersion)
+    : status.slots;
+  
+  // P2-B1: 古い候補の数
+  const oldSlotsCount = status.slots.length - displaySlots.length;
+
   return (
     <div className="bg-white rounded-lg shadow p-4 mb-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-3">候補日時</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold text-gray-900">候補日時</h3>
+        {/* P2-B1: 世代が複数ある場合のみトグル表示 */}
+        {hasMultipleVersions && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-xs text-gray-500">最新のみ</span>
+            <div 
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                showLatestOnly ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+              onClick={() => setShowLatestOnly(!showLatestOnly)}
+              data-testid="slots-latest-only-toggle"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  showLatestOnly ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </div>
+          </label>
+        )}
+      </div>
+      
+      {/* P2-B1: 古い候補を非表示中の場合のインジケーター */}
+      {showLatestOnly && oldSlotsCount > 0 && (
+        <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+          <span>📋</span>
+          <span>v{currentVersion} 以前の候補 {oldSlotsCount}件を非表示中</span>
+        </div>
+      )}
       
       <div className="space-y-2">
-        {status.slots.map((slot: Slot) => {
+        {displaySlots.map((slot: Slot) => {
           const voteCount = slot.votes ?? 0; // Phase Next-6 Day2: Server-side votes
           
           // Phase2: バージョンバッジの色を世代に応じて変更

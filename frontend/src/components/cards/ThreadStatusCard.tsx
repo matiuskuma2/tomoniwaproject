@@ -3,8 +3,10 @@
  * Displays thread status, title, and updated_at
  * 
  * P1-3: viewerTz for consistent timezone display
+ * P2-B1: 再回答必要者の名前一覧を表示
  */
 
+import { useState } from 'react';
 import type { ThreadStatus_API } from '../../core/models';
 import { formatDateTimeForViewer } from '../../utils/datetime';
 
@@ -62,35 +64,98 @@ export function ThreadStatusCard({ status, viewerTz }: ThreadStatusCardProps) {
         </div>
         
         {/* Phase2: 再回答必要カウントと世代情報 */}
-        {status.proposal_info && status.proposal_info.current_version > 1 && (
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-500">候補の世代</span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                v{status.proposal_info.current_version}
+        <ProposalInfoSection status={status} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * P2-B1: ProposalInfoSection
+ * 世代情報と再回答必要者の詳細を表示
+ */
+function ProposalInfoSection({ status }: { status: ThreadStatus_API }) {
+  const [showDetails, setShowDetails] = useState(false);
+  
+  // Phase2 情報がない、または v1 の場合は非表示
+  if (!status.proposal_info || status.proposal_info.current_version <= 1) {
+    return null;
+  }
+  
+  const { 
+    current_version, 
+    invitees_needing_response_count, 
+    invitees_needing_response,
+    remaining_proposals 
+  } = status.proposal_info;
+  
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200" data-testid="proposal-info-section">
+      {/* 世代バッジ */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-gray-500">候補の世代</span>
+        <span 
+          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800"
+          data-testid="proposal-version-badge"
+        >
+          v{current_version}
+        </span>
+      </div>
+      
+      {/* 再回答必要者セクション */}
+      {invitees_needing_response_count > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-md p-2" data-testid="need-response-alert">
+          <div 
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowDetails(!showDetails)}
+          >
+            <div className="flex items-center">
+              <span className="text-orange-500 mr-2">⚠️</span>
+              <span className="text-sm text-orange-700 font-medium">
+                再回答が必要: {invitees_needing_response_count}名
               </span>
             </div>
-            {status.proposal_info.invitees_needing_response_count > 0 && (
-              <div className="bg-orange-50 border border-orange-200 rounded-md p-2">
-                <div className="flex items-center">
-                  <span className="text-orange-500 mr-2">⚠️</span>
-                  <span className="text-sm text-orange-700 font-medium">
-                    再回答が必要: {status.proposal_info.invitees_needing_response_count}名
-                  </span>
-                </div>
-                <p className="text-xs text-orange-600 mt-1">
-                  追加候補に対して未回答の招待者がいます
-                </p>
-              </div>
-            )}
-            {status.proposal_info.remaining_proposals > 0 && (
-              <div className="text-xs text-gray-500 mt-2">
-                追加候補: あと{status.proposal_info.remaining_proposals}回可能
-              </div>
+            {/* P2-B1: 詳細展開ボタン */}
+            {invitees_needing_response && invitees_needing_response.length > 0 && (
+              <button 
+                className="text-orange-600 hover:text-orange-800 text-xs"
+                data-testid="need-response-toggle"
+              >
+                {showDetails ? '▲ 閉じる' : '▼ 詳細'}
+              </button>
             )}
           </div>
-        )}
-      </div>
+          
+          <p className="text-xs text-orange-600 mt-1">
+            追加候補 (v{current_version}) に対して未回答の招待者がいます
+          </p>
+          
+          {/* P2-B1: 再回答必要者の名前一覧 */}
+          {showDetails && invitees_needing_response && invitees_needing_response.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-orange-200" data-testid="need-response-list">
+              <p className="text-xs text-orange-700 font-medium mb-1">対象者:</p>
+              <ul className="space-y-1">
+                {invitees_needing_response.map((invitee, index) => (
+                  <li 
+                    key={invitee.invitee_key || index} 
+                    className="text-xs text-orange-600 flex items-center gap-1"
+                  >
+                    <span className="w-1.5 h-1.5 bg-orange-400 rounded-full"></span>
+                    <span>{invitee.name || invitee.email}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* 追加候補残り回数 */}
+      {remaining_proposals > 0 && (
+        <div className="text-xs text-gray-500 mt-2">
+          追加候補: あと{remaining_proposals}回可能
+        </div>
+      )}
     </div>
   );
 }

@@ -290,6 +290,86 @@ export async function waitForListChange(
 }
 
 // ============================================================
+// P2-B1: 世代表示関連ヘルパー
+// ============================================================
+
+/**
+ * 提案バージョンバッジの表示を確認
+ */
+export async function assertProposalVersionBadgeVisible(
+  page: Page,
+  expectedVersion?: number
+): Promise<void> {
+  const badge = page.locator('[data-testid="proposal-version-badge"]');
+  await expect(badge).toBeVisible();
+  
+  if (expectedVersion !== undefined) {
+    await expect(badge).toContainText(`v${expectedVersion}`);
+  }
+}
+
+/**
+ * 「最新候補のみ表示」トグルの状態を確認・操作
+ */
+export async function toggleLatestSlotsOnly(
+  page: Page,
+  enable: boolean
+): Promise<void> {
+  const toggle = page.locator('[data-testid="slots-latest-only-toggle"]');
+  const isCurrentlyEnabled = await toggle.evaluate(el => 
+    el.classList.contains('bg-blue-600')
+  );
+  
+  if (isCurrentlyEnabled !== enable) {
+    await toggle.click();
+  }
+}
+
+/**
+ * 再回答必要セクションの表示を確認
+ */
+export async function assertNeedResponseAlertVisible(
+  page: Page,
+  expectedCount?: number
+): Promise<void> {
+  const alert = page.locator('[data-testid="need-response-alert"]');
+  await expect(alert).toBeVisible();
+  
+  if (expectedCount !== undefined) {
+    await expect(alert).toContainText(`${expectedCount}名`);
+  }
+}
+
+/**
+ * 再回答必要者リストの詳細を展開・確認
+ */
+export async function expandAndCheckNeedResponseList(
+  page: Page
+): Promise<string[]> {
+  const toggleBtn = page.locator('[data-testid="need-response-toggle"]');
+  
+  // 詳細を展開
+  if (await toggleBtn.isVisible()) {
+    await toggleBtn.click();
+  }
+  
+  const list = page.locator('[data-testid="need-response-list"]');
+  await expect(list).toBeVisible();
+  
+  // 名前一覧を取得
+  const items = list.locator('li');
+  const names: string[] = [];
+  const count = await items.count();
+  
+  for (let i = 0; i < count; i++) {
+    const text = await items.nth(i).textContent();
+    if (text) names.push(text.trim());
+  }
+  
+  return names;
+}
+
+// ============================================================
 // 後始末（クリーンアップ）
 // ============================================================
 
