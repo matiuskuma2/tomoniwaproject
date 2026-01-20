@@ -174,19 +174,30 @@ app.post('/:id/remind', async (c) => {
     const warnings: any[] = [];
     const host = c.req.header('host') || 'webapp.snsrilarc.workers.dev';
     
+    // P2-B2: リマインドメールは 'reminder' タイプを使用
+    // 統一フォーマットで「日程回答のお願い」文面を送信
     for (const invite of pending) {
       try {
+        // 期限は招待の expires_at または 72 時間後
+        const expiresAt = invite.expires_at 
+          ? new Date(invite.expires_at as string).toISOString()
+          : new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+        
+        const inviteUrl = `${host.includes('localhost') ? 'http' : 'https'}://${host}/i/${invite.token}`;
+        
         const emailJob = {
           job_id: `remind-${invite.id}-${Date.now()}`,
-          type: 'thread_message' as const,  // Use existing EmailJob type
+          type: 'reminder' as const,  // P2-B2: Use 'reminder' type for unified format
           to: String(invite.email),
-          subject: `Reminder: ${thread.title} - Please respond`,
+          subject: `【リマインド】「${thread.title}」日程のご回答をお願いします`,
           created_at: Date.now(),
           data: {
-            thread_id: String(threadId),
-            delivery_id: crypto.randomUUID(),
-            message: body.message || `Please respond to: ${thread.title}`,
-            sender_name: 'Tomoniwao',  // TODO: get from user
+            token: String(invite.token),
+            invite_url: inviteUrl,
+            thread_title: String(thread.title),
+            inviter_name: 'Tomoniwao',  // TODO: get organizer name from user
+            custom_message: body.message || null,
+            expires_at: expiresAt,
           }
         };
         
@@ -227,8 +238,15 @@ app.post('/:id/remind', async (c) => {
     ).run();
     
     // ====== (6) Organizer Inbox Notification ======
+    // P2-B2: 統一フォーマットで Inbox 通知も整形
     try {
       const inboxId = crypto.randomUUID();
+      const inviteeNames = pending
+        .slice(0, 3)
+        .map((inv: any) => inv.candidate_name || inv.email)
+        .join('、');
+      const moreCount = pending.length > 3 ? `、他${pending.length - 3}名` : '';
+      
       await env.DB.prepare(`
         INSERT INTO inbox (
           id,
@@ -243,8 +261,8 @@ app.post('/:id/remind', async (c) => {
         inboxId,
         userId,
         INBOX_TYPE.SYSTEM_MESSAGE,
-        `Reminder sent for: ${thread.title}`,
-        `Sent reminder to ${results.length} pending invitee(s)`,
+        `✅ リマインド送信完了：${thread.title}`,
+        `${results.length}名にリマインドを送信しました\n対象: ${inviteeNames}${moreCount}`,
         INBOX_PRIORITY.NORMAL
       ).run();
     } catch (error) {

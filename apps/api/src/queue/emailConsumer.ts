@@ -232,6 +232,8 @@ function generateEmailContent(job: EmailJob): { html: string; text: string } {
       return generateThreadMessageEmail(job);
     case 'additional_slots':
       return generateAdditionalSlotsEmail(job as any);
+    case 'reminder':
+      return generateReminderEmail(job as any);
     default:
       throw new Error(`Unknown email type: ${(job as any).type}`);
   }
@@ -562,6 +564,107 @@ ${slot_description}
 ${invite_url}
 
 このリンクは72時間有効です。
+
+---
+Tomoniwao（トモニワオ）
+  `;
+
+  return { html, text };
+}
+
+/**
+ * Phase B / P2-B2: リマインドメール
+ * 日程調整への回答を促すリマインド（未返信者向け）
+ * DoD: P2-B2 統一フォーマットに準拠
+ */
+function generateReminderEmail(job: EmailJob & { 
+  type: 'reminder';
+  data: {
+    token: string;
+    invite_url: string;
+    thread_title: string;
+    inviter_name: string;
+    custom_message?: string | null;
+    expires_at: string;
+  };
+}): { html: string; text: string } {
+  const { invite_url, thread_title, inviter_name, custom_message, expires_at } = job.data;
+  const displayTitle = escapeHtml(thread_title || '日程調整');
+  const safeInviterName = escapeHtml(inviter_name);
+  const safeCustomMessage = custom_message ? escapeHtml(custom_message).replace(/\n/g, '<br>') : null;
+  
+  // 期限表示（72時間後を想定）
+  const expiresDate = new Date(expires_at);
+  const expiresFormatted = expiresDate.toLocaleDateString('ja-JP', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px 24px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px 24px; }
+        .message { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
+        .custom-message { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px 20px; margin: 20px 0; border-radius: 8px; font-style: italic; color: #475569; }
+        .button-container { text-align: center; margin: 32px 0; }
+        .button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+        .button:hover { transform: translateY(-2px); }
+        .deadline { text-align: center; color: #dc2626; font-weight: 600; margin: 16px 0; }
+        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⏰ 日程回答のお願い</h1>
+        </div>
+        <div class="content">
+          <div class="message">
+            <strong>${safeInviterName}</strong> さんからの<br>
+            「<strong>${displayTitle}</strong>」へのご回答をお待ちしています。
+          </div>
+          
+          ${safeCustomMessage ? `<div class="custom-message">${safeCustomMessage}</div>` : ''}
+          
+          <p>まだ日程のご回答をいただいておりません。<br>お手数ですが、下のボタンからご都合をお知らせください。</p>
+          
+          <div class="button-container">
+            <a href="${invite_url}" class="button">日程を回答する</a>
+          </div>
+          
+          <p class="deadline">回答期限: ${expiresFormatted}</p>
+        </div>
+        <div class="footer">
+          このメールは Tomoniwao（トモニワオ）から送信されています。<br>
+          ご不明な点がございましたら、${safeInviterName} さんに直接お問い合わせください。
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `
+⏰ 日程回答のお願い
+
+${inviter_name} さんからの「${displayTitle}」へのご回答をお待ちしています。
+
+${custom_message ? `メッセージ:\n${custom_message}\n\n` : ''}まだ日程のご回答をいただいておりません。
+お手数ですが、以下のリンクからご都合をお知らせください：
+
+${invite_url}
+
+回答期限: ${expiresFormatted}
 
 ---
 Tomoniwao（トモニワオ）
