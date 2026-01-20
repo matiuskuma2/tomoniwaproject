@@ -777,20 +777,87 @@ bash tests/e2e/phase2_need_response.sh
 
 ---
 
+## ✅ P2-D3: 確定後のやり直し（再調整）
+
+**状態**: ✅ 完了  
+**優先度**: 高  
+**見積もり**: 3日  
+**完了日**: 2026-01-20
+
+### 概要
+確定済み（または進行中）のスレッドから、同じ参加者で新しい日程調整スレッドを作成する「再調整」機能。
+
+### 完了条件（DoD）
+- [x] `schedule.reschedule` インテント追加
+- [x] `GET /threads/:id/reschedule/info` API
+- [x] `reschedule.pending` 状態管理（`pendingTypes.ts`）
+- [x] `executeReschedule` executor（元スレッド情報取得）
+- [x] `schedule.reschedule.confirm` / `cancel` インテント
+- [x] `executeRescheduleConfirm` が `pending.action.created` に合流
+- [x] `useChatReducer` で `reschedule.pending` を正しく保存
+- [x] E2E テスト追加（`reschedule.spec.ts`）
+
+### 設計ポイント
+1. **既存フローへの合流**: `reschedule.confirm` は独自の `reschedule.confirmed` を返さず、`pending.action.created` へ合流して既存の send/cancel/new_thread フローを再利用
+2. **状態管理の正規化**: `reschedule.pending` は `useChatReducer` で `pendingByThreadId` に保存され、`confirmCancel.ts` で正しく判定可能
+3. **confirmed 限定にしない**: APIは全status（draft/sent/confirmed/cancelled）で `reschedule/info` を返す仕様
+
+### フロー
+```
+ユーザー: 「再調整」
+  ↓
+executeReschedule: GET /threads/:id/reschedule/info
+  ↓
+useChatReducer: reschedule.pending を pendingByThreadId に保存
+  ↓
+システム: 「〇〇会議（確定済み）同じメンバーで新しい日程調整を始めますか？」
+
+ユーザー: 「はい」
+  ↓
+confirmCancel.ts: isPendingReschedule(activePending) → schedule.reschedule.confirm
+  ↓
+executeRescheduleConfirm: threadsApi.prepareSend(...)
+  ↓
+pending.action.created を返す（既存フローへ合流）
+  ↓
+システム: 「送る」「キャンセル」「別スレッドで」のいずれかを入力してください
+
+ユーザー: 「送る」
+  ↓
+pending.action.decide → execute → pending.action.executed → 新スレッド作成・招待送信完了
+```
+
+### 実装ファイル
+- `frontend/src/core/chat/classifier/types.ts` - schedule.reschedule.confirm/cancel 追加
+- `frontend/src/core/chat/classifier/confirmCancel.ts` - reschedule の confirm/cancel 判定
+- `frontend/src/core/chat/pendingTypes.ts` - reschedule.pending kind、isPendingReschedule helper
+- `frontend/src/core/chat/apiExecutor.ts` - executeReschedule、executeRescheduleConfirm、executeRescheduleCancel
+- `frontend/src/components/chat/useChatReducer.ts` - reschedule.pending ハンドラー
+- `apps/api/src/routes/threads.ts` - GET /:id/reschedule/info
+- `frontend/e2e/reschedule.spec.ts` - E2E テスト
+
+### コミット
+- `6bf4545` - feat: P2-D3 - 再調整 confirm/cancel フロー基盤
+- `f606e15` - fix: P2-D3 - 再調整フローを既存 pending.action に合流させる
+- `8c2ddcb` - fix: P2-D3 - 未使用変数 originalThreadId を削除
+- `4bc3693` - test: P2-D3 - 再調整フローのE2Eテスト追加
+- `eea8d2d` - fix: ESLint unused variable in reschedule.spec.ts
+
+---
+
 ## ⏭️ 次ターム候補チケット（優先度順）
 
 | ID | 内容 | 見積もり | 備考 |
 |----|------|----------|------|
-| P2-D3 | 確定後のやり直し（別スレッド化） | 3日 | 履歴混乱リスク高 |
 | P2-E1 | Slack/Chatwork送達 | 5日 | 送達チャネル拡張 |
 | P3-A1 | 清掃の「時間×場所×人」最適化 | 10日+ | n対n配置エンジン |
-| P3-TZ1 | ユーザータイムゾーン保存 | 1日 | グローバル対応基盤 |
-| P3-TZ2 | 表示側のタイムゾーン対応 | 2日 | フロント/メール両対応 |
-| P3-TZ3 | スレッド単位のTZ表示 | 3日 | 複数TZ混在対応 |
 
 ---
 
-## 🌍 Phase3: タイムゾーン対応（グローバル展開準備）
+## 🌍 Phase3: タイムゾーン対応（グローバル展開準備） ✅ 完了
+
+**状態**: ✅ 完了  
+**完了日**: 2026-01-20
 
 ### 背景
 - 日本から展開するが、将来は海外ユーザーも想定
@@ -803,16 +870,17 @@ bash tests/e2e/phase2_need_response.sh
 
 ---
 
-### P3-TZ1: ユーザータイムゾーン保存
+### P3-TZ1: ユーザータイムゾーン保存 ✅
 
+**状態**: ✅ 完了  
 **優先度**: 中  
 **見積もり**: 1日  
 **担当**: バックエンド + フロントエンド
 
 #### 完了条件（DoD）
-- [ ] `users` テーブルに `timezone` カラム追加（デフォルト: `Asia/Tokyo`）
-- [ ] 設定画面でタイムゾーン選択UI
-- [ ] プロフィールAPI でタイムゾーンを返却
+- [x] `users` テーブルに `timezone` カラム追加（デフォルト: `Asia/Tokyo`）
+- [x] 設定画面でタイムゾーン選択UI
+- [x] プロフィールAPI でタイムゾーンを返却
 
 #### DB Migration
 ```sql
@@ -842,17 +910,18 @@ ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo';
 
 ---
 
-### P3-TZ2: 表示側のタイムゾーン対応
+### P3-TZ2: 表示側のタイムゾーン対応 ✅
 
+**状態**: ✅ 完了  
 **優先度**: 中  
 **見積もり**: 2日  
 **担当**: フロントエンド + バックエンド
 
 #### 完了条件（DoD）
-- [ ] 共通ユーティリティ関数 `formatDateTimeForUser()` を作成
-- [ ] フロントエンド: ユーザー設定のタイムゾーンで表示
-- [ ] メール生成: 受信者のタイムゾーンで日時表示
-- [ ] カード/チャット: 統一フォーマット適用
+- [x] 共通ユーティリティ関数 `formatDateTimeForUser()` を作成
+- [x] フロントエンド: ユーザー設定のタイムゾーンで表示
+- [x] メール生成: 受信者のタイムゾーンで日時表示
+- [x] カード/チャット: 統一フォーマット適用
 
 #### 実装: 共通ユーティリティ
 ```typescript
@@ -906,16 +975,17 @@ const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
 
 ---
 
-### P3-TZ3: スレッド単位のタイムゾーン表示
+### P3-TZ3: スレッド単位のタイムゾーン表示 ✅
 
+**状態**: ✅ 完了  
 **優先度**: 低  
 **見積もり**: 3日  
 **担当**: フロントエンド
 
 #### 完了条件（DoD）
-- [ ] 主催者と招待者が異なるTZの場合の表示ロジック
-- [ ] 「あなたの時間では XX:XX」表記
-- [ ] 回答画面でのTZ注釈表示
+- [x] 主催者と招待者が異なるTZの場合の表示ロジック
+- [x] 「あなたの時間では XX:XX」表記
+- [x] 回答画面でのTZ注釈表示
 
 #### UI例
 ```
@@ -953,6 +1023,8 @@ const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
 
 ## 更新履歴
 
+- 2026-01-21: P2-D3 実装完了（確定後のやり直し・再調整機能、E2Eテスト追加）
+- 2026-01-20: P3-TZ1/TZ2/TZ3 実装完了（タイムゾーン対応・グローバル展開準備）
 - 2026-01-20: P2-B1 実装完了（世代混在表示UI強化: トグル追加、再回答必要者名前一覧）
 - 2026-01-13: P3-TZ1/TZ2/TZ3 チケット追加（タイムゾーン対応・グローバル展開準備）
 - 2026-01-13: HOTFIX: メール通知の日付表示UTCズレ修正（timeZone: 'Asia/Tokyo' 追加）

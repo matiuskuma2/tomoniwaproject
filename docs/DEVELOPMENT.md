@@ -1,6 +1,6 @@
 # 開発ドキュメント - Tomoniwao
 
-最終更新: 2026-01-20
+最終更新: 2026-01-21
 
 ---
 
@@ -91,6 +91,10 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 - Step 3: リスト作成 ✅
 - Step 4: バッチ処理（10件メンバー追加）✅
 - Step 5: UI更新確認 ✅
+
+**P2-D3 Reschedule Tests** (`frontend/e2e/reschedule.spec.ts`):
+- reschedule → confirm → pending.action.created 合流 ✅
+- reschedule → cancel ✅
 
 **認証設定**:
 - `frontend/e2e/auth/auth.setup.ts` で sessionStorage に設定
@@ -269,22 +273,35 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 
 ---
 
-### 2026-01-20 P2-D3 確定後やり直し（再調整）
+### 2026-01-20 P2-D3 確定後やり直し（再調整）✅ 完了
 
 | Commit | 変更内容 |
 |--------|----------|
 | `c70ca9e` | P2-D3: 再調整機能の基盤実装 |
+| `6bf4545` | confirm/cancel フロー基盤 |
+| `f606e15` | confirm を pending.action.created に合流、useChatReducer で reschedule.pending 保存 |
+| `8c2ddcb` | 未使用変数修正 |
+| `eea8d2d` | E2E テスト追加 (reschedule.spec.ts) |
 
 **実装済み:**
 - schedule.reschedule インテント
 - GET /threads/:id/reschedule/info API
 - executeReschedule executor
+- confirm/cancel フロー（既存 pending.action に100%合流）
+- reschedule.pending の状態管理（useChatReducer）
+- E2E テスト（reschedule.spec.ts）
 
 **キーワード:**
 - 再調整、やり直し、日程変更、リスケ
 
-**未実装:**
-- confirm/cancel フロー（「はい」で新スレッド作成）
+**設計ポイント:**
+- 「はい」で pending.action.created を返す（独自フローを作らない）
+- 既存の「送る/キャンセル/別スレッドで」フローに合流
+- reschedule.pending が useChatReducer で正しく保存される
+- E2E で合流導線を監視（壊れたら即検知）
+
+**仕様:**
+- confirmed 以外（sent/draft等）でも再調整可能（進行中の予定変更にも対応）
 
 ---
 
