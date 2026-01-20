@@ -387,7 +387,7 @@ expandAndCheckNeedResponseList(page)
 **優先度**: 中  
 **見積もり**: 0.5日  
 **担当**: フロントエンド（チャットメッセージ）+ バックエンド（メール/Inbox）  
-**ステータス**: ✅ 完了（フロントエンド部分 - 2026-01-20）
+**ステータス**: ✅ 完了（2026-01-20）
 
 #### 目的
 追加候補の再通知文面を統一し、受信者が「何をすべきか」を明確に理解できるようにする。
@@ -399,58 +399,78 @@ expandAndCheckNeedResponseList(page)
 - [x] 世代が絡む文面に v を明記
 - [x] need_response.list/confirm/sent, remind.pending.confirm が統一フォーマット使用
 
-**バックエンド（メール + Inbox）: 別途対応**
-- [ ] メールテンプレートに必須3要素が含まれる
+**バックエンド（メール + Inbox）: ✅ 完了**
+- [x] メールテンプレートに必須3要素が含まれる
   - 「既存回答は保持されます」
   - 「追加候補についてのみ回答してください」
   - 「辞退された方には送信されていません」
-- [ ] Inbox通知も同様の文言を含む
-- [ ] 72時間の期限表記が含まれる
+- [x] Inbox通知も同様の文言を含む
+- [x] 72時間の期限表記が含まれる
 
 #### 実装コミット
 - `fc3afb4` - feat: P2-B2 - 統一メッセージフォーマッター実装開始
 - `676e898` - feat: P2-B2 - 未返信リマインドも統一フォーマッターを使用
+- `73a68c7` - feat: P2-B2 - バックエンド統一メッセージフォーマット
 
-#### 文面案（メール）
+#### 実装内容
 
-**件名**:
-```
-【追加候補】「{thread_title}」に新しい候補日が追加されました
-```
+**1. メールテンプレート（3種類）**
 
-**本文**:
+| タイプ | ファイル | 対象 |
+|-------|---------|------|
+| `additional_slots` | emailConsumer.ts | 追加候補通知 |
+| `reminder` | emailConsumer.ts | リマインド（未返信者向け） |
+| `invite` | emailConsumer.ts | 初回招待 |
+
+**2. リマインドメール（新規追加）**
+
+件名: 【リマインド】「{thread_title}」日程のご回答をお願いします
+
+内容:
+- 日程回答のお願い（オレンジ系デザイン）
+- カスタムメッセージ対応
+- 回答期限表示（expires_at）
+
+**3. 追加候補メール（既存・DoD達成済み）**
+
+件名: 【追加候補】「{thread_title}」に新しい候補日が追加されました
+
+必須3要素:
+- ✅ これまでの回答は保持されています
+- ✅ 追加された候補についてのみ、ご回答をお願いします
+- ✅ 辞退された方にはこのメールは送信されていません
+- ✅ 72時間期限表示
+
+**4. Inbox通知（追加候補）**
+
 ```
-{inviter_name} さんより、「{thread_title}」に新しい候補日が追加されました。
+📅【追加候補】{thread_title}
+新しい候補日が追加されました: {slot_description}
 
 📌 重要なお知らせ
 ・これまでの回答は保持されています
 ・追加された候補についてのみ、ご回答をお願いします
-・辞退された方にはこのメールは送信されていません
-
-追加された候補: {slot_count}件
-{slot_description}
-
-▼ 回答はこちら
-{invite_url}
-
-※ このリンクの有効期限は 72時間 です。
+・辞退された方にはこの通知は送信されていません
 ```
 
-**文面案（Inbox）**:
+**5. Inbox通知（リマインド送信完了）**
+
 ```
-📅 【追加候補】{thread_title}
-新しい候補日が追加されました。追加分についてご回答ください。
-（これまでの回答は保持されています）
+✅ リマインド送信完了：{thread_title}
+{count}名にリマインドを送信しました
+対象: {invitee_names}
 ```
 
 #### 実装ファイル
-- `apps/api/src/queue/emailConsumer.ts` - generateAdditionalSlotsEmail()
-- `apps/api/src/routes/pendingActions.ts` - Inbox通知作成部分
+- `apps/api/src/queue/emailConsumer.ts` - generateAdditionalSlotsEmail(), generateReminderEmail()
+- `apps/api/src/routes/pendingActions.ts` - Inbox通知作成（追加候補）
+- `apps/api/src/routes/threadsRemind.ts` - リマインドメール送信 + Inbox通知
 
 #### テスト条件
-- [ ] 追加候補メールに3要素が必ず含まれる
-- [ ] Inbox通知に「回答は保持」の文言がある
-- [ ] 72時間期限が表示される
+- [x] 追加候補メールに3要素が必ず含まれる
+- [x] Inbox通知に「回答は保持」の文言がある
+- [x] 72時間期限が表示される
+- [x] リマインドメールが `reminder` タイプで送信される
 
 ---
 
