@@ -151,6 +151,25 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Workspace Settings Link */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mt-4">
+          <h2 className="text-base font-semibold text-gray-900 mb-2">
+            🏢 ワークスペース設定
+          </h2>
+          <p className="text-sm text-gray-500 mb-3">
+            チーム全体の通知設定を管理できます。
+          </p>
+          <button
+            onClick={() => navigate('/settings/workspace-notifications')}
+            className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors flex items-center justify-between"
+          >
+            <span>💬 Slack/Chatwork通知設定</span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+
         {/* Info */}
         <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
           <h3 className="text-sm font-medium text-blue-800 mb-2">📌 ヒント</h3>

@@ -10,6 +10,7 @@ import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
+import WorkspaceNotificationsPage from './pages/WorkspaceNotificationsPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -105,6 +106,16 @@ function App() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* P2-E1: Workspace Notifications Settings */}
+        <Route
+          path="/settings/workspace-notifications"
+          element={
+            <ProtectedRoute>
+              <WorkspaceNotificationsPage />
             </ProtectedRoute>
           }
         />

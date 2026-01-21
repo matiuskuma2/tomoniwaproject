@@ -24,3 +24,11 @@ export type {
 // P3-TZ1: Users Me API
 export { usersMeApi } from './usersMe';
 export type { UserProfile, GetMeResponse, UpdateMeResponse } from './usersMe';
+
+// P2-E1: Workspace Notifications API
+export { workspaceNotificationsApi } from './workspaceNotifications';
+export type { 
+  WorkspaceNotificationSettings, 
+  UpdateWorkspaceNotificationSettingsRequest,
+  UpdateWorkspaceNotificationSettingsResponse 
+} from './workspaceNotifications';
