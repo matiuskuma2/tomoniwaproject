@@ -3,9 +3,21 @@
  * 
  * Consumes email jobs from EMAIL_QUEUE and sends via Resend API.
  * Handles idempotency and delivery tracking.
+ * 
+ * P3-INV1 共通ソース化: テンプレートとプレビューの一体化
+ * - invite / additional_slots / reminder は emailModel.ts の共通モデルを使用
+ * - 「テンプレ変更 = model変更」でズレを防止
  */
 
 import type { EmailJob } from '../services/emailQueue';
+import {
+  composeInviteEmailModel,
+  composeAdditionalSlotsEmailModel,
+  composeReminderEmailModel,
+  renderEmailHtml,
+  renderEmailText,
+  APP_BASE_URL,
+} from '../utils/emailModel';
 
 /**
  * HTMLエスケープ関数
@@ -288,88 +300,23 @@ AI Secretary Scheduler
 }
 
 /**
- * Production base URL for email links
- */
-const APP_BASE_URL = 'https://app.tomoniwao.jp';
-
-/**
  * Generate invite email content
- * Beta A: 日程調整招待メール（日本語・丁寧な文面）
+ * P3-INV1 共通ソース化: emailModel.ts の共通モデルを使用
  */
 function generateInviteEmail(job: EmailJob & { type: 'invite' }): { html: string; text: string } {
   const { token, inviter_name, thread_title } = job.data;
-  const acceptUrl = `${APP_BASE_URL}/i/${token}`;
-  // XSS防止: ユーザー入力をHTMLエスケープ
-  const safeInviterName = escapeHtml(inviter_name);
-  const displayTitle = escapeHtml(thread_title || '日程調整');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px 24px; text-align: center; }
-        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-        .content { padding: 32px 24px; }
-        .message { background: #f8fafc; border-left: 4px solid #2563eb; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .button-container { text-align: center; margin: 32px 0; }
-        .button { display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
-        .button:hover { background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%); }
-        .link-fallback { margin-top: 24px; padding: 16px; background: #f1f5f9; border-radius: 8px; font-size: 13px; color: #64748b; word-break: break-all; }
-        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>📅 日程調整のご依頼</h1>
-        </div>
-        <div class="content">
-          <p>こんにちは。</p>
-          <div class="message">
-            <strong>${safeInviterName}</strong> さんより、<br>
-            「<strong>${displayTitle}</strong>」の日程調整依頼が届きました。
-          </div>
-          <p>下のボタンから、ご都合の良い日時をお選びください。<br>回答は数分で完了します。</p>
-          <div class="button-container">
-            <a href="${acceptUrl}" class="button">日程を回答する</a>
-          </div>
-          <div class="link-fallback">
-            ボタンが表示されない場合は、以下のURLをコピーしてブラウザに貼り付けてください：<br>
-            <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
-          </div>
-        </div>
-        <div class="footer">
-          このメールは Tomoniwao（トモニワオ）から送信されています。<br>
-          ご不明な点がございましたら、${safeInviterName} さんに直接お問い合わせください.
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  const text = `
-【日程調整のご依頼】
-
-こんにちは。
-
-${inviter_name} さんより、「${displayTitle}」の日程調整依頼が届きました。
-
-以下のリンクから、ご都合の良い日時をお選びください：
-${acceptUrl}
-
-回答は数分で完了します。
-
----
-このメールは Tomoniwao（トモニワオ）から送信されています。
-ご不明な点がございましたら、${inviter_name} さんに直接お問い合わせください。
-  `;
-
-  return { html, text };
+  
+  // P3-INV1: 共通モデルから生成（テンプレとプレビューの一体化）
+  const model = composeInviteEmailModel({
+    inviterName: inviter_name,
+    threadTitle: thread_title || '日程調整',
+    token,
+  });
+  
+  return {
+    html: renderEmailHtml(model),
+    text: renderEmailText(model),
+  };
 }
 
 /**
@@ -470,7 +417,7 @@ Tomoniwao（トモニワオ）
 
 /**
  * Phase2: 追加候補通知メール
- * 既存の回答は保持されていることを明記
+ * P3-INV1 共通ソース化: emailModel.ts の共通モデルを使用
  */
 function generateAdditionalSlotsEmail(job: EmailJob & { 
   type: 'additional_slots';
@@ -483,99 +430,28 @@ function generateAdditionalSlotsEmail(job: EmailJob & {
     proposal_version: number;
   };
 }): { html: string; text: string } {
-  const { token, thread_title, slot_count, slot_description, invite_url, proposal_version } = job.data;
-  const displayTitle = escapeHtml(thread_title || '日程調整');
-  const safeSlotDescription = escapeHtml(slot_description).replace(/\n/g, '<br>');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; padding: 30px 24px; text-align: center; }
-        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-        .content { padding: 32px 24px; }
-        .highlight { background: #ecfdf5; border-left: 4px solid #059669; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .highlight h3 { margin: 0 0 8px 0; color: #059669; }
-        .info-box { background: #f0f9ff; border: 1px solid #bae6fd; padding: 16px 20px; margin: 20px 0; border-radius: 8px; }
-        .info-box p { margin: 0; color: #0369a1; }
-        .button-container { text-align: center; margin: 32px 0; }
-        .button { display: inline-block; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3); }
-        .button:hover { transform: translateY(-2px); }
-        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>📅 追加候補のお知らせ</h1>
-        </div>
-        <div class="content">
-          <p>「<strong>${displayTitle}</strong>」の日程調整に、新しい候補日が追加されました。</p>
-          
-          <div class="highlight">
-            <h3>追加された候補（${slot_count}件）</h3>
-            <p>${safeSlotDescription}</p>
-          </div>
-          
-          <div class="info-box">
-            <p>📌 <strong>重要なお知らせ</strong></p>
-            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #0369a1;">
-              <li>これまでの回答は<strong>保持されています</strong></li>
-              <li>追加された候補についてのみ、ご回答をお願いします</li>
-              <li>辞退された方にはこのメールは送信されていません</li>
-            </ul>
-          </div>
-          
-          <div class="button-container">
-            <a href="${invite_url}" class="button">追加候補を確認する</a>
-          </div>
-          
-          <p style="color: #64748b; font-size: 14px; text-align: center;">
-            このリンクは72時間有効です。
-          </p>
-        </div>
-        <div class="footer">
-          このメールは Tomoniwao（トモニワオ）から自動送信されています。
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  const text = `
-📅 追加候補のお知らせ
-
-「${displayTitle}」の日程調整に、新しい候補日が追加されました。
-
-【追加された候補（${slot_count}件）】
-${slot_description}
-
-📌 重要なお知らせ
-・これまでの回答は保持されています
-・追加された候補についてのみ、ご回答をお願いします
-・辞退された方にはこのメールは送信されていません
-
-▼ 追加候補を確認する
-${invite_url}
-
-このリンクは72時間有効です。
-
----
-Tomoniwao（トモニワオ）
-  `;
-
-  return { html, text };
+  const { token, thread_title, slot_count, slot_description } = job.data;
+  
+  // slot_description を配列に変換
+  const slotLabels = slot_description.split('\n').filter(s => s.trim());
+  
+  // P3-INV1: 共通モデルから生成（テンプレとプレビューの一体化）
+  const model = composeAdditionalSlotsEmailModel({
+    threadTitle: thread_title || '日程調整',
+    slotCount: slot_count,
+    slotLabels,
+    token,
+  });
+  
+  return {
+    html: renderEmailHtml(model),
+    text: renderEmailText(model),
+  };
 }
 
 /**
  * Phase B / P2-B2: リマインドメール
- * 日程調整への回答を促すリマインド（未返信者向け）
- * DoD: P2-B2 統一フォーマットに準拠
+ * P3-INV1 共通ソース化: emailModel.ts の共通モデルを使用
  */
 function generateReminderEmail(job: EmailJob & { 
   type: 'reminder';
@@ -586,15 +462,12 @@ function generateReminderEmail(job: EmailJob & {
     inviter_name: string;
     custom_message?: string | null;
     expires_at: string;
-    recipient_timezone?: string;  // P3-TZ2: 受信者のタイムゾーン
+    recipient_timezone?: string;
   };
 }): { html: string; text: string } {
-  const { invite_url, thread_title, inviter_name, custom_message, expires_at, recipient_timezone } = job.data;
-  const displayTitle = escapeHtml(thread_title || '日程調整');
-  const safeInviterName = escapeHtml(inviter_name);
-  const safeCustomMessage = custom_message ? escapeHtml(custom_message).replace(/\n/g, '<br>') : null;
+  const { token, thread_title, inviter_name, custom_message, expires_at, recipient_timezone } = job.data;
   
-  // P3-TZ2: 受信者のタイムゾーンで期限を表示（デフォルト: JST）
+  // P3-TZ2: 受信者のタイムゾーンで期限をフォーマット
   const timezone = recipient_timezone || 'Asia/Tokyo';
   const expiresDate = new Date(expires_at);
   const expiresFormatted = expiresDate.toLocaleString('ja-JP', {
@@ -605,75 +478,21 @@ function generateReminderEmail(job: EmailJob & {
     hour: '2-digit',
     minute: '2-digit'
   });
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 30px 24px; text-align: center; }
-        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-        .content { padding: 32px 24px; }
-        .message { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .custom-message { background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px 20px; margin: 20px 0; border-radius: 8px; font-style: italic; color: #475569; }
-        .button-container { text-align: center; margin: 32px 0; }
-        .button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white !important; padding: 16px 48px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
-        .button:hover { transform: translateY(-2px); }
-        .deadline { text-align: center; color: #dc2626; font-weight: 600; margin: 16px 0; }
-        .footer { padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⏰ 日程回答のお願い</h1>
-        </div>
-        <div class="content">
-          <div class="message">
-            <strong>${safeInviterName}</strong> さんからの<br>
-            「<strong>${displayTitle}</strong>」へのご回答をお待ちしています。
-          </div>
-          
-          ${safeCustomMessage ? `<div class="custom-message">${safeCustomMessage}</div>` : ''}
-          
-          <p>まだ日程のご回答をいただいておりません。<br>お手数ですが、下のボタンからご都合をお知らせください。</p>
-          
-          <div class="button-container">
-            <a href="${invite_url}" class="button">日程を回答する</a>
-          </div>
-          
-          <p class="deadline">回答期限: ${expiresFormatted}</p>
-        </div>
-        <div class="footer">
-          このメールは Tomoniwao（トモニワオ）から送信されています。<br>
-          ご不明な点がございましたら、${safeInviterName} さんに直接お問い合わせください。
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  const text = `
-⏰ 日程回答のお願い
-
-${inviter_name} さんからの「${displayTitle}」へのご回答をお待ちしています。
-
-${custom_message ? `メッセージ:\n${custom_message}\n\n` : ''}まだ日程のご回答をいただいておりません。
-お手数ですが、以下のリンクからご都合をお知らせください：
-
-${invite_url}
-
-回答期限: ${expiresFormatted}
-
----
-Tomoniwao（トモニワオ）
-  `;
-
-  return { html, text };
+  
+  // P3-INV1: 共通モデルから生成（テンプレとプレビューの一体化）
+  const model = composeReminderEmailModel({
+    inviterName: inviter_name,
+    threadTitle: thread_title || '日程調整',
+    customMessage: custom_message || undefined,
+    expiresAt: expiresFormatted,
+    token,
+    recipientTimezone: timezone,
+  });
+  
+  return {
+    html: renderEmailHtml(model),
+    text: renderEmailText(model),
+  };
 }
 
 /**

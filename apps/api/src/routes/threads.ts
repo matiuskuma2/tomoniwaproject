@@ -904,12 +904,13 @@ app.post('/:id/proposals/prepare', async (c) => {
       s.label || formatDateTime(s.start_at)
     );
 
-    // P3-INV1 B案: メールプレビュー骨格ブロック生成
-    const emailPreview = generateAdditionalSlotsEmailPreview({
+    // P3-INV1 共通ソース化: メールモデル → プレビュー
+    const emailModel = composeAdditionalSlotsEmailModel({
       threadTitle: thread.title,
       slotCount: newSlots.length,
       slotLabels: allSlotLabels,
     });
+    const emailPreview = modelToPreview(emailModel);
 
     return c.json({
       request_id: requestId,
@@ -1302,9 +1303,10 @@ import {
   type PendingActionSummary,
 } from '../repositories/pendingActionsRepository';
 import {
-  generateInviteEmailPreview,
-  generateAdditionalSlotsEmailPreview,
-} from '../utils/emailPreview';
+  composeInviteEmailModel,
+  composeAdditionalSlotsEmailModel,
+  modelToPreview,
+} from '../utils/emailModel';
 import {
   checkIsAppUserBatch,
 } from '../repositories/inviteDeliveriesRepository';
@@ -1483,11 +1485,12 @@ app.post('/prepare-send', async (c) => {
       ? `${listName}リスト`
       : `${emails.length}件のメールアドレス`;
 
-    // P3-INV1 B案: メールプレビュー骨格ブロック生成
-    const emailPreview = generateInviteEmailPreview({
+    // P3-INV1 共通ソース化: メールモデル → プレビュー
+    const emailModel = composeInviteEmailModel({
       inviterName,
       threadTitle: title,
     });
+    const emailPreview = modelToPreview(emailModel);
 
     return c.json({
       request_id: requestId,
@@ -1707,11 +1710,12 @@ app.post('/:id/invites/prepare', async (c) => {
       ? `${listName}リスト`
       : `${newEmails.length}件のメールアドレス`;
 
-    // P3-INV1 B案: メールプレビュー骨格ブロック生成
-    const emailPreview = generateInviteEmailPreview({
+    // P3-INV1 共通ソース化: メールモデル → プレビュー
+    const emailModel = composeInviteEmailModel({
       inviterName,
       threadTitle: thread.title,
     });
+    const emailPreview = modelToPreview(emailModel);
 
     return c.json({
       request_id: requestId,
