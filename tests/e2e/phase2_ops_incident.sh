@@ -253,11 +253,21 @@ case7_pending_actions_check_constraint_allows_add_slots_static() {
 
 case8_email_templates_escape_html_static() {
   info "Case8: email templates must escape HTML (static guard)"
-  local f="${ROOT_DIR}/apps/api/src/queue/emailConsumer.ts"
-  grep -q "function escapeHtml" "${f}" || die "escapeHtml missing"
-  grep -q "escapeHtml(message)" "${f}" || die "thread_message message not escaped"
-  grep -q "escapeHtml(inviter_name)" "${f}" || die "invite inviter_name not escaped"
-  grep -q "escapeHtml(thread_title" "${f}" || die "thread_title not escaped somewhere"
+  
+  # P3-INV1 共通ソース化: emailModel.ts にエスケープロジック集約
+  local consumer="${ROOT_DIR}/apps/api/src/queue/emailConsumer.ts"
+  local model="${ROOT_DIR}/apps/api/src/utils/emailModel.ts"
+  
+  # emailModel.ts に escapeHtml 関数が存在すること
+  grep -q "function escapeHtml" "${model}" || die "escapeHtml missing in emailModel.ts"
+  
+  # emailModel.ts で block.text を escapeHtml していること
+  grep -q "escapeHtml(block.text)" "${model}" || die "block.text not escaped in emailModel.ts"
+  
+  # emailConsumer.ts で thread_message の message を escapeHtml していること
+  grep -q "function escapeHtml" "${consumer}" || die "escapeHtml missing in emailConsumer.ts"
+  grep -q "escapeHtml(message)" "${consumer}" || die "thread_message message not escaped"
+  
   ok "Case8 passed"
 }
 
