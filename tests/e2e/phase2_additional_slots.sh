@@ -450,11 +450,22 @@ case7_status_proposal_info_present() {
 
 case8_email_xss_static_guard() {
   info "Case8: email templates must use escapeHtml (static guard)"
-  local f="${ROOT_DIR}/apps/api/src/queue/emailConsumer.ts"
-  grep -q "function escapeHtml" "${f}" || die "escapeHtml function missing"
-  grep -q "escapeHtml(message)" "${f}" || die "thread_message message is not escaped"
-  grep -q "escapeHtml(inviter_name)" "${f}" || die "invite inviter_name is not escaped"
-  grep -q "escapeHtml(thread_title" "${f}" || die "thread_title is not escaped somewhere"
+  
+  # P3-INV1 共通ソース化: emailModel.ts にエスケープロジック集約
+  # emailConsumer.ts は model 経由で生成、emailModel.ts が escapeHtml を使用
+  local consumer="${ROOT_DIR}/apps/api/src/queue/emailConsumer.ts"
+  local model="${ROOT_DIR}/apps/api/src/utils/emailModel.ts"
+  
+  # emailModel.ts に escapeHtml 関数が存在すること
+  grep -q "function escapeHtml" "${model}" || die "escapeHtml function missing in emailModel.ts"
+  
+  # emailModel.ts で block.text を escapeHtml していること（renderEmailHtml 内）
+  grep -q "escapeHtml(block.text)" "${model}" || die "block.text is not escaped in emailModel.ts"
+  
+  # emailConsumer.ts で thread_message の message を escapeHtml していること（非モデル化）
+  grep -q "function escapeHtml" "${consumer}" || die "escapeHtml function missing in emailConsumer.ts"
+  grep -q "escapeHtml(message)" "${consumer}" || die "thread_message message is not escaped"
+  
   ok "Case8 passed"
 }
 
