@@ -29,6 +29,7 @@ export type { UserProfile, GetMeResponse, UpdateMeResponse } from './usersMe';
 export { workspaceNotificationsApi } from './workspaceNotifications';
 export type { 
   WorkspaceNotificationSettings, 
-  UpdateWorkspaceNotificationSettingsRequest,
-  UpdateWorkspaceNotificationSettingsResponse 
+  UpdateSlackSettingsRequest,
+  UpdateSlackSettingsResponse,
+  TestSlackResponse
 } from './workspaceNotifications';

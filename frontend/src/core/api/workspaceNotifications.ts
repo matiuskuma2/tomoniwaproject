@@ -13,20 +13,25 @@ export interface WorkspaceNotificationSettings {
   slack_enabled: boolean;
   slack_webhook_configured: boolean;
   chatwork_enabled: boolean;
-  chatwork_webhook_configured: boolean;
+  chatwork_configured: boolean;
 }
 
-export interface UpdateWorkspaceNotificationSettingsRequest {
-  slack_enabled?: boolean;
-  slack_webhook_url?: string | null;
-  chatwork_enabled?: boolean;
-  chatwork_webhook_url?: string | null;
+export interface UpdateSlackSettingsRequest {
+  enabled: boolean;
+  webhook_url?: string | null;
 }
 
-export interface UpdateWorkspaceNotificationSettingsResponse {
+export interface UpdateSlackSettingsResponse {
   success: boolean;
-  settings: WorkspaceNotificationSettings;
+  slack_enabled: boolean;
+  slack_webhook_configured: boolean;
+  error?: string;
+}
+
+export interface TestSlackResponse {
+  success: boolean;
   message?: string;
+  error?: string;
 }
 
 // ============================================================
@@ -42,16 +47,23 @@ export async function getWorkspaceNotifications(): Promise<WorkspaceNotification
 }
 
 /**
- * ワークスペース通知設定を更新
- * @param data - 更新するフィールド
+ * Slack設定を更新
+ * @param data - enabled と webhook_url
  */
-export async function updateWorkspaceNotifications(
-  data: UpdateWorkspaceNotificationSettingsRequest
-): Promise<UpdateWorkspaceNotificationSettingsResponse> {
-  return api.put<UpdateWorkspaceNotificationSettingsResponse>(
-    '/api/workspace/notifications',
+export async function updateSlackSettings(
+  data: UpdateSlackSettingsRequest
+): Promise<UpdateSlackSettingsResponse> {
+  return api.put<UpdateSlackSettingsResponse>(
+    '/api/workspace/notifications/slack',
     data
   );
+}
+
+/**
+ * Slack接続テスト
+ */
+export async function testSlackConnection(): Promise<TestSlackResponse> {
+  return api.post<TestSlackResponse>('/api/workspace/notifications/slack/test');
 }
 
 // ============================================================
@@ -60,5 +72,6 @@ export async function updateWorkspaceNotifications(
 
 export const workspaceNotificationsApi = {
   get: getWorkspaceNotifications,
-  update: updateWorkspaceNotifications,
+  updateSlack: updateSlackSettings,
+  testSlack: testSlackConnection,
 };

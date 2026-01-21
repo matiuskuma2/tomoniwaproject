@@ -15,6 +15,7 @@ export default function WorkspaceNotificationsPage() {
   const [settings, setSettings] = useState<WorkspaceNotificationSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form state
@@ -94,18 +95,23 @@ export default function WorkspaceNotificationsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const response = await workspaceNotificationsApi.update({
-        slack_enabled: slackEnabled,
-        // 空文字の場合は null（URL変更なし）
-        slack_webhook_url: slackWebhookUrl || null,
+      const response = await workspaceNotificationsApi.updateSlack({
+        enabled: slackEnabled,
+        // 空文字の場合は undefined（URL変更なし）
+        webhook_url: slackWebhookUrl || undefined,
       });
 
       if (response.success) {
-        setSettings(response.settings);
+        // 設定状態を更新
+        setSettings(prev => prev ? {
+          ...prev,
+          slack_enabled: response.slack_enabled,
+          slack_webhook_configured: response.slack_webhook_configured,
+        } : null);
         setSlackWebhookUrl(''); // 保存後はクリア
         setMessage({ type: 'success', text: '✅ 設定を保存しました' });
       } else {
-        setMessage({ type: 'error', text: response.message || '保存に失敗しました' });
+        setMessage({ type: 'error', text: response.error || '保存に失敗しました' });
       }
     } catch (err) {
       console.error('[WorkspaceNotifications] Failed to save:', err);
@@ -115,6 +121,27 @@ export default function WorkspaceNotificationsPage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setMessage(null);
+    try {
+      const response = await workspaceNotificationsApi.testSlack();
+      if (response.success) {
+        setMessage({ type: 'success', text: '✅ テストメッセージを送信しました。Slackを確認してください。' });
+      } else {
+        setMessage({ type: 'error', text: response.error || 'テスト送信に失敗しました' });
+      }
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Test failed:', err);
+      setMessage({ 
+        type: 'error', 
+        text: err instanceof Error ? `❌ ${err.message}` : '❌ テスト送信に失敗しました' 
+      });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -232,8 +259,8 @@ export default function WorkspaceNotificationsPage() {
             </a>
           </div>
 
-          {/* Save Button */}
-          <div className="flex items-center justify-between">
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3 mb-3">
             <button
               onClick={handleSave}
               disabled={saving || !canSave()}
@@ -243,12 +270,25 @@ export default function WorkspaceNotificationsPage() {
               {saving ? '保存中...' : '保存'}
             </button>
 
-            {message && (
-              <p className={`text-sm ${message.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
-                {message.text}
-              </p>
+            {/* Test Button - 設定済みの場合のみ表示 */}
+            {settings?.slack_webhook_configured && (
+              <button
+                onClick={handleTest}
+                disabled={testing || saving}
+                data-testid="slack-test-button"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {testing ? 'テスト中...' : '🔔 テスト送信'}
+              </button>
             )}
           </div>
+
+          {/* Message */}
+          {message && (
+            <p className={`text-sm ${message.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+              {message.text}
+            </p>
+          )}
         </div>
 
         {/* Chatwork Card (Coming Soon) */}
