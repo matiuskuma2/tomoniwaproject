@@ -46,6 +46,38 @@ export interface PendingActionSummary {
   source_label: string;
 }
 
+// ============================================================
+// P3-INV1 B案: メールプレビュー骨格ブロック
+// ============================================================
+
+export type EmailPreviewBlockType = 
+  | 'intro'           // 冒頭挨拶
+  | 'cta'             // 行動ボタン
+  | 'slots'           // 候補日時リスト
+  | 'notes'           // 注意事項
+  | 'deadline'        // 期限
+  | 'footer'          // フッター
+  | 'custom_message'; // カスタムメッセージ
+
+export interface EmailPreviewBlock {
+  type: EmailPreviewBlockType;
+  text: string;
+  variables_used?: string[];
+  url?: string;
+  expires_at?: string;
+  items?: string[];
+}
+
+export type EmailTemplateType = 'invite' | 'additional_slots' | 'reminder';
+
+export interface EmailPreview {
+  subject: string;
+  blocks: EmailPreviewBlock[];
+  recipient_timezone?: string;
+  link_expires_at?: string;
+  template_type: EmailTemplateType;
+}
+
 /**
  * prepare API のレスポンス
  */
@@ -59,6 +91,7 @@ export interface PrepareSendResponse {
   message_for_chat: string;
   thread_id?: string;
   thread_title?: string;
+  email_preview?: EmailPreview;  // P3-INV1 B案: 骨格ブロック
 }
 
 /**

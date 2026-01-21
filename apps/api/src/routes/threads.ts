@@ -900,6 +900,16 @@ app.post('/:id/proposals/prepare', async (c) => {
     const slotLabels = newSlots.slice(0, 3).map((s) => 
       s.label || formatDateTime(s.start_at)
     );
+    const allSlotLabels = newSlots.map((s) => 
+      s.label || formatDateTime(s.start_at)
+    );
+
+    // P3-INV1 B案: メールプレビュー骨格ブロック生成
+    const emailPreview = generateAdditionalSlotsEmailPreview({
+      threadTitle: thread.title,
+      slotCount: newSlots.length,
+      slotLabels: allSlotLabels,
+    });
 
     return c.json({
       request_id: requestId,
@@ -917,6 +927,7 @@ app.post('/:id/proposals/prepare', async (c) => {
       },
       remaining_proposals: 2 - thread.additional_propose_count - 1,
       default_decision: 'add',
+      email_preview: emailPreview,  // P3-INV1 B案: 骨格ブロック
       message_for_chat: `「${thread.title}」に${newSlots.length}件の追加候補を出します。\n候補: ${slotLabels.join('、')}${newSlots.length > 3 ? ` 他${newSlots.length - 3}件` : ''}\n\n次に「追加」または「キャンセル」を入力してください。\n（残り追加回数: ${2 - thread.additional_propose_count - 1}回）`,
     });
 
@@ -1291,6 +1302,10 @@ import {
   type PendingActionSummary,
 } from '../repositories/pendingActionsRepository';
 import {
+  generateInviteEmailPreview,
+  generateAdditionalSlotsEmailPreview,
+} from '../utils/emailPreview';
+import {
   checkIsAppUserBatch,
 } from '../repositories/inviteDeliveriesRepository';
 import {
@@ -1457,17 +1472,22 @@ app.post('/prepare-send', async (c) => {
       requestId,
     });
 
+    // ====== ユーザー名取得（プレビュー用） ======
+    const user = await env.DB.prepare(`
+      SELECT display_name FROM users WHERE id = ?
+    `).bind(userId).first<{ display_name: string | null }>();
+    const inviterName = user?.display_name || 'Tomoniwao';
+
     // ====== レスポンス ======
     const sourceLabel = sourceType === 'list'
       ? `${listName}リスト`
       : `${emails.length}件のメールアドレス`;
 
-    // P3-INV1: メールプレビュー情報を追加
-    const emailPreview = {
-      subject: `【日程調整】○○さんより「${title}」のご依頼`,
-      summary: '日程調整の招待メールが送信されます。受信者は候補日時から都合の良い日を選択できます。',
-      note: '※ 実際のメールでは送信者名が表示されます',
-    };
+    // P3-INV1 B案: メールプレビュー骨格ブロック生成
+    const emailPreview = generateInviteEmailPreview({
+      inviterName,
+      threadTitle: title,
+    });
 
     return c.json({
       request_id: requestId,
@@ -1479,7 +1499,7 @@ app.post('/prepare-send', async (c) => {
         source_label: sourceLabel,
       },
       default_decision: 'send',
-      email_preview: emailPreview,  // P3-INV1: メールプレビュー
+      email_preview: emailPreview,  // P3-INV1 B案: 骨格ブロック
       message_for_chat: `送信先: ${emails.length}件 / スキップ: ${summary.skipped.invalid_email + summary.skipped.missing_email}件\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
     });
 
@@ -1676,17 +1696,22 @@ app.post('/:id/invites/prepare', async (c) => {
       requestId,
     });
 
+    // ====== ユーザー名取得（プレビュー用） ======
+    const user = await env.DB.prepare(`
+      SELECT display_name FROM users WHERE id = ?
+    `).bind(userId).first<{ display_name: string | null }>();
+    const inviterName = user?.display_name || 'Tomoniwao';
+
     // ====== レスポンス ======
     const sourceLabel = sourceType === 'list'
       ? `${listName}リスト`
       : `${newEmails.length}件のメールアドレス`;
 
-    // P3-INV1: メールプレビュー情報を追加
-    const emailPreview = {
-      subject: `【日程調整】○○さんより「${thread.title}」のご依頼`,
-      summary: '日程調整の招待メールが送信されます。受信者は候補日時から都合の良い日を選択できます。',
-      note: '※ 実際のメールでは送信者名が表示されます',
-    };
+    // P3-INV1 B案: メールプレビュー骨格ブロック生成
+    const emailPreview = generateInviteEmailPreview({
+      inviterName,
+      threadTitle: thread.title,
+    });
 
     return c.json({
       request_id: requestId,
@@ -1700,7 +1725,7 @@ app.post('/:id/invites/prepare', async (c) => {
         source_label: sourceLabel,
       },
       default_decision: 'send',
-      email_preview: emailPreview,  // P3-INV1: メールプレビュー
+      email_preview: emailPreview,  // P3-INV1 B案: 骨格ブロック
       message_for_chat: `「${thread.title}」に${newEmails.length}名を追加招待します。\n\n次に「送る」「キャンセル」「別スレッドで」のいずれかを入力してください。`,
     });
 

@@ -681,7 +681,7 @@ async function executePendingDecision(
 
 /**
  * Build prepare message from response
- * P3-INV1: メールプレビュー情報を追加表示
+ * P3-INV1 B案: メールプレビュー骨格ブロック対応
  */
 function buildPrepareMessage(response: PrepareSendResponse): string {
   const summary = response.summary;
@@ -689,7 +689,7 @@ function buildPrepareMessage(response: PrepareSendResponse): string {
   
   if (summary.preview && summary.preview.length > 0) {
     message += '\n**送信先プレビュー:**\n';
-    summary.preview.forEach((p: any) => {
+    summary.preview.forEach((p: { email: string; is_app_user?: boolean }) => {
       message += `- ${p.email}${p.is_app_user ? ' (アプリユーザー)' : ''}\n`;
     });
     if (summary.valid_count > summary.preview.length) {
@@ -697,18 +697,61 @@ function buildPrepareMessage(response: PrepareSendResponse): string {
     }
   }
   
-  // P3-INV1: メールプレビュー情報を表示
-  const emailPreview = (response as any).email_preview;
+  // P3-INV1 B案: メールプレビュー骨格ブロック表示
+  const emailPreview = response.email_preview;
   if (emailPreview) {
-    message += '\n**📬 メール内容:**\n';
-    message += `件名: ${emailPreview.subject}\n`;
-    message += `${emailPreview.summary}\n`;
-    if (emailPreview.note) {
-      message += `（${emailPreview.note}）\n`;
+    message += '\n**📬 送信されるメール内容:**\n';
+    message += `📌 件名: ${emailPreview.subject}\n\n`;
+    
+    // blocks をわかりやすく表示
+    emailPreview.blocks.forEach((block) => {
+      switch (block.type) {
+        case 'intro':
+          message += `📝 ${block.text}\n`;
+          break;
+        case 'notes':
+          if (block.items && block.items.length > 0) {
+            message += `\n📋 ${block.text}:\n`;
+            block.items.forEach((item: string) => {
+              message += `  • ${item}\n`;
+            });
+          } else {
+            message += `📋 ${block.text}\n`;
+          }
+          break;
+        case 'slots':
+          message += `\n📅 ${block.text}:\n`;
+          if (block.items && block.items.length > 0) {
+            block.items.slice(0, 5).forEach((item: string) => {
+              message += `  • ${item}\n`;
+            });
+            if (block.items.length > 5) {
+              message += `  ... 他 ${block.items.length - 5}件\n`;
+            }
+          }
+          break;
+        case 'cta':
+          message += `\n🔘 ボタン: [${block.text}]\n`;
+          break;
+        case 'deadline':
+          message += `⏰ リンク有効期限: ${block.expires_at || block.text}\n`;
+          break;
+        case 'custom_message':
+          message += `💬 メッセージ: ${block.text}\n`;
+          break;
+        case 'footer':
+          // フッターは省略（長くなるため）
+          break;
+      }
+    });
+    
+    // タイムゾーン情報
+    if (emailPreview.recipient_timezone && emailPreview.recipient_timezone !== 'Asia/Tokyo') {
+      message += `\n🌍 表示タイムゾーン: ${emailPreview.recipient_timezone}\n`;
     }
   }
   
-  if (summary.skipped && Object.values(summary.skipped).some((v: any) => v > 0)) {
+  if (summary.skipped && Object.values(summary.skipped).some((v: number) => v > 0)) {
     message += '\n⚠️ スキップ: ';
     const reasons = [];
     if (summary.skipped.invalid_email > 0) reasons.push(`無効なメール ${summary.skipped.invalid_email}件`);
