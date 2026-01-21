@@ -34,6 +34,7 @@ import calendarRoutes from './routes/calendar';
 import billingRoutes from './routes/billing';
 import pendingActionsRoutes from './routes/pendingActions';
 import usersMeRoutes from './routes/usersMe';
+import workspaceNotificationsRoutes from './routes/workspaceNotifications';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -198,6 +199,11 @@ app.route('/api/business-cards', businessCardsRoutes);
 app.use('/api/users/me', requireAuth);
 app.use('/api/users/me/*', requireAuth);
 app.route('/api/users/me', usersMeRoutes);
+
+// Workspace Notification Settings API (P2-E1: Slack/Chatwork送達)
+app.use('/api/workspace/notifications', requireAuth);
+app.use('/api/workspace/notifications/*', requireAuth);
+app.route('/api/workspace/notifications', workspaceNotificationsRoutes);
 
 // Calendar API (Phase Next-3 - Read-only calendar access)
 app.use('/api/calendar', requireAuth);

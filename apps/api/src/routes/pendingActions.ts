@@ -24,7 +24,11 @@ import { InboxRepository } from '../repositories/inboxRepository';
 import { ListsRepository } from '../repositories/listsRepository';
 import type { EmailJob } from '../services/emailQueue';
 import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
-import { generateSlotLabels } from '../utils/datetime';
+import { generateSlotLabels, formatDateTime } from '../utils/datetime';
+import { 
+  sendInviteNotification, 
+  sendAdditionalSlotsNotification 
+} from '../services/notificationService';
 
 type Variables = {
   userId?: string;
@@ -473,6 +477,18 @@ app.post('/:token/execute', async (c) => {
       console.log(`[Execute] Thread ${threadId} status updated to 'sent'`);
     }
 
+    // ====== P2-E1: Slack通知（並走・失敗しても本処理は落とさない） ======
+    try {
+      await sendInviteNotification(env.DB, workspaceId, {
+        inviterName: 'Tomoniwao',  // P2-E1: 現時点では固定値
+        threadTitle: threadTitle,
+        inviteUrl: `https://app.tomoniwao.jp/chat/${threadId}`,
+        recipientCount: batchResult.insertedIds.length,
+      });
+    } catch (slackError) {
+      console.error('[PendingActions] Slack notification error (ignored):', slackError);
+    }
+
     // ====== レスポンス ======
     return c.json({
       request_id: requestId,
@@ -719,6 +735,22 @@ async function executeAddSlots(
 
   // ====== (7) pending_action を executed に更新 ======
   await pendingRepo.markExecuted(pa.id, threadId);
+
+  // ====== P2-E1: Slack通知（並走・失敗しても本処理は落とさない） ======
+  // P2-E1: Slack通知用にスロットラベルを配列で生成（スレッドのタイムゾーン使用）
+  const slotLabelsForSlack = slots.slice(0, 5).map((s) => 
+    s.label || formatDateTime(s.start_at, threadTimeZone)
+  );
+  try {
+    await sendAdditionalSlotsNotification(env.DB, workspaceId, {
+      threadTitle: thread.title,
+      slotCount: slots.length,
+      slotLabels: slotLabelsForSlack,
+      notifyCount: recipients.length,
+    });
+  } catch (slackError) {
+    console.error('[PendingActions] Slack notification error (ignored):', slackError);
+  }
 
   // ====== (8) レスポンス ======
   return c.json({

@@ -10,6 +10,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/types/inbox';
 import { checkBillingGate } from '../utils/billingGate';
 import { getTenant } from '../utils/workspaceContext';
+import { sendReminderNotification } from '../services/notificationService';
 
 type Variables = {
   userId?: string;
@@ -286,6 +287,26 @@ app.post('/:id/remind', async (c) => {
       });
     }
     
+    // ====== P2-E1: Slack通知（並走・失敗しても本処理は落とさない） ======
+    if (results.length > 0) {
+      try {
+        // inviterName を取得
+        const inviterRow = await env.DB.prepare(
+          `SELECT display_name, email FROM users WHERE id = ?`
+        ).bind(userId).first<{ display_name: string | null; email: string }>();
+        const inviterName = inviterRow?.display_name || inviterRow?.email || 'Tomoniwao';
+        
+        await sendReminderNotification(env.DB, workspaceId, {
+          inviterName,
+          threadTitle: thread.title as string,
+          remindedCount: results.length,
+          reminderType: 'pending', // デフォルト
+        });
+      } catch (slackError) {
+        console.error('[ThreadsRemind] Slack notification error (ignored):', slackError);
+      }
+    }
+
     // ====== (7) Response ======
     const nextAvailable = new Date(Date.now() + 60 * 60 * 1000);
     
