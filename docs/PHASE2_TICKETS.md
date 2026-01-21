@@ -1148,7 +1148,7 @@ const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
 
 ## P2-E1: Slack/Chatwork送達 ⏳ 進行中
 
-**状態**: ⏳ 基盤実装完了（Slack対応）
+**状態**: ✅ Slack対応完了（Chatworkは次フェーズ）
 **優先度**: 高  
 **見積もり**: 5日  
 **開始日**: 2026-01-21
@@ -1222,7 +1222,7 @@ PUT  /api/workspace/notifications
 - [x] invite/additional_slots/reminder 実行時にSlack投稿
 - [x] slack_enabled=true なら投稿、false or 未設定なら無視
 - [x] 失敗しても本処理は落ちない（isolation）
-- [ ] フロントエンド設定画面
+- [x] フロントエンド設定画面
 - [ ] Chatwork対応（次フェーズ）
 
 ### 実装状況
@@ -1233,13 +1233,14 @@ PUT  /api/workspace/notifications
 - [x] notificationService（invite/additional_slots/reminder）
 - [x] pendingActions.ts 統合
 - [x] threadsRemind.ts 統合
-- [ ] フロントUI（設定画面）
-- [ ] E2Eテスト
+- [x] フロントUI（設定画面）
+- [ ] E2Eテスト（Webhook外部依存）
 
 ---
 
 ## 更新履歴
 
+- 2026-01-21: P2-E1 Slack送達フロントエンドUI完了（WorkspaceNotificationsPage）
 - 2026-01-21: P2-E1 Slack送達基盤実装完了（notificationService/slackClient/slackRenderer）
 - 2026-01-21: P3-INV1 共通ソース化 完了（emailModel.ts でテンプレとプレビュー一体化）
 - 2026-01-21: P3-INV1 B案 実装完了（メールプレビュー骨格ブロック: blocks形式でプレビュー表示）
