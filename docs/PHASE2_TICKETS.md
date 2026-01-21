@@ -1144,8 +1144,103 @@ const slotLabel = formatDateTimeForUser(slot.start_at, recipientTz);
 
 ---
 
+---
+
+## P2-E1: Slack/Chatwork送達 ⏳ 進行中
+
+**状態**: ⏳ 基盤実装完了（Slack対応）
+**優先度**: 高  
+**見積もり**: 5日  
+**開始日**: 2026-01-21
+
+### 背景
+- メール送信だけでは見落としリスクが高い
+- 主催者チーム内ではSlack/Chatworkでのリアルタイム通知が欲しい
+- 「誰に何を送ったか」をチャットで確認できると送信事故を防げる
+
+### アーキテクチャ
+```
+                                     ┌─────────────────┐
+                                     │  Slack Webhook  │
+                                     └────────┬────────┘
+                                              │
+┌──────────────┐    ┌──────────────────┐     │
+│ pendingActions│───▶│ notificationService│─────┤
+│ (execute)    │    │                   │     │
+└──────────────┘    │ sendInvite...()   │     │
+                    │ sendAddSlots...() │     │
+┌──────────────┐    │ sendReminder...() │     │
+│ threadsRemind│───▶│                   │─────┘
+│ (remind)     │    └──────────────────┘
+└──────────────┘            │
+                            │
+                     ┌──────▼──────┐
+                     │ slackRenderer│
+                     │ (EmailModel→│
+                     │  Slack Blocks)│
+                     └─────────────┘
+```
+
+### 送達イベント（MVP）
+| イベント | トリガー | 通知内容 |
+|----------|----------|----------|
+| invite | pendingActions execute (send_invites) | 「〇〇さんが日程調整を開始（N名に招待送信）」 |
+| additional_slots | pendingActions execute (add_slots) | 「「スレッド名」にN件の追加候補（M名に通知）」 |
+| reminder | threadsRemind | 「リマインドをN名に送信しました」 |
+
+### DB設計
+```sql
+-- db/migrations/0074_workspace_notification_settings.sql
+CREATE TABLE IF NOT EXISTS workspace_notification_settings (
+  workspace_id TEXT PRIMARY KEY,
+  slack_enabled INTEGER NOT NULL DEFAULT 0,
+  slack_webhook_url TEXT,
+  chatwork_enabled INTEGER NOT NULL DEFAULT 0,
+  chatwork_webhook_url TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### API
+```
+GET  /api/workspace/notifications
+PUT  /api/workspace/notifications
+```
+
+### 実装ファイル
+| ファイル | 役割 |
+|----------|------|
+| `workspaceNotificationSettingsRepository.ts` | DB操作 |
+| `workspaceNotifications.ts` | GET/PUT API |
+| `slackClient.ts` | Webhook送信 |
+| `slackRenderer.ts` | EmailModel → Slack Blocks変換 |
+| `notificationService.ts` | 一元管理（失敗してもメイン処理は落とさない） |
+
+### 完了条件（DoD）
+- [x] workspace単位でSlack webhook URL設定可能
+- [x] invite/additional_slots/reminder 実行時にSlack投稿
+- [x] slack_enabled=true なら投稿、false or 未設定なら無視
+- [x] 失敗しても本処理は落ちない（isolation）
+- [ ] フロントエンド設定画面
+- [ ] Chatwork対応（次フェーズ）
+
+### 実装状況
+- [x] DB Migration 0074
+- [x] Repository
+- [x] API Routes
+- [x] slackClient / slackRenderer
+- [x] notificationService（invite/additional_slots/reminder）
+- [x] pendingActions.ts 統合
+- [x] threadsRemind.ts 統合
+- [ ] フロントUI（設定画面）
+- [ ] E2Eテスト
+
+---
+
 ## 更新履歴
 
+- 2026-01-21: P2-E1 Slack送達基盤実装完了（notificationService/slackClient/slackRenderer）
 - 2026-01-21: P3-INV1 共通ソース化 完了（emailModel.ts でテンプレとプレビュー一体化）
 - 2026-01-21: P3-INV1 B案 実装完了（メールプレビュー骨格ブロック: blocks形式でプレビュー表示）
 - 2026-01-21: P2-D3 実装完了（確定後のやり直し・再調整機能、E2Eテスト追加）
