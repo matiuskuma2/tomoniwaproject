@@ -260,16 +260,47 @@ P0 Guardrails                  ✅ グリーン - テナント分離・Migration
 
 ---
 
-### 2026-01-20 P3-INV1 送信前プレビュー
+### 2026-01-20 P3-INV1 送信前プレビュー（旧版）
 
 | Commit | 変更内容 |
 |--------|----------|
 | `bfc9d27` | P3-INV1: prepare API に email_preview フィールド追加 |
 
-**追加情報:**
+**追加情報（旧）:**
 - subject: メール件名プレビュー
 - summary: メール内容の概要
 - note: 補足説明
+
+---
+
+### 2026-01-21 P3-INV1 B案: メールプレビュー骨格ブロック ✅ 完了
+
+| Commit | 変更内容 |
+|--------|----------|
+| `d80c131` | P3-INV1 B案: 骨格ブロック形式でメールプレビュー |
+
+**設計:**
+- `email_preview.blocks[]` で構造化データを返却
+- blocks の種類: `intro`, `cta`, `slots`, `notes`, `deadline`, `footer`, `custom_message`
+- テンプレート変更があっても概念ブロックを守れば崩れない
+
+**実装ファイル:**
+- `apps/api/src/utils/emailPreview.ts` - 型定義 + 生成関数
+- `apps/api/src/routes/threads.ts` - prepare-send/invites/prepare/proposals/prepare
+- `frontend/src/core/api/pendingActions.ts` - EmailPreview 型
+- `frontend/src/core/chat/apiExecutor.ts` - buildPrepareMessage() blocks 対応
+
+**表示例:**
+```
+📬 送信されるメール内容:
+📌 件名: 【日程調整】山田さんより「週次ミーティング」のご依頼
+
+📝 山田 さんより、「週次ミーティング」の日程調整依頼が届きました。
+📋 候補日時から、ご都合の良い日をお選びください。
+
+🔘 ボタン: [日程を回答する]
+⏰ リンク有効期限: 72時間
+```
 
 ---
 
