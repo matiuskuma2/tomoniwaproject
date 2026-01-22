@@ -25,6 +25,9 @@ export default function WorkspaceNotificationsPage() {
   // Validation state
   const [urlError, setUrlError] = useState<string | null>(null);
 
+  // Setup guide state
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -34,7 +37,6 @@ export default function WorkspaceNotificationsPage() {
       const data = await workspaceNotificationsApi.get();
       setSettings(data);
       setSlackEnabled(data.slack_enabled);
-      // webhook URL は保存済みでも返却されない（セキュリティ）
     } catch (err) {
       console.error('[WorkspaceNotifications] Failed to load settings:', err);
       setMessage({ type: 'error', text: '設定の読み込みに失敗しました' });
@@ -46,10 +48,10 @@ export default function WorkspaceNotificationsPage() {
   const validateWebhookUrl = (url: string): boolean => {
     if (!url) {
       setUrlError(null);
-      return true; // 空は許可（OFFにする場合）
+      return true;
     }
     if (!url.startsWith('https://hooks.slack.com/services/')) {
-      setUrlError('Slack Incoming Webhook URLは https://hooks.slack.com/services/ で始まる必要があります');
+      setUrlError('URLは https://hooks.slack.com/services/ で始まる必要があります');
       return false;
     }
     setUrlError(null);
@@ -71,18 +73,13 @@ export default function WorkspaceNotificationsPage() {
   };
 
   const canSave = (): boolean => {
-    // OFF → 常に保存可能
     if (!slackEnabled) return true;
-    // ON + 設定済み + URL未入力 → 保存可能（既存設定を維持）
     if (settings?.slack_webhook_configured && !slackWebhookUrl) return true;
-    // ON + URL入力あり + バリデーションOK → 保存可能
     if (slackWebhookUrl && !urlError) return true;
-    // ON + 未設定 + URL未入力 → 保存不可
     return false;
   };
 
   const handleSave = async () => {
-    // 追加バリデーション
     if (slackEnabled && !settings?.slack_webhook_configured && !slackWebhookUrl) {
       setUrlError('Slack通知を有効にするにはWebhook URLを入力してください');
       return;
@@ -97,18 +94,16 @@ export default function WorkspaceNotificationsPage() {
     try {
       const response = await workspaceNotificationsApi.updateSlack({
         enabled: slackEnabled,
-        // 空文字の場合は undefined（URL変更なし）
         webhook_url: slackWebhookUrl || undefined,
       });
 
       if (response.success) {
-        // 設定状態を更新
         setSettings(prev => prev ? {
           ...prev,
           slack_enabled: response.slack_enabled,
           slack_webhook_configured: response.slack_webhook_configured,
         } : null);
-        setSlackWebhookUrl(''); // 保存後はクリア
+        setSlackWebhookUrl('');
         setMessage({ type: 'success', text: '✅ 設定を保存しました' });
       } else {
         setMessage({ type: 'error', text: response.error || '保存に失敗しました' });
@@ -181,23 +176,20 @@ export default function WorkspaceNotificationsPage() {
               <h2 className="text-base font-semibold text-gray-900">Slack通知</h2>
             </div>
             
-            {/* Toggle Switch */}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={slackEnabled}
-              data-testid="slack-enabled-toggle"
-              onClick={() => handleSlackEnabledChange(!slackEnabled)}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
-                slackEnabled ? 'bg-emerald-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  slackEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
+            {/* Toggle Switch - 改善版 */}
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={slackEnabled}
+                onChange={(e) => handleSlackEnabledChange(e.target.checked)}
+                className="sr-only peer"
+                data-testid="slack-enabled-toggle"
               />
-            </button>
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                {slackEnabled ? 'ON' : 'OFF'}
+              </span>
+            </label>
           </div>
 
           <p className="text-sm text-gray-500 mb-4">
@@ -212,31 +204,119 @@ export default function WorkspaceNotificationsPage() {
                 ✅ 設定済み
               </span>
             ) : (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                未設定
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                ⚠️ 未設定
               </span>
             )}
           </div>
 
+          {/* Setup Guide Toggle */}
+          <button
+            onClick={() => setShowSetupGuide(!showSetupGuide)}
+            className="w-full text-left mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-lg mr-2">📖</span>
+                <span className="text-sm font-medium text-blue-800">
+                  Webhook URLの取得方法（クリックで{showSetupGuide ? '閉じる' : '開く'}）
+                </span>
+              </div>
+              <svg 
+                className={`w-5 h-5 text-blue-600 transition-transform ${showSetupGuide ? 'rotate-180' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </button>
+
+          {/* Setup Guide Content */}
+          {showSetupGuide && (
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">🔧 Slack Webhook URLの取得手順</h3>
+              
+              <div className="space-y-4 text-sm text-gray-700">
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">1</span>
+                  <div>
+                    <p className="font-medium">Slack APIページを開く</p>
+                    <a 
+                      href="https://api.slack.com/apps" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-emerald-600 hover:underline"
+                    >
+                      https://api.slack.com/apps →
+                    </a>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">2</span>
+                  <div>
+                    <p className="font-medium">「Create New App」をクリック</p>
+                    <p className="text-gray-500">→ 「From scratch」を選択 → アプリ名とワークスペースを選択</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">3</span>
+                  <div>
+                    <p className="font-medium">左メニューから「Incoming Webhooks」をクリック</p>
+                    <p className="text-gray-500">→ 右上のスイッチを「On」に変更</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">4</span>
+                  <div>
+                    <p className="font-medium">「Add New Webhook to Workspace」をクリック</p>
+                    <p className="text-gray-500">→ 通知を送信したいチャンネルを選択 → 「許可する」</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">5</span>
+                  <div>
+                    <p className="font-medium">Webhook URLをコピー</p>
+                    <p className="text-gray-500">「Webhook URL」欄に表示されるURLをコピーして、下の入力欄に貼り付け</p>
+                    <code className="block mt-1 p-2 bg-gray-100 rounded text-xs break-all">
+                      https://hooks.slack.com/services/T.../B.../xxx...
+                    </code>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-4 p-3 bg-yellow-50 rounded border border-yellow-200">
+                <p className="text-xs text-yellow-800">
+                  <strong>⚠️ 注意:</strong> Webhook URLは秘密情報です。他の人と共有しないでください。
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Webhook URL Input */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Incoming Webhook URL
+              Webhook URL
               {settings?.slack_webhook_configured && (
                 <span className="text-xs text-gray-500 ml-2">（変更する場合のみ入力）</span>
               )}
             </label>
             <input
-              type="password"
+              type="text"
               data-testid="slack-webhook-input"
               value={slackWebhookUrl}
               onChange={(e) => handleWebhookUrlChange(e.target.value)}
               placeholder={
                 settings?.slack_webhook_configured 
-                  ? '••••••••（変更する場合は新しいURLを入力）' 
+                  ? '設定済み（変更する場合は新しいURLを入力）' 
                   : 'https://hooks.slack.com/services/...'
               }
-              className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 ${
+              className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 text-sm ${
                 urlError 
                   ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
                   : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'
@@ -247,36 +327,23 @@ export default function WorkspaceNotificationsPage() {
             )}
           </div>
 
-          {/* Help Link */}
-          <div className="mb-4">
-            <a
-              href="https://api.slack.com/messaging/webhooks"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-emerald-600 hover:text-emerald-700 hover:underline"
-            >
-              📖 Slack Incoming Webhookの設定方法 →
-            </a>
-          </div>
-
           {/* Action Buttons */}
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             <button
               onClick={handleSave}
               disabled={saving || !canSave()}
               data-testid="slack-save-button"
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {saving ? '保存中...' : '保存'}
+              {saving ? '保存中...' : '💾 保存'}
             </button>
 
-            {/* Test Button - 設定済みの場合のみ表示 */}
             {settings?.slack_webhook_configured && (
               <button
                 onClick={handleTest}
                 disabled={testing || saving}
                 data-testid="slack-test-button"
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-5 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {testing ? 'テスト中...' : '🔔 テスト送信'}
               </button>
@@ -285,9 +352,13 @@ export default function WorkspaceNotificationsPage() {
 
           {/* Message */}
           {message && (
-            <p className={`text-sm ${message.type === 'success' ? 'text-emerald-600' : 'text-red-600'}`}>
+            <div className={`p-3 rounded-lg text-sm ${
+              message.type === 'success' 
+                ? 'bg-green-50 text-green-800 border border-green-200' 
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}>
               {message.text}
-            </p>
+            </div>
           )}
         </div>
 
