@@ -73,10 +73,20 @@ export default function WorkspaceNotificationsPage() {
   };
 
   const canSave = (): boolean => {
-    if (!slackEnabled) return true;
-    if (settings?.slack_webhook_configured && !slackWebhookUrl) return true;
-    if (slackWebhookUrl && !urlError) return true;
-    return false;
+    // 変更があるかどうかをチェック
+    const enabledChanged = slackEnabled !== settings?.slack_enabled;
+    const urlEntered = slackWebhookUrl.length > 0;
+    
+    // 変更がない場合は保存不可
+    if (!enabledChanged && !urlEntered) return false;
+    
+    // ON にする場合、URLが必要（既存設定がない場合）
+    if (slackEnabled && !settings?.slack_webhook_configured && !urlEntered) return false;
+    
+    // URL入力がある場合、バリデーションエラーがないこと
+    if (urlEntered && urlError) return false;
+    
+    return true;
   };
 
   const handleSave = async () => {
