@@ -258,7 +258,8 @@ export default function WorkspaceNotificationsPage() {
                   <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">2</span>
                   <div>
                     <p className="font-medium">「Create New App」をクリック</p>
-                    <p className="text-gray-500">→ 「From scratch」を選択 → アプリ名とワークスペースを選択</p>
+                    <p className="text-gray-500">→ <strong>「From scratch」を選択</strong>（※「From manifest」ではありません）</p>
+                    <p className="text-gray-500">→ アプリ名（例：Tomoniwao通知）とワークスペースを選択して「Create App」</p>
                   </div>
                 </div>
                 
@@ -266,7 +267,7 @@ export default function WorkspaceNotificationsPage() {
                   <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">3</span>
                   <div>
                     <p className="font-medium">左メニューから「Incoming Webhooks」をクリック</p>
-                    <p className="text-gray-500">→ 右上のスイッチを「On」に変更</p>
+                    <p className="text-gray-500">→ 右上の「Activate Incoming Webhooks」スイッチを <strong>On（緑色）</strong> に変更</p>
                   </div>
                 </div>
                 
@@ -274,7 +275,7 @@ export default function WorkspaceNotificationsPage() {
                   <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">4</span>
                   <div>
                     <p className="font-medium">「Add New Webhook to Workspace」をクリック</p>
-                    <p className="text-gray-500">→ 通知を送信したいチャンネルを選択 → 「許可する」</p>
+                    <p className="text-gray-500">→ 通知を送信したいチャンネルを選択 → 「許可する（Allow）」</p>
                   </div>
                 </div>
                 
@@ -282,7 +283,7 @@ export default function WorkspaceNotificationsPage() {
                   <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">5</span>
                   <div>
                     <p className="font-medium">Webhook URLをコピー</p>
-                    <p className="text-gray-500">「Webhook URL」欄に表示されるURLをコピーして、下の入力欄に貼り付け</p>
+                    <p className="text-gray-500">ページ下部の「Webhook URLs for Your Workspace」に表示されるURLの「Copy」ボタンをクリック</p>
                     <code className="block mt-1 p-2 bg-gray-100 rounded text-xs break-all">
                       https://hooks.slack.com/services/T.../B.../xxx...
                     </code>
@@ -290,10 +291,27 @@ export default function WorkspaceNotificationsPage() {
                 </div>
               </div>
               
-              <div className="mt-4 p-3 bg-yellow-50 rounded border border-yellow-200">
-                <p className="text-xs text-yellow-800">
-                  <strong>⚠️ 注意:</strong> Webhook URLは秘密情報です。他の人と共有しないでください。
-                </p>
+              {/* 重要な注意事項 */}
+              <div className="mt-4 space-y-2">
+                <div className="p-3 bg-red-50 rounded border border-red-200">
+                  <p className="text-xs text-red-800">
+                    <strong>🚨 「Please contact an administrator」と表示される場合</strong>
+                  </p>
+                  <p className="text-xs text-red-700 mt-1">
+                    Slackワークスペースの管理者権限が必要です。以下のいずれかで解決できます：
+                  </p>
+                  <ul className="text-xs text-red-700 mt-1 ml-4 list-disc">
+                    <li>ワークスペースの管理者にアプリのインストール許可を依頼</li>
+                    <li>自分が管理者のワークスペースを使用する</li>
+                    <li>テスト用に新しいワークスペースを作成（<a href="https://slack.com/create" target="_blank" rel="noopener noreferrer" className="underline">slack.com/create</a>）</li>
+                  </ul>
+                </div>
+                
+                <div className="p-3 bg-yellow-50 rounded border border-yellow-200">
+                  <p className="text-xs text-yellow-800">
+                    <strong>⚠️ セキュリティ注意:</strong> Webhook URLは秘密情報です。他の人と共有しないでください。
+                  </p>
+                </div>
               </div>
             </div>
           )}
