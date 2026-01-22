@@ -1238,8 +1238,81 @@ PUT  /api/workspace/notifications
 
 ---
 
+---
+
+## P2-E2: SMS/Twilio送達 ⏳ 準備中
+
+**状態**: 🔧 基盤準備完了（Twilio設定待ち）
+**優先度**: 高  
+**見積もり**: 3日  
+**開始日**: 2026-01-22
+
+### 背景
+- メール・Slackは主催者側の通知であり、招待された側が気づかないリスクあり
+- LINEは公式アカウント経由のため個別送信が困難
+- SMSは電話番号があれば確実に届く（開封率が高い）
+
+### MVP（最小実装）
+1. **招待送信時のSMS送信**
+   - send_invites 実行時にメールと同時にSMSも送信
+   - workspaceごとに sms_enabled=true の場合のみ
+   - 招待者に電話番号（phone）がある場合のみ
+
+### 将来的拡張
+- 未返信者へのSMSリマインド（回数制限付き）
+- 追加候補通知のSMS
+
+### DB設計
+```sql
+-- 0075: thread_invites に phone 追加
+ALTER TABLE thread_invites ADD COLUMN phone TEXT;
+CREATE INDEX idx_thread_invites_phone ON thread_invites(phone);
+
+-- 0076: workspace_notification_settings に SMS 設定追加
+ALTER TABLE workspace_notification_settings ADD COLUMN sms_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE workspace_notification_settings ADD COLUMN sms_from TEXT;
+
+-- 0077: contacts に phone 追加
+ALTER TABLE contacts ADD COLUMN phone TEXT;
+CREATE INDEX idx_contacts_phone ON contacts(phone);
+```
+
+### 実装ファイル
+| ファイル | 役割 | 状態 |
+|----------|------|------|
+| `smsClient.ts` | Twilio SMS送信 | ✅ 完了 |
+| `notificationService.ts` | sendInviteSmsNotification | ✅ 完了 |
+| `workspaceNotificationSettingsRepository.ts` | SMS設定get/update | ✅ 完了 |
+| `workspaceNotifications.ts` | PUT /api/workspace/notifications/sms | ✅ 完了 |
+| `pendingActions.ts` | send_invites時SMS送信フック | ✅ 完了 |
+| `WorkspaceNotificationsPage.tsx` | SMSセクションUI | ✅ 完了（準備中表示） |
+
+### 環境変数（サーバー側）
+```
+TWILIO_ACCOUNT_SID   # Twilioアカウント
+TWILIO_AUTH_TOKEN    # Twilio認証トークン
+TWILIO_FROM_NUMBER   # 送信元電話番号
+```
+
+### 完了条件（DoD）
+- [x] thread_invites.phone カラム追加
+- [x] contacts.phone カラム追加
+- [x] workspace_notification_settings にSMS設定追加
+- [x] smsClient.ts (sendSms関数)
+- [x] notificationService.ts (sendInviteSmsNotification)
+- [x] PUT /api/workspace/notifications/sms
+- [x] pendingActions.ts でSMS送信フック
+- [x] フロントUI（準備中表示）
+- [ ] Twilio認証情報設定
+- [ ] 招待作成時のphone入力UI
+- [ ] contacts連携での電話番号取得
+
+---
+
 ## 更新履歴
 
+- 2026-01-22: P2-E2 SMS通知基盤準備完了（DB/API/UI）
+- 2026-01-22: P2-E1 Slack送達完了（本番デプロイ・検証済み）
 - 2026-01-21: P2-E1 Slack送達フロントエンドUI完了（WorkspaceNotificationsPage）
 - 2026-01-21: P2-E1 Slack送達基盤実装完了（notificationService/slackClient/slackRenderer）
 - 2026-01-21: P3-INV1 共通ソース化 完了（emailModel.ts でテンプレとプレビュー一体化）
