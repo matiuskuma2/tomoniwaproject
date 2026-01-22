@@ -1,15 +1,17 @@
 /**
  * Notification Service
  * P2-E1: Slack/Chatwork送達の一元管理
+ * P2-E2: SMS通知（Twilio）
  * 
  * 機能:
- * - Email/Slack/Chatwork への通知を一元化
+ * - Email/Slack/Chatwork/SMS への通知を一元化
  * - workspace設定に基づいて自動的にチャネルを選択
  * - 失敗しても本処理は落とさない（isolation）
  */
 
 import { WorkspaceNotificationSettingsRepository } from '../repositories/workspaceNotificationSettingsRepository';
 import { sendSlackWebhook } from './slackClient';
+import { sendSms, normalizePhoneE164 } from './smsClient';
 import { renderSlackPayload, renderSlackText } from './slackRenderer';
 import { 
   composeInviteEmailModel, 
@@ -27,6 +29,11 @@ export interface NotificationResult {
   };
   chatwork?: {
     success: boolean;
+    error?: string;
+  };
+  sms?: {
+    success: boolean;
+    messageSid?: string;
     error?: string;
   };
 }
@@ -223,4 +230,107 @@ export async function sendNotificationFromModel(
   }
 
   return result;
+}
+
+// ============================================================
+// P2-E2: SMS通知（Twilio）
+// ============================================================
+
+export interface SmsEnv {
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+}
+
+/**
+ * 招待SMS送信（個別送信）
+ * 
+ * @param db - D1Database
+ * @param workspaceId - ワークスペースID
+ * @param env - 環境変数（Twilio認証情報）
+ * @param params - 送信パラメータ
+ */
+export async function sendInviteSms(
+  db: D1Database,
+  workspaceId: string,
+  env: SmsEnv,
+  params: {
+    phone: string;       // 送信先電話番号
+    inviterName: string;
+    threadTitle: string;
+    inviteUrl: string;
+  }
+): Promise<NotificationResult> {
+  const result: NotificationResult = {};
+
+  try {
+    // Twilio認証情報チェック
+    if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) {
+      console.log('[NotificationService] Twilio credentials not configured, skipping SMS');
+      return result;
+    }
+
+    // workspace設定を取得
+    const repo = new WorkspaceNotificationSettingsRepository(db);
+    const settings = await repo.get(workspaceId);
+
+    // SMS無効 or 送信元番号未設定
+    if (!settings?.sms_enabled || !settings.sms_from_number) {
+      console.log('[NotificationService] SMS not enabled for workspace, skipping');
+      return result;
+    }
+
+    // 電話番号をE.164形式に正規化
+    const normalizedPhone = normalizePhoneE164(params.phone);
+    if (!normalizedPhone) {
+      console.warn(`[NotificationService] Invalid phone number: ${params.phone}`);
+      result.sms = { success: false, error: 'Invalid phone number format' };
+      return result;
+    }
+
+    // SMSメッセージ作成（70文字/セグメントなので簡潔に）
+    const message = `【Tomoniwao】${params.inviterName}さんから「${params.threadTitle}」の日程調整依頼が届きました。\n${params.inviteUrl}`;
+
+    // SMS送信
+    const smsResult = await sendSms(
+      env.TWILIO_ACCOUNT_SID,
+      env.TWILIO_AUTH_TOKEN,
+      {
+        to: normalizedPhone,
+        from: settings.sms_from_number,
+        body: message,
+      }
+    );
+
+    result.sms = {
+      success: smsResult.success,
+      messageSid: smsResult.messageSid,
+      error: smsResult.error,
+    };
+
+    console.log(`[NotificationService] SMS invite: ${smsResult.success ? 'success' : 'failed'} to ${normalizedPhone}`);
+
+  } catch (error) {
+    console.error('[NotificationService] Error sending SMS:', error);
+    result.sms = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+
+  return result;
+}
+
+/**
+ * SMS送信可能かチェック
+ */
+export async function canSendSms(
+  db: D1Database,
+  workspaceId: string,
+  env: SmsEnv
+): Promise<boolean> {
+  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN) {
+    return false;
+  }
+
+  const repo = new WorkspaceNotificationSettingsRepository(db);
+  const settings = await repo.get(workspaceId);
+
+  return !!(settings?.sms_enabled && settings.sms_from_number);
 }

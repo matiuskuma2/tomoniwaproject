@@ -47,15 +47,21 @@ workspaceNotifications.get('/', async (c) => {
       slack_webhook_configured: false,
       chatwork_enabled: false,
       chatwork_configured: false,
+      // P2-E2: SMS
+      sms_enabled: false,
+      sms_configured: false,
     });
   }
 
-  // webhook URL自体は返さない（漏洩防止）
+  // webhook URL / API Token 自体は返さない（漏洩防止）
   return c.json({
     slack_enabled: settings.slack_enabled,
     slack_webhook_configured: settings.slack_webhook_url !== null,
     chatwork_enabled: settings.chatwork_enabled,
     chatwork_configured: settings.chatwork_api_token !== null && settings.chatwork_room_id !== null,
+    // P2-E2: SMS
+    sms_enabled: settings.sms_enabled,
+    sms_configured: settings.sms_from_number !== null,
   });
 });
 
@@ -254,6 +260,82 @@ workspaceNotifications.post('/slack/test', async (c) => {
       success: false, 
       error: 'Failed to send test message' 
     }, 500);
+  }
+});
+
+// ============================================================
+// PUT /api/workspace/notifications/sms
+// SMS設定を更新
+// P2-E2
+// ============================================================
+workspaceNotifications.put('/sms', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const workspaceId = c.get('workspaceId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (!workspaceId) {
+    return c.json({ error: 'Workspace not found' }, 404);
+  }
+
+  let body: { enabled?: boolean; from_number?: string | null };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  // バリデーション
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400);
+  }
+
+  // from_number のバリデーション（E.164形式）
+  if (body.from_number !== undefined && body.from_number !== null) {
+    if (typeof body.from_number !== 'string') {
+      return c.json({ error: 'from_number must be a string or null' }, 400);
+    }
+    // E.164形式チェック（+始まり、10-15桁）
+    if (!/^\+[1-9]\d{9,14}$/.test(body.from_number)) {
+      return c.json({ 
+        error: 'from_number must be in E.164 format (e.g., +81901234567)' 
+      }, 400);
+    }
+  }
+
+  // enabled=true だが from_number がない場合はエラー
+  if (body.enabled && !body.from_number) {
+    const repo = new WorkspaceNotificationSettingsRepository(env.DB);
+    const existing = await repo.get(workspaceId);
+    if (!existing?.sms_from_number) {
+      return c.json({ 
+        error: 'from_number is required when enabling SMS notifications' 
+      }, 400);
+    }
+  }
+
+  const repo = new WorkspaceNotificationSettingsRepository(env.DB);
+  
+  try {
+    await repo.updateSmsSettings({
+      workspaceId,
+      enabled: body.enabled,
+      fromNumber: body.from_number !== undefined ? body.from_number : null,
+    });
+
+    console.log(`[WorkspaceNotifications] SMS settings updated for workspace ${workspaceId}: enabled=${body.enabled}`);
+
+    return c.json({ 
+      success: true,
+      sms_enabled: body.enabled,
+      sms_configured: body.from_number !== null && body.from_number !== undefined,
+    });
+  } catch (error) {
+    console.error('[WorkspaceNotifications] Error updating SMS settings:', error);
+    return c.json({ error: 'Failed to update SMS settings' }, 500);
   }
 });
 

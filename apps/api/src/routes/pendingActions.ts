@@ -27,7 +27,9 @@ import { THREAD_STATUS } from '../../../../packages/shared/src/types/thread';
 import { generateSlotLabels, formatDateTime } from '../utils/datetime';
 import { 
   sendInviteNotification, 
-  sendAdditionalSlotsNotification 
+  sendAdditionalSlotsNotification,
+  sendInviteSms,
+  canSendSms,
 } from '../services/notificationService';
 
 type Variables = {
@@ -398,6 +400,26 @@ app.post('/:token/execute', async (c) => {
       queueJobId?: string;
     }> = [];
 
+    // P2-E2: SMS送信可能かチェック（ループ外で1回だけ）
+    const smsEnabled = await canSendSms(env.DB, workspaceId, env);
+    let smsSentCount = 0;
+
+    // P2-E2: contacts から phone を一括取得（email → phone マップ）
+    const emailPhoneMap = new Map<string, string>();
+    if (smsEnabled && invites.length > 0) {
+      const emailList = invites.map(i => i.email.toLowerCase());
+      const placeholders = emailList.map(() => '?').join(',');
+      const phoneRows = await env.DB.prepare(
+        `SELECT LOWER(email) as email, phone FROM contacts 
+         WHERE workspace_id = ? AND LOWER(email) IN (${placeholders}) AND phone IS NOT NULL`
+      ).bind(workspaceId, ...emailList).all<{ email: string; phone: string }>();
+      
+      for (const row of phoneRows.results || []) {
+        emailPhoneMap.set(row.email, row.phone);
+      }
+      console.log(`[Execute] Found ${emailPhoneMap.size} phone numbers for SMS`);
+    }
+
     for (const invite of invites) {
       const appUser = appUserMap.get(invite.email.toLowerCase());
       const inviteUrl = `https://${host}/i/${invite.token}`;
@@ -421,6 +443,24 @@ app.post('/:token/execute', async (c) => {
 
       await env.EMAIL_QUEUE.send(emailJob);
       emailQueuedCount++;
+
+      // P2-E2: SMS送信（phone があれば）
+      const phone = emailPhoneMap.get(invite.email.toLowerCase());
+      if (smsEnabled && phone) {
+        try {
+          const smsResult = await sendInviteSms(env.DB, workspaceId, env, {
+            phone,
+            inviterName: 'Tomoniwao',
+            threadTitle,
+            inviteUrl,
+          });
+          if (smsResult.sms?.success) {
+            smsSentCount++;
+          }
+        } catch (smsError) {
+          console.error('[Execute] SMS send error (ignored):', smsError);
+        }
+      }
 
       deliveryRecords.push({
         workspaceId,
@@ -501,9 +541,10 @@ app.post('/:token/execute', async (c) => {
         deliveries: {
           email_queued: emailQueuedCount,
           in_app_created: inAppCreatedCount,
+          sms_sent: smsSentCount,  // P2-E2
         },
       },
-      message_for_chat: `${batchResult.insertedIds.length}名に招待を送信しました。`,
+      message_for_chat: `${batchResult.insertedIds.length}名に招待を送信しました。${smsSentCount > 0 ? `（SMS: ${smsSentCount}件）` : ''}`,
     });
 
   } catch (error) {

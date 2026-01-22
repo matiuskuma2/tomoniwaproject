@@ -390,11 +390,59 @@ export default function WorkspaceNotificationsPage() {
           )}
         </div>
 
+        {/* SMS Settings Card (P2-E2) */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <span className="text-2xl mr-2">📲</span>
+              <h2 className="text-base font-semibold text-gray-900">SMS通知</h2>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+              準備中 (要Twilio設定)
+            </span>
+          </div>
+          
+          <p className="text-sm text-gray-500 mb-4">
+            招待送信時に、招待者の電話番号宛にSMS通知を送信します。
+          </p>
+
+          {/* Status Badge */}
+          <div className="flex items-center mb-4">
+            <span className="text-sm text-gray-600 mr-2">ステータス:</span>
+            {settings?.sms_configured ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                ✅ 設定済み
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                ⚠️ 未設定
+              </span>
+            )}
+          </div>
+
+          {/* SMS Setup Info */}
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 mb-4">
+            <p className="text-sm text-amber-800">
+              <strong>📋 SMS送信に必要なもの:</strong>
+            </p>
+            <ul className="text-sm text-amber-700 mt-2 ml-4 list-disc">
+              <li>Twilioアカウント（<a href="https://www.twilio.com" target="_blank" rel="noopener noreferrer" className="text-amber-900 underline">twilio.com</a>）</li>
+              <li>Account SID と Auth Token（サーバー側で設定）</li>
+              <li>送信元電話番号（Twilio番号）</li>
+              <li>招待者の電話番号（招待作成時に入力）</li>
+            </ul>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            ※ SMS通知機能は次のアップデートで有効化予定です。現時点ではUI準備のみです。
+          </p>
+        </div>
+
         {/* Chatwork Card (Coming Soon) */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 opacity-60">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center">
-              <span className="text-2xl mr-2">📱</span>
+              <span className="text-2xl mr-2">💼</span>
               <h2 className="text-base font-semibold text-gray-900">Chatwork通知</h2>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">

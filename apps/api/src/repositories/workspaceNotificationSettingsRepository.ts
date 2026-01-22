@@ -1,8 +1,9 @@
 /**
  * Workspace Notification Settings Repository
  * P2-E1: Slack/Chatwork送達
+ * P2-E2: SMS通知（Twilio）
  * 
- * workspace単位で通知チャネル設定（Slack/Chatwork）を管理
+ * workspace単位で通知チャネル設定（Slack/Chatwork/SMS）を管理
  */
 
 // ====== Types ======
@@ -14,6 +15,9 @@ export interface WorkspaceNotificationSettings {
   chatwork_enabled: boolean;
   chatwork_api_token: string | null;
   chatwork_room_id: string | null;
+  // P2-E2: SMS
+  sms_enabled: boolean;
+  sms_from_number: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,6 +29,9 @@ export interface WorkspaceNotificationSettingsRow {
   chatwork_enabled: number;  // SQLite boolean
   chatwork_api_token: string | null;
   chatwork_room_id: string | null;
+  // P2-E2: SMS
+  sms_enabled: number;  // SQLite boolean
+  sms_from_number: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +70,9 @@ export class WorkspaceNotificationSettingsRepository {
     chatworkEnabled?: boolean;
     chatworkApiToken?: string | null;
     chatworkRoomId?: string | null;
+    // P2-E2: SMS
+    smsEnabled?: boolean;
+    smsFromNumber?: string | null;
   }): Promise<WorkspaceNotificationSettings> {
     const now = new Date().toISOString();
     
@@ -94,6 +104,15 @@ export class WorkspaceNotificationSettingsRepository {
         updates.push('chatwork_room_id = ?');
         binds.push(args.chatworkRoomId);
       }
+      // P2-E2: SMS
+      if (args.smsEnabled !== undefined) {
+        updates.push('sms_enabled = ?');
+        binds.push(args.smsEnabled ? 1 : 0);
+      }
+      if (args.smsFromNumber !== undefined) {
+        updates.push('sms_from_number = ?');
+        binds.push(args.smsFromNumber);
+      }
 
       updates.push('updated_at = ?');
       binds.push(now);
@@ -112,8 +131,8 @@ export class WorkspaceNotificationSettingsRepository {
       await this.db
         .prepare(
           `INSERT INTO workspace_notification_settings 
-           (workspace_id, slack_enabled, slack_webhook_url, chatwork_enabled, chatwork_api_token, chatwork_room_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           (workspace_id, slack_enabled, slack_webhook_url, chatwork_enabled, chatwork_api_token, chatwork_room_id, sms_enabled, sms_from_number, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           args.workspaceId,
@@ -122,6 +141,8 @@ export class WorkspaceNotificationSettingsRepository {
           args.chatworkEnabled ? 1 : 0,
           args.chatworkApiToken ?? null,
           args.chatworkRoomId ?? null,
+          args.smsEnabled ? 1 : 0,
+          args.smsFromNumber ?? null,
           now,
           now
         )
@@ -197,8 +218,35 @@ export class WorkspaceNotificationSettingsRepository {
       chatwork_enabled: row.chatwork_enabled === 1,
       chatwork_api_token: row.chatwork_api_token,
       chatwork_room_id: row.chatwork_room_id,
+      // P2-E2: SMS
+      sms_enabled: row.sms_enabled === 1,
+      sms_from_number: row.sms_from_number,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
+  }
+
+  /**
+   * SMS設定のみを更新
+   * P2-E2
+   */
+  async updateSmsSettings(args: {
+    workspaceId: string;
+    enabled: boolean;
+    fromNumber: string | null;
+  }): Promise<WorkspaceNotificationSettings> {
+    return this.upsert({
+      workspaceId: args.workspaceId,
+      smsEnabled: args.enabled,
+      smsFromNumber: args.fromNumber,
+    });
+  }
+
+  /**
+   * SMSが有効かつ送信元番号が設定されているか
+   */
+  async isSmsConfigured(workspaceId: string): Promise<boolean> {
+    const settings = await this.get(workspaceId);
+    return settings !== null && settings.sms_enabled && settings.sms_from_number !== null;
   }
 }

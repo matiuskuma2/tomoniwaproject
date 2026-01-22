@@ -14,6 +14,10 @@ export interface WorkspaceNotificationSettings {
   slack_webhook_configured: boolean;
   chatwork_enabled: boolean;
   chatwork_configured: boolean;
+  // P2-E2: SMS settings
+  sms_enabled: boolean;
+  sms_configured: boolean;
+  sms_from?: string;
 }
 
 export interface UpdateSlackSettingsRequest {
@@ -31,6 +35,20 @@ export interface UpdateSlackSettingsResponse {
 export interface TestSlackResponse {
   success: boolean;
   message?: string;
+  error?: string;
+}
+
+// P2-E2: SMS Settings
+export interface UpdateSmsSettingsRequest {
+  enabled: boolean;
+  from_number?: string | null;
+}
+
+export interface UpdateSmsSettingsResponse {
+  success: boolean;
+  sms_enabled: boolean;
+  sms_configured: boolean;
+  sms_from?: string;
   error?: string;
 }
 
@@ -66,6 +84,20 @@ export async function testSlackConnection(): Promise<TestSlackResponse> {
   return api.post<TestSlackResponse>('/api/workspace/notifications/slack/test');
 }
 
+/**
+ * SMS設定を更新
+ * 注意: Twilio SID/Token はサーバー側の環境変数で管理
+ * @param data - enabled と from_number（送信元番号）
+ */
+export async function updateSmsSettings(
+  data: UpdateSmsSettingsRequest
+): Promise<UpdateSmsSettingsResponse> {
+  return api.put<UpdateSmsSettingsResponse>(
+    '/api/workspace/notifications/sms',
+    data
+  );
+}
+
 // ============================================================
 // Export as namespace
 // ============================================================
@@ -74,4 +106,5 @@ export const workspaceNotificationsApi = {
   get: getWorkspaceNotifications,
   updateSlack: updateSlackSettings,
   testSlack: testSlackConnection,
+  updateSms: updateSmsSettings,
 };

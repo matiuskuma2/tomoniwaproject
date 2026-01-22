@@ -32,4 +32,8 @@ export interface Env {
   GEMINI_API_KEY?: string;
   OPENAI_API_KEY?: string;
   RESEND_API_KEY?: string;
+  
+  // P2-E2: Twilio SMS
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
 }
