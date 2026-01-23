@@ -66,4 +66,18 @@ export const contactsApi = {
   async delete(contactId: string): Promise<{ success: boolean }> {
     return api.delete(`/api/contacts/${contactId}`);
   },
+
+  /**
+   * P2-E2: Upsert contact by email (for SMS phone number)
+   * - Creates new contact if not exists
+   * - Updates phone if contact exists
+   * @param data - email and phone (E.164 format)
+   */
+  async upsertByEmail(data: {
+    email: string;
+    phone: string;
+    display_name?: string;
+  }): Promise<{ success: boolean; contact: { id: string; email: string; phone: string } }> {
+    return api.post('/api/contacts/upsert', data);
+  },
 };

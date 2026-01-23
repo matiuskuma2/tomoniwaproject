@@ -52,12 +52,14 @@ export const classifyThread: ClassifierFn = (
   // Beta A: If emails are found, route to invite.prepare.emails
   // - スレッド選択中: 追加招待（invites/prepare）
   // - スレッド未選択: 新規作成（prepare-send）
+  // P2-E2: rawText を渡してSMS用の phone を抽出可能に
   if (emails.length > 0) {
     return {
       intent: 'invite.prepare.emails',
       confidence: 0.95,
       params: {
         rawInput: input,
+        rawText: input,  // P2-E2: phone抽出用に生テキストを渡す
         emails,
         threadId: context?.selectedThreadId,
         mode: context?.selectedThreadId ? 'add_to_thread' : 'new_thread',
@@ -78,7 +80,8 @@ export const classifyThread: ClassifierFn = (
       },
       needsClarification: {
         field: 'emails',
-        message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
+        // P2-E2: phone入力例も追加
+        message: '送信先のメールアドレスを貼ってください。\n\n例:\n• tanaka@example.com\n• tanaka@example.com +819012345678 (SMS送信する場合)',
       },
     };
   }

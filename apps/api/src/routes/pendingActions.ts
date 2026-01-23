@@ -405,14 +405,15 @@ app.post('/:token/execute', async (c) => {
     let smsSentCount = 0;
 
     // P2-E2: contacts から phone を一括取得（email → phone マップ）
+    // owner_user_id でもフィルタしてテナント分離
     const emailPhoneMap = new Map<string, string>();
     if (smsEnabled && invites.length > 0) {
       const emailList = invites.map(i => i.email.toLowerCase());
       const placeholders = emailList.map(() => '?').join(',');
       const phoneRows = await env.DB.prepare(
         `SELECT LOWER(email) as email, phone FROM contacts 
-         WHERE workspace_id = ? AND LOWER(email) IN (${placeholders}) AND phone IS NOT NULL`
-      ).bind(workspaceId, ...emailList).all<{ email: string; phone: string }>();
+         WHERE workspace_id = ? AND owner_user_id = ? AND LOWER(email) IN (${placeholders}) AND phone IS NOT NULL AND phone != ''`
+      ).bind(workspaceId, ownerUserId, ...emailList).all<{ email: string; phone: string }>();
       
       for (const row of phoneRows.results || []) {
         emailPhoneMap.set(row.email, row.phone);

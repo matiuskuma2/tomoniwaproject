@@ -321,4 +321,107 @@ export class ContactsRepository {
 
     return result || null;
   }
+
+  /**
+   * P2-E2: Upsert contact by email (create or update phone)
+   * - If contact exists: update phone only
+   * - If contact doesn't exist: create as external_person with phone
+   */
+  async upsertByEmail(
+    workspace_id: string,
+    owner_user_id: string,
+    email: string,
+    phone: string,
+    display_name?: string
+  ): Promise<Contact> {
+    const emailLower = email.toLowerCase();
+    const now = new Date().toISOString();
+
+    // Check existing contact
+    const existing = await this.getByEmail(emailLower, workspace_id, owner_user_id);
+
+    if (existing) {
+      // Update phone only
+      await this.db
+        .prepare(
+          `UPDATE contacts SET phone = ?, updated_at = ?
+           WHERE id = ? AND workspace_id = ? AND owner_user_id = ?`
+        )
+        .bind(phone, now, existing.id, workspace_id, owner_user_id)
+        .run();
+
+      const updated = await this.getById(existing.id, workspace_id, owner_user_id);
+      if (!updated) {
+        throw new Error('Contact not found after update');
+      }
+      return updated;
+    }
+
+    // Create new external_person contact
+    const id = crypto.randomUUID();
+    await this.db
+      .prepare(
+        `INSERT INTO contacts (
+          id, workspace_id, owner_user_id, kind, user_id, email, phone, display_name,
+          relationship_type, tags_json, notes, summary, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id,
+        workspace_id,
+        owner_user_id,
+        'external_person',
+        null,
+        emailLower,
+        phone,
+        display_name || null,
+        'external',
+        '[]',
+        null,
+        null,
+        now,
+        now
+      )
+      .run();
+
+    const created = await this.getById(id, workspace_id, owner_user_id);
+    if (!created) {
+      throw new Error('Failed to create contact');
+    }
+    return created;
+  }
+
+  /**
+   * P2-E2: Get phone numbers for multiple emails
+   * - Used for SMS sending
+   */
+  async getPhonesByEmails(
+    workspace_id: string,
+    owner_user_id: string,
+    emails: string[]
+  ): Promise<Map<string, string>> {
+    if (emails.length === 0) {
+      return new Map();
+    }
+
+    const emailsLower = emails.map(e => e.toLowerCase());
+    const placeholders = emailsLower.map(() => '?').join(',');
+
+    const result = await this.db
+      .prepare(
+        `SELECT email, phone FROM contacts 
+         WHERE email IN (${placeholders}) 
+         AND workspace_id = ? AND owner_user_id = ?
+         AND phone IS NOT NULL AND phone != ''`
+      )
+      .bind(...emailsLower, workspace_id, owner_user_id)
+      .all<{ email: string; phone: string }>();
+
+    const phoneMap = new Map<string, string>();
+    for (const row of result.results || []) {
+      phoneMap.set(row.email, row.phone);
+    }
+
+    return phoneMap;
+  }
 }

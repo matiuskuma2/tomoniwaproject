@@ -261,6 +261,74 @@ app.patch('/:id', async (c) => {
 });
 
 /**
+ * POST /api/contacts/upsert
+ * P2-E2: Upsert contact by email (for SMS phone number)
+ * - If exists: update phone
+ * - If not: create external_person with phone
+ */
+app.post('/upsert', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    const body = await c.req.json<{
+      email: string;
+      phone: string;
+      display_name?: string;
+    }>();
+
+    // Validation
+    if (!body.email) {
+      return c.json({ error: 'email is required' }, 400);
+    }
+    if (!body.phone) {
+      return c.json({ error: 'phone is required' }, 400);
+    }
+
+    // E.164 format validation (basic)
+    if (!body.phone.match(/^\+[1-9]\d{9,14}$/)) {
+      return c.json({ error: 'phone must be in E.164 format (e.g., +819012345678)' }, 400);
+    }
+
+    const repo = new ContactsRepository(env.DB);
+    const contact = await repo.upsertByEmail(
+      workspaceId,
+      ownerUserId,
+      body.email,
+      body.phone,
+      body.display_name
+    );
+
+    console.log(`[Contacts] Upserted phone for ${body.email} in workspace ${workspaceId}`);
+
+    return c.json({
+      success: true,
+      contact: {
+        id: contact.id,
+        email: contact.email,
+        phone: (contact as any).phone,
+        display_name: contact.display_name,
+      },
+    });
+  } catch (error) {
+    console.error('[Contacts] Error upserting contact:', error);
+    return c.json(
+      {
+        error: 'Failed to upsert contact',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
  * DELETE /api/contacts/:id
  * Delete contact
  */

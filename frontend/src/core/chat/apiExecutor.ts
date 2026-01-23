@@ -14,6 +14,7 @@
 
 import { threadsApi } from '../api/threads';
 import { listsApi } from '../api/lists';
+import { contactsApi } from '../api/contacts';
 import { pendingActionsApi, type PendingDecision, type PrepareSendResponse } from '../api/pendingActions';
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
@@ -90,6 +91,84 @@ async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> 
   } catch (e) {
     // P1-2: 構造化ログで追跡可能に
     log.warn('refreshAfterWrite failed', { module: 'apiExecutor', writeOp: op, threadId, err: e });
+  }
+}
+
+// ============================================================
+// P2-E2: Email + Phone パーサー（SMS送信用）
+// ============================================================
+
+interface ParsedInvitee {
+  email: string;
+  phone?: string;
+}
+
+/**
+ * P2-E2: 入力行から email と phone を抽出
+ * - 1行に email + phone を書ける（例: tanaka@example.com +819012345678）
+ * - phone は E.164 形式のみ抽出（+81...）
+ * - email のみの行も対応
+ */
+function parseInviteLines(input: string): ParsedInvitee[] {
+  const lines = input
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const emailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+  const e164Re = /\+[1-9]\d{9,14}/;
+
+  const map = new Map<string, ParsedInvitee>();
+
+  for (const line of lines) {
+    // 1行内のすべてのメールアドレスを抽出
+    const emailMatches = line.match(emailRe);
+    if (!emailMatches) continue;
+
+    // E.164電話番号を抽出（1行につき1つのみ）
+    const phoneMatch = line.match(e164Re);
+    const phone = phoneMatch?.[0];
+
+    // 各メールアドレスに対して処理
+    for (const rawEmail of emailMatches) {
+      const email = rawEmail.toLowerCase();
+      // 重複は後勝ち（phone付きで上書き）
+      if (!map.has(email) || phone) {
+        map.set(email, { email, phone });
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+/**
+ * P2-E2: phone があるものを contacts に保存
+ * - 失敗しても invite フローは止めない
+ */
+async function savePhonesToContacts(invitees: ParsedInvitee[]): Promise<void> {
+  const withPhone = invitees.filter(i => !!i.phone);
+  if (withPhone.length === 0) return;
+
+  try {
+    await Promise.all(
+      withPhone.map(i =>
+        contactsApi.upsertByEmail({
+          email: i.email,
+          phone: i.phone!,
+        })
+      )
+    );
+    log.info('[P2-E2] Saved phone numbers to contacts', { 
+      module: 'apiExecutor', 
+      count: withPhone.length 
+    });
+  } catch (e) {
+    // 失敗しても invite は続行
+    log.warn('[P2-E2] contacts phone upsert failed (ignored)', { 
+      module: 'apiExecutor', 
+      err: e 
+    });
   }
 }
 
@@ -418,9 +497,10 @@ export async function executeIntent(
  * Beta A: メール入力 → prepare API
  * - スレッド未選択: prepareSend (新規スレッド)
  * - スレッド選択中: prepareInvites (追加招待)
+ * P2-E2: email + phone の同時入力に対応（SMS送信用）
  */
 async function executeInvitePrepareEmails(intentResult: IntentResult): Promise<ExecutionResult> {
-  const { emails, threadId, mode } = intentResult.params;
+  const { emails, threadId, mode, rawText } = intentResult.params;
   
   if (!emails || emails.length === 0) {
     return {
@@ -428,9 +508,15 @@ async function executeInvitePrepareEmails(intentResult: IntentResult): Promise<E
       message: '送信先のメールアドレスを入力してください。',
       needsClarification: {
         field: 'emails',
-        message: '送信先のメールアドレスを貼ってください。\n\n例: tanaka@example.com',
+        message: '送信先のメールアドレスを貼ってください。\n\n例:\n• tanaka@example.com\n• tanaka@example.com +819012345678 (SMS送信する場合)',
       },
     };
+  }
+  
+  // P2-E2: rawText から email + phone を抽出し、contacts に保存
+  if (rawText) {
+    const invitees = parseInviteLines(rawText);
+    await savePhonesToContacts(invitees);
   }
   
   try {
