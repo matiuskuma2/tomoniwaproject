@@ -1,6 +1,6 @@
 /**
  * Calendar API
- * Phase Next-3 (Day4): Read-only calendar access
+ * Phase Next-3 (Day4) + P3-SLOTGEN1: Read-only calendar access with slot generation
  */
 
 import { api } from './client';
@@ -21,6 +21,7 @@ export interface CalendarEvent {
 export type CalendarWarning = 
   | 'google_calendar_permission_missing' 
   | 'google_account_not_linked' 
+  | 'fetch_error'
   | null;
 
 export interface CalendarTodayResponse {
@@ -37,11 +38,40 @@ export interface CalendarWeekResponse {
   warning?: CalendarWarning;
 }
 
+// P3-SLOTGEN1: Available slot type
+export interface AvailableSlot {
+  start_at: string;   // ISO 8601
+  end_at: string;     // ISO 8601
+  label: string;      // 表示用ラベル（例: "1/24(金) 14:00-15:00"）
+}
+
+// P3-SLOTGEN1: Coverage info
+export interface SlotCoverage {
+  time_min: string;
+  time_max: string;
+  total_free_minutes: number;
+  slot_count: number;
+}
+
+// P3-SLOTGEN1: FreeBusy response with available_slots
 export interface CalendarFreeBusyResponse {
-  range: 'today' | 'week';
+  range: 'today' | 'week' | 'next_week';
   timezone: string;
   busy: Array<{ start: string; end: string }>;
+  available_slots: AvailableSlot[];
+  coverage?: SlotCoverage;
+  prefer?: string | null;
   warning?: CalendarWarning;
+}
+
+// P3-SLOTGEN1: Time preference presets
+export type TimePreference = 'morning' | 'afternoon' | 'evening' | 'business';
+
+// P3-SLOTGEN1: FreeBusy query params
+export interface FreeBusyParams {
+  range: 'today' | 'week' | 'next_week';
+  prefer?: TimePreference;
+  meetingLength?: number;
 }
 
 // ============================================================
@@ -64,9 +94,29 @@ export const calendarApi = {
   },
 
   /**
-   * Get busy time slots
+   * Get busy time slots + available slots
+   * P3-SLOTGEN1: Enhanced with slot generation
+   * 
+   * @param params - Query parameters
+   * @param params.range - 'today' | 'week' | 'next_week'
+   * @param params.prefer - 'morning' | 'afternoon' | 'evening' | 'business' (optional)
+   * @param params.meetingLength - Meeting duration in minutes (default: 60)
    */
-  async getFreeBusy(range: 'today' | 'week'): Promise<CalendarFreeBusyResponse> {
-    return api.get(`/api/calendar/freebusy?range=${range}`);
+  async getFreeBusy(params: FreeBusyParams | 'today' | 'week'): Promise<CalendarFreeBusyResponse> {
+    // 後方互換: 文字列の場合は旧API形式
+    if (typeof params === 'string') {
+      return api.get(`/api/calendar/freebusy?range=${params}`);
+    }
+    
+    // P3-SLOTGEN1: Full params
+    const queryParts: string[] = [`range=${params.range}`];
+    if (params.prefer) {
+      queryParts.push(`prefer=${params.prefer}`);
+    }
+    if (params.meetingLength) {
+      queryParts.push(`meeting_length=${params.meetingLength}`);
+    }
+    
+    return api.get(`/api/calendar/freebusy?${queryParts.join('&')}`);
   },
 };

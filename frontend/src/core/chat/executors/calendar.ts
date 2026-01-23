@@ -1,13 +1,16 @@
 /**
  * Calendar Executors
  * 
- * P1-1: apiExecutor.ts から分離（ロジック変更なし）
+ * P1-1: apiExecutor.ts から分離
+ * P3-SLOTGEN1: freebusy に空き枠表示を追加
+ * 
  * - schedule.today
  * - schedule.week
  * - schedule.freebusy
  */
 
 import { calendarApi } from '../../api/calendar';
+import type { FreeBusyParams, TimePreference } from '../../api/calendar';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../../utils/datetime';
@@ -160,13 +163,56 @@ export async function executeWeek(): Promise<ExecutionResult> {
 }
 
 /**
- * P1-3: schedule.freebusy
+ * P3-SLOTGEN1: Range label helper
+ */
+function getRangeLabel(range: string): string {
+  switch (range) {
+    case 'today':
+      return '今日';
+    case 'week':
+      return '今週';
+    case 'next_week':
+      return '来週';
+    default:
+      return range;
+  }
+}
+
+/**
+ * P3-SLOTGEN1: Prefer label helper
+ */
+function getPreferLabel(prefer: string | undefined): string | null {
+  switch (prefer) {
+    case 'morning':
+      return '午前（9:00-12:00）';
+    case 'afternoon':
+      return '午後（14:00-18:00）';
+    case 'evening':
+      return '夜（18:00-21:00）';
+    case 'business':
+      return '営業時間（9:00-18:00）';
+    default:
+      return null;
+  }
+}
+
+/**
+ * P1-3 + P3-SLOTGEN1: schedule.freebusy
+ * 空き枠候補を表示するように拡張
  */
 export async function executeFreeBusy(intentResult: IntentResult): Promise<ExecutionResult> {
-  const range = (intentResult.params.range as 'today' | 'week') || 'today';
+  // P3-SLOTGEN1: Extract params from intent
+  const range = (intentResult.params.range as FreeBusyParams['range']) || 'today';
+  const prefer = intentResult.params.prefer as TimePreference | undefined;
+  const meetingLength = intentResult.params.meeting_length as number | undefined;
   
   try {
-    const response = await calendarApi.getFreeBusy(range);
+    // P3-SLOTGEN1: Use enhanced API with full params
+    const response = await calendarApi.getFreeBusy({
+      range,
+      prefer,
+      meetingLength,
+    });
     
     // Handle warnings
     if (response.warning) {
@@ -180,23 +226,51 @@ export async function executeFreeBusy(intentResult: IntentResult): Promise<Execu
       };
     }
     
-    // No busy slots
-    if (response.busy.length === 0) {
-      return {
-        success: true,
-        message: range === 'today' ? '今日は終日空いています。' : '今週は終日空いています。',
-        data: {
-          kind: 'calendar.freebusy',
-          payload: response,
-        },
-      };
+    const rangeLabel = getRangeLabel(range);
+    const preferLabel = getPreferLabel(prefer);
+    
+    // P3-SLOTGEN1: Build message with available slots (primary) + busy slots (secondary)
+    let message = '';
+    
+    // 1. 空き枠候補（メイン表示）
+    if (response.available_slots && response.available_slots.length > 0) {
+      const durationLabel = meetingLength ? `${meetingLength}分` : '60分';
+      message += `✅ ${rangeLabel}の空いている候補（${durationLabel}枠）:\n\n`;
+      
+      if (preferLabel) {
+        message += `📌 ${preferLabel}で絞り込み\n\n`;
+      }
+      
+      response.available_slots.forEach((slot, index) => {
+        message += `${index + 1}. ${slot.label}\n`;
+      });
+      
+      // 候補数が多い場合のヒント
+      if (response.coverage && response.coverage.slot_count >= 8) {
+        message += `\n💡 他にも候補があります。条件を変えて再検索できます。`;
+      }
+    } else {
+      // 空き枠がない場合
+      if (preferLabel) {
+        message += `⚠️ ${rangeLabel}の${preferLabel}では${meetingLength || 60}分の空きが見つかりませんでした。\n`;
+        message += `💡 条件（時間帯/日付/ミーティング時間）を変えて再検索してください。`;
+      } else {
+        message += `⚠️ ${rangeLabel}は${meetingLength || 60}分の空きが見つかりませんでした。\n`;
+        message += `💡 別の期間を指定して再検索してください。`;
+      }
     }
     
-    // Build message with busy slots
-    let message = range === 'today' ? '📊 今日の予定が入っている時間:\n\n' : '📊 今週の予定が入っている時間:\n\n';
-    response.busy.forEach((slot, index) => {
-      message += `${index + 1}. ${formatDateTimeRange(slot.start, slot.end)}\n`;
-    });
+    // 2. 埋まっている時間（補助表示）
+    if (response.busy.length > 0) {
+      message += `\n\n📊 ${rangeLabel}の予定が入っている時間:\n`;
+      const busyToShow = response.busy.slice(0, 5); // 最大5件
+      busyToShow.forEach((slot, index) => {
+        message += `${index + 1}. ${formatDateTimeRange(slot.start, slot.end)}\n`;
+      });
+      if (response.busy.length > 5) {
+        message += `他${response.busy.length - 5}件...\n`;
+      }
+    }
     
     return {
       success: true,

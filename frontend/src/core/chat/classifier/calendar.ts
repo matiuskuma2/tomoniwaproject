@@ -1,14 +1,60 @@
 /**
  * classifier/calendar.ts
  * TD-003: Phase Next-3 (P1) Calendar Read-only
+ * P3-SLOTGEN1: 空き枠候補生成のための拡張
  * 
  * - schedule.today: 今日の予定
  * - schedule.week: 今週の予定
- * - schedule.freebusy: 空き時間
+ * - schedule.freebusy: 空き時間（range + prefer 対応）
  */
 
 import type { IntentResult, IntentContext, ClassifierFn } from './types';
 import type { PendingState } from '../pendingTypes';
+
+// P3-SLOTGEN1: Time preference type
+type TimePreference = 'morning' | 'afternoon' | 'evening' | 'business';
+
+/**
+ * P3-SLOTGEN1: Extract time preference from input
+ * - 午前、朝 → morning (9:00-12:00)
+ * - 午後 → afternoon (14:00-18:00)
+ * - 夜、夕方 → evening (18:00-21:00)
+ * - 営業時間、ビジネスアワー → business (9:00-18:00)
+ */
+function extractTimePreference(input: string): TimePreference | undefined {
+  if (/(午前|朝|あさ|ごぜん)/.test(input)) {
+    return 'morning';
+  }
+  if (/(午後|ごご|ひる過ぎ|昼過ぎ)/.test(input)) {
+    return 'afternoon';
+  }
+  if (/(夜|夕方|よる|ゆうがた|イブニング)/.test(input)) {
+    return 'evening';
+  }
+  if (/(営業時間|ビジネスアワー|業務時間)/.test(input)) {
+    return 'business';
+  }
+  return undefined;
+}
+
+/**
+ * P3-SLOTGEN1: Extract range from input
+ * - 今日、きょう → today
+ * - 今週、こんしゅう → week
+ * - 来週、らいしゅう → next_week
+ */
+function extractRange(input: string): 'today' | 'week' | 'next_week' | undefined {
+  if (/(今日|きょう)/.test(input)) {
+    return 'today';
+  }
+  if (/(来週|らいしゅう)/.test(input)) {
+    return 'next_week';
+  }
+  if (/(今週|こんしゅう|週)/.test(input)) {
+    return 'week';
+  }
+  return undefined;
+}
 
 /**
  * カレンダー関連の分類器
@@ -44,32 +90,49 @@ export const classifyCalendar: ClassifierFn = (
   }
 
   // ============================================================
-  // P1-3: schedule.freebusy
-  // Keywords: 空き、あき、空いて、あいて、フリー
+  // P1-3 + P3-SLOTGEN1: schedule.freebusy
+  // Keywords: 空き、あき、空いて、あいて、フリー、候補
+  // P3-SLOTGEN1: range と prefer を抽出
   // ============================================================
-  if (/(空き|あき|空いて|あいて|フリー)/.test(normalizedInput)) {
-    // Determine range (today or week)
-    let range: 'today' | 'week' = 'week'; // Default to week
-
-    if (/(今日|きょう)/.test(normalizedInput)) {
-      range = 'today';
-    } else if (/(今週|こんしゅう)/.test(normalizedInput)) {
-      range = 'week';
+  if (/(空き|あき|空いて|あいて|フリー|候補|枠)/.test(normalizedInput)) {
+    // Extract range
+    const extractedRange = extractRange(normalizedInput);
+    const range = extractedRange || 'week'; // Default to week
+    
+    // P3-SLOTGEN1: Extract time preference
+    const prefer = extractTimePreference(normalizedInput);
+    
+    // Confidence calculation
+    const hasTimeReference = extractedRange !== undefined;
+    const hasPreference = prefer !== undefined;
+    
+    // Higher confidence if both are specified
+    let confidence = 0.7;
+    if (hasTimeReference && hasPreference) {
+      confidence = 0.95;
+    } else if (hasTimeReference || hasPreference) {
+      confidence = 0.9;
     }
-
-    // Need clarification if range is ambiguous
-    const hasTimeReference = /(今日|きょう|今週|こんしゅう)/.test(normalizedInput);
+    
+    // Build params
+    const params: Record<string, unknown> = { range };
+    if (prefer) {
+      params.prefer = prefer;
+    }
+    
+    // Need clarification only if nothing is specified
+    const needsClarification = !hasTimeReference && !hasPreference
+      ? {
+          field: 'range',
+          message: '今日、今週、来週のどの期間の空き時間ですか？（例: 「来週の午後の空き」）',
+        }
+      : undefined;
 
     return {
       intent: 'schedule.freebusy',
-      confidence: hasTimeReference ? 0.9 : 0.7,
-      params: { range },
-      needsClarification: !hasTimeReference
-        ? {
-            field: 'range',
-            message: '今日の空き時間ですか？それとも今週の空き時間ですか？',
-          }
-        : undefined,
+      confidence,
+      params,
+      needsClarification,
     };
   }
 

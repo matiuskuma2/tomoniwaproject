@@ -43,6 +43,10 @@ export type IntentType =
   | 'schedule.reschedule'                  // Phase2 P2-D3 - 確定後やり直し（再調整）
   | 'schedule.reschedule.confirm'          // Phase2 P2-D3 - 再調整確定
   | 'schedule.reschedule.cancel'           // Phase2 P2-D3 - 再調整キャンセル
+  // P3-PREF: スケジュール好み設定
+  | 'preference.set'                       // P3-PREF3 - 好み設定
+  | 'preference.show'                      // P3-PREF3 - 好み表示
+  | 'preference.clear'                     // P3-PREF3 - 好みクリア
   // Beta A: 送信フロー
   | 'pending.action.decide'    // Beta A: 3語固定決定（送る/キャンセル/別スレッドで）
   | 'invite.prepare.emails'    // Beta A: メール入力 → prepare API

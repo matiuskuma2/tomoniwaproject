@@ -25,6 +25,7 @@ import { classifyCalendar } from './calendar';
 import { classifyPropose } from './propose';
 import { classifyRemind } from './remind';
 import { classifyThread } from './thread';
+import { classifyPreference } from './preference';
 
 /**
  * 分類器チェーン（固定順序）
@@ -35,9 +36,10 @@ const classifierChain: ClassifierFn[] = [
   classifyConfirmCancel,    // 2. はい/いいえ系（split/notify/remind の優先順）
   classifyLists,            // 3. Beta A リスト5コマンド
   classifyCalendar,         // 4. P1 カレンダー読み取り
-  classifyPropose,          // 5. 候補提案系
-  classifyRemind,           // 6. リマインド系
-  classifyThread,           // 7. スレッド操作系
+  classifyPreference,       // 5. P3-PREF 好み設定
+  classifyPropose,          // 6. 候補提案系
+  classifyRemind,           // 7. リマインド系
+  classifyThread,           // 8. スレッド操作系
 ];
 
 /**

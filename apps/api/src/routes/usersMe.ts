@@ -1,9 +1,12 @@
 /**
  * Users Me API Routes
  * P3-TZ1: ユーザープロフィール取得・タイムゾーン設定
+ * P3-PREF1: スケジュール好み設定の保存・取得
  * 
  * GET /api/users/me - 現在のユーザー情報を取得
  * PATCH /api/users/me - タイムゾーンなどを更新
+ * GET /api/users/me/schedule-prefs - スケジュール好み設定を取得
+ * PUT /api/users/me/schedule-prefs - スケジュール好み設定を保存
  */
 
 import { Hono } from 'hono';
@@ -145,6 +148,159 @@ app.patch('/', async (c) => {
       timezone: updatedRow.timezone || 'Asia/Tokyo',
       locale: updatedRow.locale || 'ja',
     } : null
+  });
+});
+
+// ============================================================
+// P3-PREF1: Schedule Preferences
+// ============================================================
+
+/**
+ * Schedule Preferences Type
+ * 主催者の会議好み設定
+ */
+export interface SchedulePreferences {
+  // 好む時間帯（weight > 0）
+  windows?: Array<{
+    dow: number[];      // 曜日（0=日, 1=月, ..., 6=土）
+    start: string;      // 開始時刻 "HH:mm"
+    end: string;        // 終了時刻 "HH:mm"
+    weight: number;     // スコア重み（正の値）
+    label?: string;     // ラベル（例: "平日午後"）
+  }>;
+  // 避けたい時間帯（weight < 0）
+  avoid?: Array<{
+    dow: number[];
+    start: string;
+    end: string;
+    weight: number;     // スコア重み（負の値）
+    label?: string;
+  }>;
+  // 最小通知時間（時間単位）
+  min_notice_hours?: number;
+  // 会議の長さ（分）
+  meeting_length_min?: number;
+  // 最終終了時刻
+  max_end_time?: string;
+}
+
+/**
+ * GET /api/users/me/schedule-prefs
+ * スケジュール好み設定を取得
+ */
+app.get('/schedule-prefs', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+
+  if (!userId) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const row = await env.DB.prepare(`
+    SELECT schedule_prefs_json
+    FROM users 
+    WHERE id = ? 
+    LIMIT 1
+  `).bind(userId).first<{ schedule_prefs_json: string | null }>();
+
+  if (!row) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  // JSONをパース（nullの場合はデフォルト値）
+  let prefs: SchedulePreferences = {};
+  if (row.schedule_prefs_json) {
+    try {
+      prefs = JSON.parse(row.schedule_prefs_json);
+    } catch {
+      console.warn('[usersMe] Failed to parse schedule_prefs_json for user:', userId);
+    }
+  }
+
+  return c.json({ 
+    schedule_prefs: prefs,
+    has_prefs: row.schedule_prefs_json !== null,
+  });
+});
+
+/**
+ * PUT /api/users/me/schedule-prefs
+ * スケジュール好み設定を保存
+ */
+app.put('/schedule-prefs', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+
+  if (!userId) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const body = await c.req.json().catch(() => ({} as any));
+  const prefs: SchedulePreferences = body.schedule_prefs || body;
+
+  // バリデーション
+  if (prefs.windows) {
+    for (const w of prefs.windows) {
+      if (!Array.isArray(w.dow) || !w.start || !w.end || typeof w.weight !== 'number') {
+        return c.json({ 
+          error: 'invalid_window', 
+          message: 'Each window must have dow (array), start (string), end (string), weight (number)' 
+        }, 400);
+      }
+    }
+  }
+
+  if (prefs.avoid) {
+    for (const a of prefs.avoid) {
+      if (!Array.isArray(a.dow) || !a.start || !a.end || typeof a.weight !== 'number') {
+        return c.json({ 
+          error: 'invalid_avoid', 
+          message: 'Each avoid must have dow (array), start (string), end (string), weight (number)' 
+        }, 400);
+      }
+    }
+  }
+
+  // JSONに変換して保存
+  const prefsJson = JSON.stringify(prefs);
+
+  await env.DB.prepare(`
+    UPDATE users 
+    SET schedule_prefs_json = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(prefsJson, userId).run();
+
+  console.log('[usersMe] Updated schedule_prefs for user:', userId, prefs);
+
+  return c.json({ 
+    success: true,
+    schedule_prefs: prefs,
+  });
+});
+
+/**
+ * DELETE /api/users/me/schedule-prefs
+ * スケジュール好み設定をクリア
+ */
+app.delete('/schedule-prefs', async (c) => {
+  const { env } = c;
+  const userId = await getUserIdFromContext(c as any);
+
+  if (!userId) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  await env.DB.prepare(`
+    UPDATE users 
+    SET schedule_prefs_json = NULL, updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(userId).run();
+
+  console.log('[usersMe] Cleared schedule_prefs for user:', userId);
+
+  return c.json({ 
+    success: true,
+    schedule_prefs: null,
   });
 });
 

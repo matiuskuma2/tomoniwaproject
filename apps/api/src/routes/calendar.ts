@@ -1,5 +1,5 @@
 /**
- * Calendar API Routes (Phase Next-3 Day2)
+ * Calendar API Routes (Phase Next-3 Day2 + P3-SLOTGEN1)
  * Read-only calendar access: today, week, freebusy
  * 
  * @route GET /api/calendar/today
@@ -9,6 +9,7 @@
 
 import { Hono } from 'hono';
 import { GoogleCalendarService } from '../services/googleCalendar';
+import { generateAvailableSlots, getTimeWindowFromPrefer } from '../utils/slotGenerator';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 type Variables = {
@@ -64,6 +65,37 @@ function getWeekBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; time
   const weekStart = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
   
   // Sunday 23:59:59 JST
+  jstNow.setUTCDate(jstNow.getUTCDate() + 6);
+  jstNow.setUTCHours(23, 59, 59, 999);
+  const weekEnd = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
+  
+  return {
+    timeMin: weekStart.toISOString(),
+    timeMax: weekEnd.toISOString(),
+  };
+}
+
+/**
+ * Helper: Get next week's time bounds (Monday - Sunday JST)
+ * P3-SLOTGEN1: For "来週" queries
+ */
+function getNextWeekBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; timeMax: string } {
+  const now = new Date();
+  const jstOffset = 9 * 60 * 60 * 1000; // JST = UTC+9
+  
+  // Get current time in JST
+  const jstNow = new Date(now.getTime() + jstOffset);
+  
+  // Calculate day of week in JST
+  const dayOfWeek = jstNow.getUTCDay(); // 0 (Sun) - 6 (Sat)
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start
+  
+  // Next week's Monday 00:00:00 JST (current Monday + 7 days)
+  jstNow.setUTCDate(jstNow.getUTCDate() + diff + 7);
+  jstNow.setUTCHours(0, 0, 0, 0);
+  const weekStart = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
+  
+  // Next week's Sunday 23:59:59 JST
   jstNow.setUTCDate(jstNow.getUTCDate() + 6);
   jstNow.setUTCHours(23, 59, 59, 999);
   const weekEnd = new Date(jstNow.getTime() - jstOffset); // Convert back to UTC
@@ -193,20 +225,27 @@ app.get('/week', async (c) => {
 });
 
 /**
- * GET /api/calendar/freebusy?range=today|week
- * Returns busy time slots (Day3: busy-only implementation)
+ * GET /api/calendar/freebusy?range=today|week|next_week&prefer=afternoon|morning|evening|business
+ * Returns busy time slots + available slots (P3-SLOTGEN1)
+ * 
+ * @query range - 'today' | 'week' | 'next_week' (default: 'today')
+ * @query prefer - 'morning' | 'afternoon' | 'evening' | 'business' (optional time window filter)
+ * @query meeting_length - meeting duration in minutes (default: 60)
  */
 app.get('/freebusy', async (c) => {
   const { env } = c;
   const userId = c.get('userId');
-  const range = c.req.query('range') || 'today'; // today | week
+  const range = c.req.query('range') || 'today'; // today | week | next_week
+  const prefer = c.req.query('prefer'); // morning | afternoon | evening | business
+  const meetingLengthParam = c.req.query('meeting_length');
+  const meetingLength = meetingLengthParam ? parseInt(meetingLengthParam, 10) : 60;
 
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
   try {
-    console.log('[Calendar] GET /freebusy - userId:', userId, 'range:', range);
+    console.log('[Calendar] GET /freebusy - userId:', userId, 'range:', range, 'prefer:', prefer);
 
     // Get access token
     const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
@@ -216,6 +255,7 @@ app.get('/freebusy', async (c) => {
         range,
         timezone: 'Asia/Tokyo',
         busy: [],
+        available_slots: [],
         warning: 'google_account_not_linked',
       });
     }
@@ -224,7 +264,11 @@ app.get('/freebusy', async (c) => {
     let timeMin: string;
     let timeMax: string;
 
-    if (range === 'week') {
+    if (range === 'next_week') {
+      const bounds = getNextWeekBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    } else if (range === 'week') {
       const bounds = getWeekBounds('Asia/Tokyo');
       timeMin = bounds.timeMin;
       timeMax = bounds.timeMax;
@@ -239,10 +283,26 @@ app.get('/freebusy', async (c) => {
     const calendarService = new GoogleCalendarService(accessToken, env);
     const busy = await calendarService.getFreeBusy(timeMin, timeMax);
 
+    // P3-SLOTGEN1: Generate available slots
+    const dayTimeWindow = getTimeWindowFromPrefer(prefer);
+    const slotResult = generateAvailableSlots({
+      timeMin,
+      timeMax,
+      busy,
+      meetingLengthMin: meetingLength,
+      stepMin: 30,
+      maxResults: 8,
+      dayTimeWindow,
+      timezone: 'Asia/Tokyo',
+    });
+
     return c.json({
       range,
       timezone: 'Asia/Tokyo',
       busy,
+      available_slots: slotResult.available_slots,
+      coverage: slotResult.coverage,
+      prefer: prefer || null,
       warning: null,
     });
   } catch (error) {
@@ -255,6 +315,7 @@ app.get('/freebusy', async (c) => {
         range,
         timezone: 'Asia/Tokyo',
         busy: [],
+        available_slots: [],
         warning: 'google_calendar_permission_missing',
       });
     }
@@ -264,6 +325,7 @@ app.get('/freebusy', async (c) => {
       range,
       timezone: 'Asia/Tokyo',
       busy: [],
+      available_slots: [],
       warning: 'fetch_error',
     });
   }

@@ -64,6 +64,12 @@ import {
   executeRemindRespondedConfirm as executeRemindRespondedConfirmFromExecutors,
   executeRemindRespondedCancel as executeRemindRespondedCancelFromExecutors,
 } from './executors';
+// P3-PREF: 好み設定 executor
+import {
+  executePreferenceSet,
+  executePreferenceShow,
+  executePreferenceClear,
+} from './executors/preference';
 
 // ============================================================
 // PERF-S1: キャッシュ連携ヘルパー
@@ -474,6 +480,16 @@ export async function executeIntent(
     
     case 'schedule.reschedule.cancel':
       return executeRescheduleCancel();
+    
+    // P3-PREF: 好み設定
+    case 'preference.set':
+      return executePreferenceSet(intentResult);
+    
+    case 'preference.show':
+      return executePreferenceShow();
+    
+    case 'preference.clear':
+      return executePreferenceClear();
     
     case 'unknown':
       return {
