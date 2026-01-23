@@ -13,7 +13,6 @@ import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
-import { SpeakButton } from './SpeakButton';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { 
@@ -352,13 +351,9 @@ export function ChatPane({
                     <div className="bg-gray-100 rounded-lg p-3 inline-block max-w-2xl">
                       <p className="text-sm text-gray-900 whitespace-pre-wrap">{msg.content}</p>
                     </div>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <p className="text-xs text-gray-400">
-                        {formatTime(msg.timestamp)}
-                      </p>
-                      {/* Phase Next-4 Day2.5: messageId を渡して全体停止機能を有効化 */}
-                      <SpeakButton text={msg.content} messageId={msg.id} />
-                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {formatTime(msg.timestamp)}
+                    </p>
                   </div>
                 </>
               ) : (
