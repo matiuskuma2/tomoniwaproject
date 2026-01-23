@@ -18,12 +18,18 @@ export default function WorkspaceNotificationsPage() {
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Form state
+  // Slack Form state
   const [slackEnabled, setSlackEnabled] = useState(false);
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
 
-  // Validation state
+  // Slack Validation state
   const [urlError, setUrlError] = useState<string | null>(null);
+
+  // P2-E2: SMS Form state
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [smsFromNumber, setSmsFromNumber] = useState('');
+  const [smsError, setSmsError] = useState<string | null>(null);
+  const [smsSaving, setSmsSaving] = useState(false);
 
   // Setup guide state
   const [showSetupGuide, setShowSetupGuide] = useState(false);
@@ -37,6 +43,8 @@ export default function WorkspaceNotificationsPage() {
       const data = await workspaceNotificationsApi.get();
       setSettings(data);
       setSlackEnabled(data.slack_enabled);
+      // P2-E2: SMS初期値
+      setSmsEnabled(data.sms_enabled);
     } catch (err) {
       console.error('[WorkspaceNotifications] Failed to load settings:', err);
       setMessage({ type: 'error', text: '設定の読み込みに失敗しました' });
@@ -87,6 +95,84 @@ export default function WorkspaceNotificationsPage() {
     if (urlEntered && urlError) return false;
     
     return true;
+  };
+
+  // P2-E2: SMS E.164 バリデーション
+  const validateSmsFrom = (v: string): boolean => {
+    if (!v) {
+      setSmsError(null);
+      return true;
+    }
+    const ok = /^\+[1-9]\d{9,14}$/.test(v);
+    setSmsError(ok ? null : 'E.164形式で入力してください（例: +819012345678）');
+    return ok;
+  };
+
+  // P2-E2: SMS保存可否（Slackと同じ思想）
+  const canSaveSms = (): boolean => {
+    if (!settings) return false;
+
+    const enabledChanged = smsEnabled !== settings.sms_enabled;
+    const fromEntered = smsFromNumber.trim().length > 0;
+
+    // 変更なし → 保存不可
+    if (!enabledChanged && !fromEntered) return false;
+
+    // ONにする場合、既に設定済みでなければ from が必要
+    if (smsEnabled && !settings.sms_configured && !fromEntered) return false;
+
+    // 入力があるならバリデーション必須
+    if (fromEntered && smsError) return false;
+
+    return true;
+  };
+
+  // P2-E2: SMS保存処理
+  const handleSaveSms = async () => {
+    if (!settings) return;
+    
+    // ONにするのにfrom番号がない場合
+    if (smsEnabled && !settings.sms_configured && !smsFromNumber.trim()) {
+      setSmsError('SMS通知を有効にするには送信元番号を入力してください');
+      return;
+    }
+
+    if (smsFromNumber.trim() && !validateSmsFrom(smsFromNumber.trim())) {
+      return;
+    }
+
+    setSmsSaving(true);
+    setMessage(null);
+    try {
+      const res = await workspaceNotificationsApi.updateSms({
+        enabled: smsEnabled,
+        from_number: smsFromNumber.trim() || undefined,
+      });
+
+      if (res.success) {
+        setSettings(prev =>
+          prev
+            ? {
+                ...prev,
+                sms_enabled: res.sms_enabled,
+                sms_configured: res.sms_configured,
+              }
+            : null
+        );
+        setSmsFromNumber(''); // 保存後は空に戻す（秘匿）
+        setMessage({ type: 'success', text: '✅ SMS設定を保存しました' });
+      } else {
+        setMessage({ type: 'error', text: res.error || 'SMS設定の保存に失敗しました' });
+      }
+    } catch (e) {
+      console.error('[WorkspaceNotifications] SMS save failed:', e);
+      setMessage({ 
+        type: 'error', 
+        text: e instanceof Error ? `❌ ${e.message}` : '❌ SMS設定の保存に失敗しました' 
+      });
+    } finally {
+      setSmsSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -397,45 +483,100 @@ export default function WorkspaceNotificationsPage() {
               <span className="text-2xl mr-2">📲</span>
               <h2 className="text-base font-semibold text-gray-900">SMS通知</h2>
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-              準備中 (要Twilio設定)
-            </span>
-          </div>
-          
-          <p className="text-sm text-gray-500 mb-4">
-            招待送信時に、招待者の電話番号宛にSMS通知を送信します。
-          </p>
-
-          {/* Status Badge */}
-          <div className="flex items-center mb-4">
-            <span className="text-sm text-gray-600 mr-2">ステータス:</span>
             {settings?.sms_configured ? (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
                 ✅ 設定済み
               </span>
             ) : (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                ⚠️ 未設定
+                未設定
               </span>
             )}
           </div>
 
-          {/* SMS Setup Info */}
-          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 mb-4">
-            <p className="text-sm text-amber-800">
-              <strong>📋 SMS送信に必要なもの:</strong>
-            </p>
-            <ul className="text-sm text-amber-700 mt-2 ml-4 list-disc">
-              <li>Twilioアカウント（<a href="https://www.twilio.com" target="_blank" rel="noopener noreferrer" className="text-amber-900 underline">twilio.com</a>）</li>
-              <li>Account SID と Auth Token（サーバー側で設定）</li>
-              <li>送信元電話番号（Twilio番号）</li>
-              <li>招待者の電話番号（招待作成時に入力）</li>
-            </ul>
+          <p className="text-sm text-gray-500 mb-4">
+            招待送信時に、contactsに登録された電話番号宛へSMS通知を送信します（Twilio必須）。
+          </p>
+
+          {/* ON/OFF Toggle */}
+          <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-900">SMS通知を有効にする</p>
+              <p className="text-xs text-gray-500">
+                招待送信時にSMSを送ります（電話番号がある招待者のみ）
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSmsEnabled(v => !v);
+                setMessage(null);
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                smsEnabled ? 'bg-emerald-600' : 'bg-gray-200'
+              }`}
+              data-testid="sms-enabled-toggle"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  smsEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
 
-          <p className="text-xs text-gray-500">
-            ※ SMS通知機能は次のアップデートで有効化予定です。現時点ではUI準備のみです。
-          </p>
+          {/* From Number Input */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              送信元電話番号（Twilio番号 / E.164形式）
+              {settings?.sms_configured && (
+                <span className="text-xs text-gray-500 ml-2">（変更する場合のみ入力）</span>
+              )}
+            </label>
+            <input
+              type="text"
+              placeholder={settings?.sms_configured ? '設定済み（変更する場合は新しい番号を入力）' : '+819012345678'}
+              value={smsFromNumber}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                setSmsFromNumber(v);
+                setMessage(null);
+                validateSmsFrom(v);
+              }}
+              data-testid="sms-from-input"
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
+                smsError 
+                  ? 'border-red-300 focus:ring-red-500' 
+                  : 'border-gray-300 focus:ring-emerald-500'
+              }`}
+            />
+            {smsError && <p className="text-xs text-red-600 mt-1">{smsError}</p>}
+            <p className="text-xs text-gray-500 mt-1">
+              ※ セキュリティ上、保存済み番号は表示しません（必要なら再入力して更新）
+            </p>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex items-center gap-3 mb-3">
+            <button
+              onClick={handleSaveSms}
+              disabled={smsSaving || !canSaveSms()}
+              data-testid="sms-save-button"
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {smsSaving ? '保存中...' : '💾 保存'}
+            </button>
+          </div>
+
+          {/* Setup Guide */}
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <p className="text-sm text-amber-800 font-medium">📋 SMS送信に必要なもの:</p>
+            <ul className="text-sm text-amber-700 mt-2 ml-4 list-disc">
+              <li>Twilioアカウント（<a href="https://www.twilio.com" target="_blank" rel="noopener noreferrer" className="text-amber-900 underline">twilio.com</a>）</li>
+              <li>Account SID と Auth Token（サーバー管理者が設定済み）</li>
+              <li>送信元電話番号（上で入力）</li>
+              <li>招待者の電話番号（チャットで <code className="bg-amber-100 px-1">email +819012345678</code> 形式で入力）</li>
+            </ul>
+          </div>
         </div>
 
         {/* Chatwork Card (Coming Soon) */}
