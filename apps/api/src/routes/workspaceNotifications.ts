@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import { WorkspaceNotificationSettingsRepository } from '../repositories/workspaceNotificationSettingsRepository';
+import { verifyChatworkToken, sendChatworkMessage } from '../services/chatworkClient';
 
 type Bindings = {
   DB: D1Database;
@@ -256,6 +257,58 @@ workspaceNotifications.post('/slack/test', async (c) => {
     return c.json({ success: true, message: 'Test message sent successfully' });
   } catch (error) {
     console.error('[WorkspaceNotifications] Slack test error:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to send test message' 
+    }, 500);
+  }
+});
+
+// ============================================================
+// POST /api/workspace/notifications/chatwork/test
+// Chatwork接続テスト（API Token / Room IDが有効かどうか確認）
+// ============================================================
+workspaceNotifications.post('/chatwork/test', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const workspaceId = c.get('workspaceId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (!workspaceId) {
+    return c.json({ error: 'Workspace not found' }, 404);
+  }
+
+  const repo = new WorkspaceNotificationSettingsRepository(env.DB);
+  const settings = await repo.get(workspaceId);
+
+  if (!settings?.chatwork_api_token || !settings?.chatwork_room_id) {
+    return c.json({ error: 'Chatwork API Token or Room ID not configured' }, 400);
+  }
+
+  try {
+    // テストメッセージを送信
+    const result = await sendChatworkMessage(
+      settings.chatwork_api_token,
+      settings.chatwork_room_id,
+      '[info][title]🔔 Tomoniwao Chatwork連携テスト[/title]このメッセージが表示されていれば、Chatwork通知が正常に設定されています。[/info]'
+    );
+
+    if (!result.success) {
+      console.error('[WorkspaceNotifications] Chatwork test failed:', result.error);
+      return c.json({ 
+        success: false, 
+        error: result.error || 'Chatwork API error' 
+      }, 400);
+    }
+
+    console.log(`[WorkspaceNotifications] Chatwork test successful for workspace ${workspaceId}`);
+
+    return c.json({ success: true, message: 'Test message sent successfully' });
+  } catch (error) {
+    console.error('[WorkspaceNotifications] Chatwork test error:', error);
     return c.json({ 
       success: false, 
       error: 'Failed to send test message' 

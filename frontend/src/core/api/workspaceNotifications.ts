@@ -38,6 +38,26 @@ export interface TestSlackResponse {
   error?: string;
 }
 
+// Chatwork Settings
+export interface UpdateChatworkSettingsRequest {
+  enabled: boolean;
+  api_token?: string | null;
+  room_id?: string | null;
+}
+
+export interface UpdateChatworkSettingsResponse {
+  success: boolean;
+  chatwork_enabled: boolean;
+  chatwork_configured: boolean;
+  error?: string;
+}
+
+export interface TestChatworkResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 // P2-E2: SMS Settings
 export interface UpdateSmsSettingsRequest {
   enabled: boolean;
@@ -85,6 +105,26 @@ export async function testSlackConnection(): Promise<TestSlackResponse> {
 }
 
 /**
+ * Chatwork設定を更新
+ * @param data - enabled, api_token, room_id
+ */
+export async function updateChatworkSettings(
+  data: UpdateChatworkSettingsRequest
+): Promise<UpdateChatworkSettingsResponse> {
+  return api.put<UpdateChatworkSettingsResponse>(
+    '/api/workspace/notifications/chatwork',
+    data
+  );
+}
+
+/**
+ * Chatwork接続テスト
+ */
+export async function testChatworkConnection(): Promise<TestChatworkResponse> {
+  return api.post<TestChatworkResponse>('/api/workspace/notifications/chatwork/test');
+}
+
+/**
  * SMS設定を更新
  * 注意: Twilio SID/Token はサーバー側の環境変数で管理
  * @param data - enabled と from_number（送信元番号）
@@ -106,5 +146,7 @@ export const workspaceNotificationsApi = {
   get: getWorkspaceNotifications,
   updateSlack: updateSlackSettings,
   testSlack: testSlackConnection,
+  updateChatwork: updateChatworkSettings,
+  testChatwork: testChatworkConnection,
   updateSms: updateSmsSettings,
 };

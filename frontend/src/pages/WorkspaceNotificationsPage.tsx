@@ -33,6 +33,15 @@ export default function WorkspaceNotificationsPage() {
 
   // Setup guide state
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [showChatworkGuide, setShowChatworkGuide] = useState(false);
+
+  // Chatwork Form state
+  const [chatworkEnabled, setChatworkEnabled] = useState(false);
+  const [chatworkApiToken, setChatworkApiToken] = useState('');
+  const [chatworkRoomId, setChatworkRoomId] = useState('');
+  const [chatworkError, setChatworkError] = useState<string | null>(null);
+  const [chatworkSaving, setChatworkSaving] = useState(false);
+  const [chatworkTesting, setChatworkTesting] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -43,6 +52,8 @@ export default function WorkspaceNotificationsPage() {
       const data = await workspaceNotificationsApi.get();
       setSettings(data);
       setSlackEnabled(data.slack_enabled);
+      // Chatwork初期値
+      setChatworkEnabled(data.chatwork_enabled);
       // P2-E2: SMS初期値
       setSmsEnabled(data.sms_enabled);
     } catch (err) {
@@ -95,6 +106,92 @@ export default function WorkspaceNotificationsPage() {
     if (urlEntered && urlError) return false;
     
     return true;
+  };
+
+  // Chatwork保存可否
+  const canSaveChatwork = (): boolean => {
+    if (!settings) return false;
+
+    const enabledChanged = chatworkEnabled !== settings.chatwork_enabled;
+    const tokenEntered = chatworkApiToken.trim().length > 0;
+    const roomIdEntered = chatworkRoomId.trim().length > 0;
+
+    // 変更なし → 保存不可
+    if (!enabledChanged && !tokenEntered && !roomIdEntered) return false;
+
+    // ONにする場合、既に設定済みでなければAPI TokenとRoom IDが必要
+    if (chatworkEnabled && !settings.chatwork_configured && (!tokenEntered || !roomIdEntered)) return false;
+
+    return true;
+  };
+
+  // Chatwork保存処理
+  const handleSaveChatwork = async () => {
+    if (!settings) return;
+
+    // ONにするのにトークン/Room IDがない場合
+    if (chatworkEnabled && !settings.chatwork_configured && (!chatworkApiToken.trim() || !chatworkRoomId.trim())) {
+      setChatworkError('Chatwork通知を有効にするにはAPI TokenとRoom IDを入力してください');
+      return;
+    }
+
+    setChatworkSaving(true);
+    setMessage(null);
+    try {
+      const res = await workspaceNotificationsApi.updateChatwork({
+        enabled: chatworkEnabled,
+        api_token: chatworkApiToken.trim() || undefined,
+        room_id: chatworkRoomId.trim() || undefined,
+      });
+
+      if (res.success) {
+        setSettings(prev =>
+          prev
+            ? {
+                ...prev,
+                chatwork_enabled: res.chatwork_enabled,
+                chatwork_configured: res.chatwork_configured,
+              }
+            : null
+        );
+        setChatworkApiToken(''); // 保存後は空に戻す（秘匿）
+        setChatworkRoomId('');
+        setChatworkError(null);
+        setMessage({ type: 'success', text: '✅ Chatwork設定を保存しました' });
+      } else {
+        setMessage({ type: 'error', text: res.error || 'Chatwork設定の保存に失敗しました' });
+      }
+    } catch (e) {
+      console.error('[WorkspaceNotifications] Chatwork save failed:', e);
+      setMessage({
+        type: 'error',
+        text: e instanceof Error ? `❌ ${e.message}` : '❌ Chatwork設定の保存に失敗しました'
+      });
+    } finally {
+      setChatworkSaving(false);
+    }
+  };
+
+  // Chatworkテスト送信
+  const handleTestChatwork = async () => {
+    setChatworkTesting(true);
+    setMessage(null);
+    try {
+      const response = await workspaceNotificationsApi.testChatwork();
+      if (response.success) {
+        setMessage({ type: 'success', text: '✅ テストメッセージを送信しました。Chatworkを確認してください。' });
+      } else {
+        setMessage({ type: 'error', text: response.error || 'テスト送信に失敗しました' });
+      }
+    } catch (err) {
+      console.error('[WorkspaceNotifications] Chatwork test failed:', err);
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? `❌ ${err.message}` : '❌ テスト送信に失敗しました'
+      });
+    } finally {
+      setChatworkTesting(false);
+    }
   };
 
   // P2-E2: SMS E.164 バリデーション
@@ -579,20 +676,195 @@ export default function WorkspaceNotificationsPage() {
           </div>
         </div>
 
-        {/* Chatwork Card (Coming Soon) */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4 opacity-60">
-          <div className="flex items-center justify-between mb-2">
+        {/* Chatwork Settings Card */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <span className="text-2xl mr-2">💼</span>
               <h2 className="text-base font-semibold text-gray-900">Chatwork通知</h2>
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-              Coming Soon
-            </span>
+            
+            {/* Toggle Switch */}
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={chatworkEnabled}
+                onChange={(e) => {
+                  setChatworkEnabled(e.target.checked);
+                  setMessage(null);
+                  setChatworkError(null);
+                }}
+                className="sr-only peer"
+                data-testid="chatwork-enabled-toggle"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                {chatworkEnabled ? 'ON' : 'OFF'}
+              </span>
+            </label>
           </div>
-          <p className="text-sm text-gray-500">
-            Chatwork通知は近日対応予定です。
+
+          <p className="text-sm text-gray-500 mb-4">
+            日程調整の招待送信・追加候補・リマインド時にChatworkルームへ通知します。
           </p>
+
+          {/* Status Badge */}
+          <div className="flex items-center mb-4">
+            <span className="text-sm text-gray-600 mr-2">ステータス:</span>
+            {settings?.chatwork_configured ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                ✅ 設定済み
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                ⚠️ 未設定
+              </span>
+            )}
+          </div>
+
+          {/* Setup Guide Toggle */}
+          <button
+            onClick={() => setShowChatworkGuide(!showChatworkGuide)}
+            className="w-full text-left mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-lg mr-2">📖</span>
+                <span className="text-sm font-medium text-blue-800">
+                  API TokenとRoom IDの取得方法（クリックで{showChatworkGuide ? '閉じる' : '開く'}）
+                </span>
+              </div>
+              <svg 
+                className={`w-5 h-5 text-blue-600 transition-transform ${showChatworkGuide ? 'rotate-180' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </button>
+
+          {/* Setup Guide Content */}
+          {showChatworkGuide && (
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">🔧 Chatwork API設定の取得手順</h3>
+              
+              <div className="space-y-4 text-sm text-gray-700">
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">1</span>
+                  <div>
+                    <p className="font-medium">API Tokenを取得</p>
+                    <p className="text-gray-500">Chatwork画面右上の「利用者名」→「サービス連携」→ 左メニュー「APIトークン」</p>
+                    <a 
+                      href="https://www.chatwork.com/service/packages/chatwork/subpackages/api/token.php" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-emerald-600 hover:underline"
+                    >
+                      直接リンク →
+                    </a>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <span className="flex-shrink-0 w-6 h-6 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xs font-bold mr-3">2</span>
+                  <div>
+                    <p className="font-medium">Room IDを取得</p>
+                    <p className="text-gray-500">通知を送信したいチャットルームをブラウザで開き、URLの末尾の数字を確認</p>
+                    <code className="block mt-1 p-2 bg-gray-100 rounded text-xs break-all">
+                      https://www.chatwork.com/#!rid<strong>123456789</strong> ← この数字がRoom ID
+                    </code>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 重要な注意事項 */}
+              <div className="mt-4 p-3 bg-yellow-50 rounded border border-yellow-200">
+                <p className="text-xs text-yellow-800">
+                  <strong>⚠️ セキュリティ注意:</strong> API Tokenは秘密情報です。他の人と共有しないでください。
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* API Token Input */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              API Token
+              {settings?.chatwork_configured && (
+                <span className="text-xs text-gray-500 ml-2">（変更する場合のみ入力）</span>
+              )}
+            </label>
+            <input
+              type="password"
+              data-testid="chatwork-token-input"
+              value={chatworkApiToken}
+              onChange={(e) => {
+                setChatworkApiToken(e.target.value);
+                setMessage(null);
+                setChatworkError(null);
+              }}
+              placeholder={
+                settings?.chatwork_configured 
+                  ? '設定済み（変更する場合は新しいTokenを入力）' 
+                  : 'API Tokenを入力'
+              }
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+            />
+          </div>
+
+          {/* Room ID Input */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Room ID
+              {settings?.chatwork_configured && (
+                <span className="text-xs text-gray-500 ml-2">（変更する場合のみ入力）</span>
+              )}
+            </label>
+            <input
+              type="text"
+              data-testid="chatwork-roomid-input"
+              value={chatworkRoomId}
+              onChange={(e) => {
+                setChatworkRoomId(e.target.value);
+                setMessage(null);
+                setChatworkError(null);
+              }}
+              placeholder={
+                settings?.chatwork_configured 
+                  ? '設定済み（変更する場合は新しいRoom IDを入力）' 
+                  : '例: 123456789'
+              }
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+            />
+            {chatworkError && (
+              <p className="mt-1 text-sm text-red-600">{chatworkError}</p>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <button
+              onClick={handleSaveChatwork}
+              disabled={chatworkSaving || !canSaveChatwork()}
+              data-testid="chatwork-save-button"
+              className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {chatworkSaving ? '保存中...' : '💾 保存'}
+            </button>
+
+            {settings?.chatwork_configured && (
+              <button
+                onClick={handleTestChatwork}
+                disabled={chatworkTesting || chatworkSaving}
+                data-testid="chatwork-test-button"
+                className="px-5 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {chatworkTesting ? 'テスト中...' : '🔔 テスト送信'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Info */}

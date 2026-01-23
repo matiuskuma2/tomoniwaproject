@@ -11,8 +11,10 @@
 
 import { WorkspaceNotificationSettingsRepository } from '../repositories/workspaceNotificationSettingsRepository';
 import { sendSlackWebhook } from './slackClient';
+import { sendChatworkMessage } from './chatworkClient';
 import { sendSms, normalizePhoneE164 } from './smsClient';
 import { renderSlackPayload, renderSlackText } from './slackRenderer';
+import { renderChatworkSimpleMessage } from './chatworkRenderer';
 import { 
   composeInviteEmailModel, 
   composeAdditionalSlotsEmailModel, 
@@ -79,11 +81,28 @@ export async function sendInviteNotification(
       console.log(`[NotificationService] Slack invite notification: ${slackResult.success ? 'success' : 'failed'}`);
     }
 
-    // TODO: Chatwork通知
+    // Chatwork通知
+    if (settings?.chatwork_enabled && settings.chatwork_api_token && settings.chatwork_room_id) {
+      const message = renderChatworkSimpleMessage('invite', {
+        inviterName: params.inviterName,
+        threadTitle: params.threadTitle,
+        recipientCount: params.recipientCount,
+      });
+
+      const chatworkResult = await sendChatworkMessage(
+        settings.chatwork_api_token,
+        settings.chatwork_room_id,
+        message
+      );
+      result.chatwork = { success: chatworkResult.success, error: chatworkResult.error };
+      
+      console.log(`[NotificationService] Chatwork invite notification: ${chatworkResult.success ? 'success' : 'failed'}`);
+    }
 
   } catch (error) {
     console.error('[NotificationService] Error sending invite notification:', error);
     result.slack = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    result.chatwork = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 
   return result;
@@ -127,9 +146,27 @@ export async function sendAdditionalSlotsNotification(
       console.log(`[NotificationService] Slack additional_slots notification: ${slackResult.success ? 'success' : 'failed'}`);
     }
 
+    // Chatwork通知
+    if (settings?.chatwork_enabled && settings.chatwork_api_token && settings.chatwork_room_id) {
+      const message = renderChatworkSimpleMessage('additional_slots', {
+        threadTitle: params.threadTitle,
+        slotCount: params.slotCount,
+      });
+
+      const chatworkResult = await sendChatworkMessage(
+        settings.chatwork_api_token,
+        settings.chatwork_room_id,
+        message
+      );
+      result.chatwork = { success: chatworkResult.success, error: chatworkResult.error };
+      
+      console.log(`[NotificationService] Chatwork additional_slots notification: ${chatworkResult.success ? 'success' : 'failed'}`);
+    }
+
   } catch (error) {
     console.error('[NotificationService] Error sending additional_slots notification:', error);
     result.slack = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    result.chatwork = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 
   return result;
@@ -185,9 +222,28 @@ export async function sendReminderNotification(
       console.log(`[NotificationService] Slack reminder notification: ${slackResult.success ? 'success' : 'failed'}`);
     }
 
+    // Chatwork通知
+    if (settings?.chatwork_enabled && settings.chatwork_api_token && settings.chatwork_room_id) {
+      const message = renderChatworkSimpleMessage('reminder', {
+        threadTitle: params.threadTitle,
+        remindedCount: params.remindedCount,
+        reminderType: params.reminderType,
+      });
+
+      const chatworkResult = await sendChatworkMessage(
+        settings.chatwork_api_token,
+        settings.chatwork_room_id,
+        message
+      );
+      result.chatwork = { success: chatworkResult.success, error: chatworkResult.error };
+      
+      console.log(`[NotificationService] Chatwork reminder notification: ${chatworkResult.success ? 'success' : 'failed'}`);
+    }
+
   } catch (error) {
     console.error('[NotificationService] Error sending reminder notification:', error);
     result.slack = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    result.chatwork = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 
   return result;
@@ -224,9 +280,25 @@ export async function sendNotificationFromModel(
       console.log(`[NotificationService] Slack notification: ${slackResult.success ? 'success' : 'failed'}`);
     }
 
+    // Chatwork通知（汎用）
+    if (settings?.chatwork_enabled && settings.chatwork_api_token && settings.chatwork_room_id) {
+      // シンプルテキストとして送信（model.subjectを使用）
+      const message = `🔔 ${model.subject}\n${model.cta_url || ''}`;
+
+      const chatworkResult = await sendChatworkMessage(
+        settings.chatwork_api_token,
+        settings.chatwork_room_id,
+        message
+      );
+      result.chatwork = { success: chatworkResult.success, error: chatworkResult.error };
+      
+      console.log(`[NotificationService] Chatwork notification: ${chatworkResult.success ? 'success' : 'failed'}`);
+    }
+
   } catch (error) {
     console.error('[NotificationService] Error sending notification:', error);
     result.slack = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    result.chatwork = { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 
   return result;
