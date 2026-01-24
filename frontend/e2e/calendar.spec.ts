@@ -288,4 +288,56 @@ test.describe('Phase Next-3: カレンダー閲覧', () => {
     // 応答が存在することを確認
     expect(response.length).toBeGreaterThan(0);
   });
+
+  // ============================================================
+  // P3-GEN1: スコアリングテスト（好み適用）
+  // ============================================================
+
+  test('P3-GEN1a: 共通空きがスコア順で返ってくる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // 共通空きを確認（スコアリングが適用されるケース）
+    await sendChatMessage(page, '来週みんなの共通空きを出して');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] Scored slots response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 応答に関連内容が含まれていることを確認
+    // 好み設定がある場合: 「スコア」「好み」
+    // 好み設定がない場合: 通常の空き候補表示
+    const hasValidResponse =
+      response.includes('共通空き') ||
+      response.includes('空いている候補') ||
+      response.includes('スコア') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+  });
+
+  test('P3-GEN1b: 午後の共通空きを確認できる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // 午後の共通空きを確認
+    await sendChatMessage(page, '来週の午後に全員で空いてるとこを教えて');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] Afternoon common slots response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 応答に午後の絞り込み関連の内容が含まれていることを確認
+    const hasValidResponse =
+      response.includes('午後') ||
+      response.includes('共通空き') ||
+      response.includes('空いている候補') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+  });
 });

@@ -12,7 +12,7 @@
  */
 
 import { calendarApi } from '../../api/calendar';
-import type { FreeBusyParams, TimePreference, BatchFreeBusyParams } from '../../api/calendar';
+import type { FreeBusyParams, TimePreference, BatchFreeBusyParams, ScoredSlot, ScoreReason } from '../../api/calendar';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../../utils/datetime';
@@ -199,6 +199,27 @@ function getPreferLabel(prefer: string | undefined): string | null {
 }
 
 /**
+ * P3-GEN1: Format score reasons for display
+ * 上位N件の理由を表示
+ */
+function formatScoreReasons(reasons: ScoreReason[], maxReasons: number = 2): string {
+  if (!reasons || reasons.length === 0) return '';
+  
+  // delta の絶対値でソートして上位を取得
+  const sorted = [...reasons]
+    .filter(r => r.source !== 'proximity') // プロキシミティは表示しない
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  
+  const top = sorted.slice(0, maxReasons);
+  if (top.length === 0) return '';
+  
+  return top.map(r => {
+    const sign = r.delta >= 0 ? '+' : '';
+    return `${sign}${r.delta} ${r.label}`;
+  }).join(', ');
+}
+
+/**
  * P1-3 + P3-SLOTGEN1: schedule.freebusy
  * 空き枠候補を表示するように拡張
  */
@@ -342,7 +363,13 @@ export async function executeFreeBusyBatch(intentResult: IntentResult): Promise<
     }
     
     // 2. 共通空き枠（メイン表示）
-    if (response.available_slots && response.available_slots.length > 0) {
+    // P3-GEN1: スコア付きスロットを優先表示
+    const slotsToDisplay = response.scored_slots && response.scored_slots.length > 0
+      ? response.scored_slots
+      : response.available_slots;
+    const hasScoring = response.has_preferences && response.scored_slots && response.scored_slots.length > 0;
+    
+    if (slotsToDisplay && slotsToDisplay.length > 0) {
       const durationLabel = meetingLength ? `${meetingLength}分` : '60分';
       message += `✅ ${rangeLabel}の共通空き候補（${durationLabel}枠）:\n\n`;
       
@@ -350,9 +377,23 @@ export async function executeFreeBusyBatch(intentResult: IntentResult): Promise<
         message += `📌 ${preferLabel}で絞り込み\n\n`;
       }
       
-      response.available_slots.forEach((slot, index) => {
-        message += `${index + 1}. ${slot.label}\n`;
-      });
+      if (hasScoring) {
+        // P3-GEN1: スコア付きで表示
+        message += `⭐ 好みに基づいてスコア順で表示:\n\n`;
+        (response.scored_slots as ScoredSlot[]).forEach((slot, index) => {
+          const reasonsStr = formatScoreReasons(slot.reasons);
+          if (reasonsStr) {
+            message += `${index + 1}. ${slot.label} (スコア: ${slot.score}) ${reasonsStr}\n`;
+          } else {
+            message += `${index + 1}. ${slot.label}\n`;
+          }
+        });
+      } else {
+        // 通常表示
+        slotsToDisplay.forEach((slot, index) => {
+          message += `${index + 1}. ${slot.label}\n`;
+        });
+      }
       
       // 候補数が多い場合のヒント
       if (response.coverage && response.coverage.slot_count >= 8) {

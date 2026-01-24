@@ -45,6 +45,22 @@ export interface AvailableSlot {
   label: string;      // 表示用ラベル（例: "1/24(金) 14:00-15:00"）
 }
 
+// P3-GEN1: スコア理由
+export interface ScoreReason {
+  source: string;     // ユーザーIDまたは'proximity'
+  label: string;      // 理由のラベル
+  delta: number;      // スコアへの影響
+}
+
+// P3-GEN1: スコア付きスロット
+export interface ScoredSlot {
+  start_at: string;   // ISO 8601
+  end_at: string;     // ISO 8601
+  label: string;      // 表示用ラベル
+  score: number;      // 合計スコア
+  reasons: ScoreReason[];  // スコアの理由一覧
+}
+
 // P3-SLOTGEN1: Coverage info
 export interface SlotCoverage {
   time_min: string;
@@ -108,6 +124,7 @@ export interface BatchFreeBusyResponse {
   range: 'today' | 'week' | 'next_week';
   timezone: string;
   available_slots: AvailableSlot[];
+  scored_slots?: ScoredSlot[];  // P3-GEN1: スコア付きスロット
   busy_union: Array<{ start: string; end: string }>;
   per_participant: ParticipantBusy[];
   coverage: SlotCoverage;
@@ -115,6 +132,7 @@ export interface BatchFreeBusyResponse {
   linked_count: number;
   prefer: string | null;
   warning: string | null;
+  has_preferences?: boolean;  // P3-GEN1: 好み設定を持つ参加者がいるか
 }
 
 // ============================================================

@@ -415,6 +415,7 @@ app.post('/freebusy/batch', async (c) => {
       range,
       timezone: 'Asia/Tokyo',
       available_slots: result.available_slots,
+      scored_slots: result.scored_slots,
       busy_union: result.busy_union,
       per_participant: result.per_participant,
       coverage: result.coverage,
@@ -422,6 +423,7 @@ app.post('/freebusy/batch', async (c) => {
       linked_count: result.linked_count,
       prefer: result.prefer,
       warning: result.warning,
+      has_preferences: result.has_preferences,
     });
   } catch (error) {
     console.error('[Calendar] Error in freebusy/batch:', error);

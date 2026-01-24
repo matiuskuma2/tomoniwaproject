@@ -10,6 +10,8 @@
 
 import { GoogleCalendarService } from './googleCalendar';
 import { generateAvailableSlots, getTimeWindowFromPrefer } from '../utils/slotGenerator';
+import { scoreSlots, type ParticipantPrefs } from '../utils/slotScorer';
+import { parseSchedulePrefs, type ScoredSlot, type ScoreReason } from '../utils/schedulePrefs';
 import type { AvailableSlot, DayTimeWindow, SlotGeneratorResult } from '../utils/slotGenerator';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
@@ -45,6 +47,7 @@ export interface ParticipantBusy {
 
 export interface BatchFreeBusyResult {
   available_slots: AvailableSlot[];
+  scored_slots?: ScoredSlot[];  // P3-GEN1: スコア付きスロット
   busy_union: Array<{ start: string; end: string }>;
   per_participant: ParticipantBusy[];
   coverage: SlotGeneratorResult['coverage'];
@@ -52,6 +55,7 @@ export interface BatchFreeBusyResult {
   linked_count: number;
   prefer: string | null;
   warning: string | null;
+  has_preferences?: boolean;  // P3-GEN1: 好み設定を持つ参加者がいるか
 }
 
 // ============================================================
@@ -230,8 +234,46 @@ export async function getBatchFreeBusy(
     warning = `${excludedCount}名のカレンダーが連携されていないため、共通空き計算から除外しました。`;
   }
   
+  // P3-GEN1: 参加者の好みを取得してスコアリング
+  const participantPrefsForScoring: ParticipantPrefs[] = [];
+  
+  for (const pp of perParticipant) {
+    if (pp.status === 'success' && pp.participant.userId) {
+      // DBから好みを取得
+      try {
+        const userResult = await db
+          .prepare('SELECT schedule_prefs_json FROM users WHERE id = ?')
+          .bind(pp.participant.userId)
+          .first<{ schedule_prefs_json: string | null }>();
+        
+        const prefs = parseSchedulePrefs(userResult?.schedule_prefs_json);
+        participantPrefsForScoring.push({
+          userId: pp.participant.userId,
+          name: pp.participant.name,
+          prefs,
+        });
+      } catch (e) {
+        // 好み取得失敗時はスコア0で継続
+        participantPrefsForScoring.push({
+          userId: pp.participant.userId,
+          name: pp.participant.name,
+          prefs: null,
+        });
+      }
+    }
+  }
+  
+  // スコアリング実行
+  const scorerResult = scoreSlots({
+    slots: slotResult.available_slots,
+    participantPrefs: participantPrefsForScoring,
+    maxResults,
+    timezone,
+  });
+
   return {
     available_slots: slotResult.available_slots,
+    scored_slots: scorerResult.scored_slots,
     busy_union: busyUnion,
     per_participant: perParticipant,
     coverage: slotResult.coverage,
@@ -239,6 +281,7 @@ export async function getBatchFreeBusy(
     linked_count: linkedCount,
     prefer: prefer || null,
     warning,
+    has_preferences: scorerResult.has_preferences,
   };
 }
 
