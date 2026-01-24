@@ -71,6 +71,8 @@ import {
   executePreferenceShow,
   executePreferenceClear,
 } from './executors/preference';
+// CONV-1.0: nlRouter API client
+import { nlRouterApi, isCalendarIntent } from '../api/nlRouter';
 
 // ============================================================
 // PERF-S1: キャッシュ連携ヘルパー
@@ -497,10 +499,8 @@ export async function executeIntent(
       return executePreferenceClear();
     
     case 'unknown':
-      return {
-        success: false,
-        message: '理解できませんでした',
-      };
+      // CONV-1.0: nlRouter フォールバック（calendar限定）
+      return executeUnknownWithNlRouter(intentResult, context);
     
     default:
       return {
@@ -1717,6 +1717,106 @@ function executeRescheduleCancel(): ExecutionResult {
       payload: {},
     },
   };
+}
+
+// ============================================================
+// CONV-1.0: nlRouter フォールバック（calendar限定）
+// ============================================================
+
+/**
+ * CONV-1.0: unknown 時に nlRouter を呼び出すフォールバック
+ * 
+ * - calendar 系のみ対応（READ-ONLY）
+ * - nlRouter が calendar intent を返した場合のみ再実行
+ * - write 系は一切返さない（安全）
+ * 
+ * @param intentResult - 元の unknown IntentResult
+ * @param context - ExecutionContext
+ */
+async function executeUnknownWithNlRouter(
+  intentResult: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  // 元の rawInput がなければフォールバック不可
+  const rawInput = intentResult.params?.rawInput;
+  if (!rawInput || typeof rawInput !== 'string' || rawInput.trim().length < 3) {
+    return {
+      success: false,
+      message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
+    };
+  }
+
+  try {
+    // nlRouter を呼び出し
+    const nlResult = await nlRouterApi.route({
+      text: rawInput,
+      context: {
+        selected_thread_id: intentResult.params?.threadId || null,
+        viewer_timezone: 'Asia/Tokyo',
+      },
+    });
+
+    // needs_clarification がある場合はそれを返す
+    if (nlResult.needs_clarification) {
+      return {
+        success: false,
+        message: nlResult.needs_clarification.message,
+        needsClarification: {
+          field: nlResult.needs_clarification.field,
+          message: nlResult.needs_clarification.message,
+        },
+      };
+    }
+
+    // unknown のままなら諦める
+    if (nlResult.intent === 'unknown' || nlResult.confidence < 0.5) {
+      return {
+        success: false,
+        message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
+      };
+    }
+
+    // calendar 系以外は安全のためブロック
+    if (!isCalendarIntent(nlResult.intent)) {
+      log.warn('[CONV-1.0] nlRouter returned non-calendar intent', {
+        module: 'apiExecutor',
+        intent: nlResult.intent,
+        confidence: nlResult.confidence,
+      });
+      return {
+        success: false,
+        message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
+      };
+    }
+
+    // calendar intent を再実行
+    log.info('[CONV-1.0] nlRouter fallback success', {
+      module: 'apiExecutor',
+      intent: nlResult.intent,
+      confidence: nlResult.confidence,
+      params: nlResult.params,
+    });
+
+    const newIntentResult: IntentResult = {
+      intent: nlResult.intent as IntentResult['intent'],
+      confidence: nlResult.confidence,
+      params: nlResult.params,
+    };
+
+    // 再帰的に executeIntent を呼び出す
+    return executeIntent(newIntentResult, context);
+
+  } catch (error) {
+    log.warn('[CONV-1.0] nlRouter fallback error', {
+      module: 'apiExecutor',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    
+    return {
+      success: false,
+      message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
+    };
+  }
 }
 
 // Export type for external use

@@ -65,15 +65,15 @@ export function classifyIntentChain(input: string, context?: IntentContext): Int
   }
 
   // どの分類器にもマッチしなかった場合
+  // CONV-1.0: rawInput を params に含めて nlRouter フォールバック用に保持
   return {
     intent: 'unknown',
     confidence: 0,
-    params: {},
-    needsClarification: {
-      field: 'intent',
-      message:
-        '申し訳ございません。理解できませんでした。\n\n以下のような指示ができます：\n- 「〇〇さんに日程調整送って」（調整作成）\n- 「状況教えて」（進捗確認）\n- 「1番で確定して」（日程確定）',
+    params: {
+      rawInput: input, // CONV-1.0: nlRouter フォールバック用
+      threadId: context?.selectedThreadId,
     },
+    // CONV-1.0: needsClarification は apiExecutor.ts で nlRouter 結果に応じて設定
   };
 }
 

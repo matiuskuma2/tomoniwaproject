@@ -35,6 +35,7 @@ import billingRoutes from './routes/billing';
 import pendingActionsRoutes from './routes/pendingActions';
 import usersMeRoutes from './routes/usersMe';
 import workspaceNotificationsRoutes from './routes/workspaceNotifications';
+import nlRouterRoutes from './routes/nlRouter';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -209,6 +210,11 @@ app.route('/api/workspace/notifications', workspaceNotificationsRoutes);
 app.use('/api/calendar', requireAuth);
 app.use('/api/calendar/*', requireAuth);
 app.route('/api/calendar', calendarRoutes);
+
+// NL Router API (CONV-1.0 - Natural Language to Intent routing)
+app.use('/api/nl', requireAuth);
+app.use('/api/nl/*', requireAuth);
+app.route('/api/nl', nlRouterRoutes);
 
 // Billing API (MyASP課金連携 - Phase Next-11)
 // 認証境界を「コードで固定」する（運用事故防止 - Day3-0）
