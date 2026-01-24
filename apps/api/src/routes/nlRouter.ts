@@ -1,14 +1,17 @@
 /**
  * nlRouter.ts
  * CONV-1.0: calendar限定のAIルーティングAPI
+ * CONV-1.1: params補完（Assist Mode）追加
  * 
- * POST /api/nl/route
+ * POST /api/nl/route   - intent判定
+ * POST /api/nl/assist  - params補完（CONV-1.1）
  * 
  * 設計原則:
  * - READ-ONLYのcalendar系のみ
  * - write系を絶対に選ばない
  * - 不明な場合は unknown を返す
  * - 既存のintent/execを壊さない
+ * - CONV-1.1: intentは変更せず、params補完のみ
  */
 
 import { Hono } from 'hono';
@@ -16,7 +19,14 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import type { Variables } from '../middleware/auth';
 import { getTenant } from '../utils/workspaceContext';
 import { buildNlRouterSystemPrompt, buildNlRouterUserPrompt } from '../utils/nlRouterPrompt';
-import { RouteResultSchema, dayTimeToPrefer } from '../utils/nlRouterSchema';
+import { buildAssistSystemPrompt, buildAssistUserPrompt } from '../utils/nlAssistPrompt';
+import { 
+  RouteResultSchema, 
+  dayTimeToPrefer,
+  AssistRequestSchema,
+  AssistResponseSchema,
+  type AssistRequest,
+} from '../utils/nlRouterSchema';
 
 // ============================================================
 // LLM呼び出し（OpenAI互換）
@@ -202,6 +212,145 @@ app.post('/route', async (c) => {
       intent: 'unknown',
       confidence: 0.0,
       params: {},
+    });
+  }
+});
+
+// ============================================================
+// CONV-1.1: POST /assist（params補完）
+// ============================================================
+
+/**
+ * POST /assist
+ * 
+ * Request:
+ * {
+ *   "text": "来週の午後で空いてる？",
+ *   "detected_intent": "schedule.freebusy",
+ *   "existing_params": {},
+ *   "viewer_timezone": "Asia/Tokyo"
+ * }
+ * 
+ * Response:
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "target_intent": "schedule.freebusy",
+ *     "params_patch": { "range": "next_week", "dayTimeWindow": "afternoon" },
+ *     "confidence": 0.9,
+ *     "rationale": "来週=next_week, 午後=afternoon"
+ *   }
+ * }
+ */
+app.post('/assist', async (c) => {
+  const { env } = c;
+  const { workspaceId } = getTenant(c);
+
+  let body: AssistRequest;
+  try {
+    const rawBody = await c.req.json();
+    body = AssistRequestSchema.parse(rawBody);
+  } catch (e) {
+    return c.json({
+      success: false,
+      error: 'invalid_request',
+      message: 'リクエスト形式が不正です',
+    }, 400);
+  }
+
+  try {
+    // プロンプト構築
+    const system = buildAssistSystemPrompt();
+    const user = buildAssistUserPrompt(body);
+
+    // LLM呼び出し（低コスト設定）
+    const raw = await callLLM(system, user, env.OPENAI_API_KEY);
+
+    // JSON抽出
+    const jsonText = extractJSON(raw);
+
+    // バリデーション
+    const parsed = AssistResponseSchema.parse(JSON.parse(jsonText));
+
+    // 絶対ルール: intent変更禁止
+    if (parsed.target_intent !== body.detected_intent) {
+      console.warn('[nlRouter/assist] intent mismatch rejected', {
+        workspaceId,
+        detected: body.detected_intent,
+        returned: parsed.target_intent,
+      });
+      return c.json({
+        success: false,
+        error: 'intent_mismatch',
+        message: 'AIがintentを変更しようとしたため拒否しました',
+      });
+    }
+
+    // confidence が低すぎる場合は空patchを返す
+    if (parsed.confidence < 0.5) {
+      return c.json({
+        success: true,
+        data: {
+          target_intent: body.detected_intent,
+          params_patch: {},
+          confidence: parsed.confidence,
+          rationale: 'confidence too low, returning empty patch',
+        },
+      });
+    }
+
+    // existing_params にある項目を params_patch から除去（上書き防止）
+    const cleanedPatch = { ...parsed.params_patch };
+    for (const key of Object.keys(body.existing_params)) {
+      if (key in cleanedPatch) {
+        delete cleanedPatch[key as keyof typeof cleanedPatch];
+      }
+    }
+
+    // dayTimeWindow を prefer に変換（既存API互換）
+    if (cleanedPatch.dayTimeWindow) {
+      const prefer = dayTimeToPrefer(cleanedPatch.dayTimeWindow as 'morning' | 'afternoon' | 'night');
+      if (prefer) {
+        (cleanedPatch as Record<string, unknown>).prefer = prefer;
+      }
+      delete cleanedPatch.dayTimeWindow;
+    }
+
+    // durationMinutes を meetingLength に変換（既存API互換）
+    if (cleanedPatch.durationMinutes) {
+      (cleanedPatch as Record<string, unknown>).meetingLength = cleanedPatch.durationMinutes;
+      delete cleanedPatch.durationMinutes;
+    }
+
+    console.log('[nlRouter/assist] success', {
+      workspaceId,
+      intent: body.detected_intent,
+      confidence: parsed.confidence,
+      patchKeys: Object.keys(cleanedPatch),
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        target_intent: parsed.target_intent,
+        params_patch: cleanedPatch,
+        confidence: parsed.confidence,
+        rationale: parsed.rationale,
+      },
+    });
+
+  } catch (e) {
+    console.error('[nlRouter/assist] error', e, { workspaceId, text: body.text });
+    
+    // エラー時は空patchを返す（従来動作にフォールバック）
+    return c.json({
+      success: true,
+      data: {
+        target_intent: body.detected_intent,
+        params_patch: {},
+        confidence: 0,
+        rationale: 'error occurred, returning empty patch',
+      },
     });
   }
 });

@@ -1446,4 +1446,118 @@ classifyIntentChain → unknown → executeUnknownWithNlRouter
 
 ---
 
+## 30. CONV-1.1（AI Assist - params補完）実装完了 ✅
+
+### 30.1 概要
+
+- **目的**: classifierでintentが確定した後、不足paramsをAIで補完
+- **特徴**: 
+  - intentは変更しない（安全設計）
+  - read-only のcalendar系のみ対象
+  - 失敗しても従来動作にフォールバック
+
+### 30.2 体験イメージ
+
+**Before（CONV-1.0まで）**:
+```
+ユーザー: 来週の午後、空いてる？
+AI: [全時間帯の空きを表示] ← 午後という指定が無視される
+```
+
+**After（CONV-1.1）**:
+```
+ユーザー: 来週の午後、空いてる？
+AI: [午後の空きのみを表示] ← AI Assistで午後params補完 ✅
+
+ユーザー: 今週、夜いける？
+AI: [18時以降の空きを表示] ← AI Assistで夜params補完 ✅
+```
+
+### 30.3 対象スコープ
+
+| Intent | 補完対象params |
+|--------|---------------|
+| schedule.freebusy | range, dayTimeWindow, durationMinutes |
+| schedule.freebusy.batch | range, dayTimeWindow, durationMinutes |
+| schedule.today | dayTimeWindow |
+| schedule.week | range, dayTimeWindow |
+
+### 30.4 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/utils/nlRouterSchema.ts` | AssistExtract schema追加 |
+| `apps/api/src/utils/nlAssistPrompt.ts` | Assist Mode専用prompt |
+| `apps/api/src/routes/nlRouter.ts` | POST /api/nl/assist エンドポイント |
+
+**API仕様（POST /api/nl/assist）**:
+```typescript
+// Request
+{
+  text: string;
+  detected_intent: string;
+  existing_params: Record<string, any>;
+  viewer_timezone?: string;
+  now_iso?: string;
+  context_hint?: string;
+}
+
+// Response
+{
+  target_intent: string;      // detected_intentと同一（変更禁止）
+  params_patch: Record<string, any>;
+  confidence: number;         // 0.0-1.0
+  rationale?: string;
+}
+```
+
+### 30.5 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `frontend/src/core/api/nlAssist.ts` | Assist API クライアント |
+| `frontend/src/core/chat/apiExecutor.ts` | maybeAssistParams フック |
+
+**処理フロー**:
+```
+classifyIntentChain → calendar intent検出 → maybeAssistParams
+→ params不足? → /api/nl/assist → params_patchをマージ
+→ executeIntent（補完済みparams）
+```
+
+### 30.6 補完マッピング
+
+| 日本語表現 | パラメータ |
+|-----------|-----------|
+| 来週 | range: "next_week" |
+| 今週 | range: "this_week" |
+| 午後 | dayTimeWindow: "afternoon" |
+| 夜 | dayTimeWindow: "night" |
+| 夕方 | dayTimeWindow: "evening" |
+| 午前 | dayTimeWindow: "morning" |
+| 1時間 | durationMinutes: 60 |
+| 30分 | durationMinutes: 30 |
+
+### 30.7 安全設計
+
+1. **intent変更禁止**: target_intent !== detected_intent は reject
+2. **低信頼度スキップ**: confidence < 0.6 は params_patch 適用しない
+3. **フォールバック**: API失敗時は従来動作を継続
+4. **read-only**: calendar系のみ、write系は対象外
+
+### 30.8 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/calendar.spec.ts` | CONV-1.1a: 午後params補完 |
+| | CONV-1.1b: 夜params補完 |
+
+### 30.9 今後の拡張（CONV-1.2以降）
+
+- write_external系への拡張（policyGate通過必須）
+- duration/count等の追加補完
+- 曜日指定（月曜日、週末など）
+
+---
+
 *最終更新: 2026-01-24*
