@@ -818,7 +818,7 @@ interface ScoredSlot {
 - "好みっぽい文言" → 構造化 → スコア反映
 - 既存インテントは温存
 
-### Phase CONV-1: AIが「解釈補助」になる（次の実装）
+### Phase CONV-1: AIが「解釈補助」になる（✅ 実装完了）
 
 **実装内容**:
 - 現状の classifier はそのまま
@@ -828,6 +828,43 @@ interface ScoredSlot {
 **成果**:
 - "決め打ち文言じゃないと動かない" が一気に緩和
 - 事故は増えない（confirmは既存のまま）
+
+**実装ファイル**:
+
+| ファイル | 概要 |
+|---------|------|
+| `nlRouter/types.ts` | Zod スキーマ + ActionPlan/NlRouterOutput 型定義 |
+| `nlRouter/systemPrompt.ts` | AI システムプロンプト生成 |
+| `nlRouter/nlRouter.ts` | AI呼び出し本体（OpenAI互換） |
+| `nlRouter/policyGate.ts` | 安全ゲート（write_external必ず確認、pending中制限） |
+| `nlRouter/executorBridge.ts` | ActionPlan→IntentResult変換、既存実行への橋渡し |
+| `nlRouter/index.ts` | 統合エントリポイント |
+
+**使い方**:
+```typescript
+import { route, classifyWithAiFallback, createContext, createInput } from './nlRouter';
+
+// 方法1: 直接 AI を呼ぶ場合
+const context = createContext({ selectedThreadId });
+const input = createInput(userMessage, context);
+const output = await route(input, { apiKey: 'YOUR_API_KEY' });
+
+// 方法2: ルールベース + AI フォールバックの統合フロー
+const result = await classifyWithAiFallback({
+  input: userMessage,
+  context,
+  ruleResult: classifyIntent(userMessage, intentContext),
+  aiEnabled: true,
+  aiOptions: { apiKey: 'YOUR_API_KEY' }
+});
+// result.source = 'rule' | 'ai' | 'fallback'
+```
+
+**安全ポリシー（policyGate）**:
+- `.confirm` 系 intent は AI が直接返すことを禁止
+- `write_external` 系は AI が直接返すことを禁止（確認フロー経由必須）
+- pending 中は `pending.action.decide`, `schedule.today/week/freebusy` 等のみ許可
+- 確認必須 intent は `requires_confirm` を強制 true
 
 ### Phase CONV-2: AIが「会話の主導権」を持つ
 
@@ -874,14 +911,15 @@ interface ScoredSlot {
 
 ## 24. 次のアクション
 
-### 直近（設計固め完了後）
+### 直近（CONV-1 実装フェーズ）
 
-1. **P3-SCORE1（理由表示）実装**: `rule.label` 自動生成、executors表示強化
-2. **Phase CONV-1準備**: nlRouter のプロンプト設計、Zodスキーマ定義
+1. ✅ **P3-SCORE1（理由表示）実装**: `rule.label` 自動生成、executors表示強化
+2. ✅ **Phase CONV-1 設計**: nlRouter のプロンプト設計、Zodスキーマ定義
+3. **AI サービス接続**: 実際の LLM API（OpenAI/Claude/Azure）との接続実装
 
 ### 中期
 
-3. **Phase CONV-1実装**: unknown時のAIフォールバック
+4. **Phase CONV-1 統合テスト**: unknown時のAIフォールバック動作確認
 4. **好み設定UI**: チャットから好みを設定できる `preference.set` の自然言語対応
 5. **状態遷移の可視化**: 調整フローの進捗表示（UIコンポーネント）
 
@@ -902,6 +940,119 @@ interface ScoredSlot {
 | `apps/api/src/utils/slotScorer.ts` | スコアリングロジック |
 | `frontend/src/core/chat/classifier/types.ts` | IntentType 定義 |
 | `frontend/src/core/chat/pendingTypes.ts` | PendingState 定義 |
+| `frontend/src/core/chat/nlRouter/` | CONV-1 AI フォールバック設計 |
+
+---
+
+## 25. CONV-1 設計詳細（nlRouter）
+
+### 25.1 コンポーネント構成
+
+```
+frontend/src/core/chat/nlRouter/
+├── types.ts          # Zod スキーマ + 型定義
+├── systemPrompt.ts   # AI システムプロンプト
+├── policyGate.ts     # 安全ゲート
+├── executorBridge.ts # 既存実行への橋渡し
+└── index.ts          # 統合エントリポイント
+```
+
+### 25.2 データフロー
+
+```
+ユーザー入力
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│  classifyIntentChain()                   │
+│  （既存ルール分類）                        │
+└─────────────────────────────────────────┘
+    │
+    │ intent === 'unknown' の場合のみ
+    ▼
+┌─────────────────────────────────────────┐
+│  classifyWithFallback()                  │
+│  （AI フォールバック）                    │
+│                                          │
+│  1. nlRouter.classify() → ActionPlan    │
+│  2. policyGate.evaluate() → 検証        │
+│  3. executorBridge.convert() → IntentResult │
+└─────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│  既存の executeIntent()                  │
+│  （apiExecutor / executors）             │
+└─────────────────────────────────────────┘
+```
+
+### 25.3 ActionPlan スキーマ
+
+```typescript
+interface ActionPlan {
+  intent: IntentType;           // 既存の intent に落とす
+  params: {                     // Intent 別のパラメータ
+    range?: 'today' | 'week' | 'next_week';
+    prefer?: 'morning' | 'afternoon' | 'evening' | 'business';
+    duration_minutes?: number;
+    threadId?: string;
+    participants?: ParticipantInfo[];
+    // ...
+  };
+  meta?: {                      // メタモデル要素
+    topology?: 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6';
+    participation_rule?: 'AND' | 'OR' | 'VOTE';
+    visibility_level?: 'V0' | 'V1' | 'V2' | 'V3';
+    commit_rule?: 'manual' | 'auto' | 'tentative' | 'proxy';
+  };
+  requires_confirm: boolean;    // 確認が必要か
+  clarifications?: Array<{      // 不足情報の質問
+    field: string;
+    question: string;
+  }>;
+  confidence: number;           // AI の信頼度 (0.0-1.0)
+  message?: string;             // ユーザーへの返答
+}
+```
+
+### 25.4 policyGate ルール
+
+| チェック項目 | 内容 | ブロック時のアクション |
+|-------------|------|----------------------|
+| 許可リスト | intent が許可リストにあるか | エラー返却 |
+| スレッド必須 | 一部 intent は threadId 必須 | 質問を返す |
+| pending 必須 | pending.action.decide 等 | 質問を返す |
+| 必須パラメータ | intent 別の必須項目 | 質問を返す |
+| 信頼度閾値 | confidence < 0.5 | 質問を返す |
+| clarifications | 不足情報がある | 質問を返す |
+
+### 25.5 使用方法
+
+```typescript
+import { classifyWithFallback, configureNlRouter } from './nlRouter';
+
+// アプリ起動時に設定
+configureNlRouter({
+  enabled: true,
+  endpoint: process.env.AI_SERVICE_ENDPOINT,
+});
+
+// 分類時（既存の classifyIntent の代わりに）
+const result = await classifyWithFallback(userInput, context);
+```
+
+### 25.6 実装 TODO
+
+| 優先度 | タスク | 状態 |
+|--------|--------|------|
+| 高 | Zod スキーマ定義 | ✅ 完了 |
+| 高 | システムプロンプト設計 | ✅ 完了 |
+| 高 | policyGate 実装 | ✅ 完了 |
+| 高 | executorBridge 実装 | ✅ 完了 |
+| 高 | 統合エントリポイント | ✅ 完了 |
+| 中 | AI サービス接続 | 未着手 |
+| 中 | E2E テスト | 未着手 |
+| 低 | 監査ログ保存 | 未着手 |
 
 ---
 
