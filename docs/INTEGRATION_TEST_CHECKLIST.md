@@ -388,11 +388,23 @@
 
 ---
 
+## 実施ログの保存場所
+
+```
+docs/integration_logs/YYYY-MM-DD_integration_run.md
+```
+
+- テンプレート: [_TEMPLATE.md](./integration_logs/_TEMPLATE.md)
+- 毎回の実施結果をファイルで残し、PRで追跡可能に
+
+---
+
 ## 関連ドキュメント
 
 - [AI_CONVERSATIONAL_ROADMAP.md](./AI_CONVERSATIONAL_ROADMAP.md) - 全体設計とフェーズ定義
 - [PREF-SET-1 実装完了（§27）](./AI_CONVERSATIONAL_ROADMAP.md#27-pref-set-1好み設定の会話入力実装完了-) 
 - [PROG-1 実装完了（§28）](./AI_CONVERSATIONAL_ROADMAP.md#28-prog-1進捗要約実装完了-)
+- [実施ログテンプレート](./integration_logs/_TEMPLATE.md)
 
 ---
 
