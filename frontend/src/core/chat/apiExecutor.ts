@@ -75,6 +75,8 @@ import {
 } from './executors/preference';
 // CONV-1.0: nlRouter API client
 import { nlRouterApi, isCalendarIntent } from '../api/nlRouter';
+// CONV-CHAT: 雑談API client
+import { chatApi } from '../api/chat';
 
 // ============================================================
 // PERF-S1: キャッシュ連携ヘルパー
@@ -1780,25 +1782,19 @@ async function executeUnknownWithNlRouter(
       };
     }
 
-    // unknown のままなら諦める
+    // CONV-CHAT: unknown のままなら雑談フォールバックへ
     if (nlResult.intent === 'unknown' || nlResult.confidence < 0.5) {
-      return {
-        success: false,
-        message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
-      };
+      return executeChatFallback(rawInput, intentResult.params?.threadId);
     }
 
-    // calendar 系以外は安全のためブロック
+    // CONV-CHAT: calendar 系以外は雑談フォールバックへ
     if (!isCalendarIntent(nlResult.intent)) {
-      log.warn('[CONV-1.0] nlRouter returned non-calendar intent', {
+      log.info('[CONV-CHAT] nlRouter returned non-calendar intent, falling back to chat', {
         module: 'apiExecutor',
         intent: nlResult.intent,
         confidence: nlResult.confidence,
       });
-      return {
-        success: false,
-        message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
-      };
+      return executeChatFallback(rawInput, intentResult.params?.threadId);
     }
 
     // calendar intent を再実行
@@ -1824,9 +1820,58 @@ async function executeUnknownWithNlRouter(
       error: error instanceof Error ? error.message : String(error),
     });
     
+    // CONV-CHAT: nlRouterエラー時は雑談フォールバック
+    return executeChatFallback(rawInput, intentResult.params?.threadId);
+  }
+}
+
+// ============================================================
+// CONV-CHAT: 雑談フォールバック
+// ============================================================
+
+/**
+ * 機能に該当しない入力を雑談APIへフォールバック
+ * AI秘書として自然な会話を実現
+ */
+async function executeChatFallback(
+  text: string,
+  threadId?: string | null
+): Promise<ExecutionResult> {
+  try {
+    log.info('[CONV-CHAT] Executing chat fallback', {
+      module: 'apiExecutor',
+      textLength: text.length,
+      hasThreadId: !!threadId,
+    });
+
+    const response = await chatApi.sendMessage({
+      text,
+      context: {
+        thread_id: threadId ?? null,
+      },
+    });
+
     return {
-      success: false,
-      message: '理解できませんでした。\n\n以下のような指示ができます：\n- 「今日の予定」\n- 「来週の空き」\n- 「〇〇さんに日程調整送って」',
+      success: true,
+      message: response.message,
+      data: {
+        kind: 'chat.response',
+        payload: {
+          intent_detected: response.intent_detected,
+          should_execute: response.should_execute,
+        },
+      },
+    };
+  } catch (error) {
+    log.warn('[CONV-CHAT] Chat fallback error', {
+      module: 'apiExecutor',
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    // エラー時もユーザーフレンドリーに応答
+    return {
+      success: true,
+      message: '申し訳ありません、少し問題が発生しました。\n\n以下のような指示ができます：\n• 「今日の予定」\n• 「来週の空き」\n• 「〇〇さんに日程調整送って」',
     };
   }
 }

@@ -37,6 +37,7 @@ import usersMeRoutes from './routes/usersMe';
 import workspaceNotificationsRoutes from './routes/workspaceNotifications';
 import nlRouterRoutes from './routes/nlRouter';
 import nlPrefsRoutes from './routes/nlPrefs';
+import chatRoutes from './routes/chat';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -219,6 +220,11 @@ app.route('/api/nl', nlRouterRoutes);
 
 // NL Prefs API (PREF-SET-1 - Natural Language to Preference extraction)
 app.route('/api/nl/prefs', nlPrefsRoutes);
+
+// Chat API (CONV-CHAT - AI秘書との会話)
+app.use('/api/chat', requireAuth);
+app.use('/api/chat/*', requireAuth);
+app.route('/api/chat', chatRoutes);
 
 // Billing API (MyASP課金連携 - Phase Next-11)
 // 認証境界を「コードで固定」する（運用事故防止 - Day3-0）

@@ -1355,4 +1355,95 @@ GET /api/threads/{threadId}/summary?format=chat
 
 ---
 
+## 29. CONV-CHAT（AI秘書の雑談対応）実装完了 ✅
+
+### 29.1 概要
+
+- **目的**: AI秘書として自然な会話ができるようにする
+- **特徴**: 
+  - 予定調整以外の話題にも応答
+  - 会話履歴はDBに永続化
+  - コスト最適化（直近5ターンのみLLMに送信、定型応答はLLMスキップ）
+  - 機能意図を検出したら既存intentへ誘導
+
+### 29.2 体験イメージ
+
+**Before（現状）**:
+```
+ユーザー: こんにちは
+AI: 理解できませんでした。以下のような指示ができます... ❌
+```
+
+**After（目標）**:
+```
+ユーザー: こんにちは
+AI: こんにちは！今日は何かお手伝いできることはありますか？ ✅
+
+ユーザー: 最近忙しくて疲れてるんだよね
+AI: お疲れ様です。何かお手伝いできることがあれば教えてください。 ✅
+
+ユーザー: 来週の空き教えて
+AI: [通常のfreebusy処理] ✅
+```
+
+### 29.3 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `db/migrations/0079_create_chat_messages.sql` | 会話履歴テーブル |
+| `apps/api/src/routes/chat.ts` | POST /api/chat/message, GET /api/chat/history |
+
+**API仕様（POST /api/chat/message）**:
+```typescript
+// Request
+{ text: string; context?: { thread_id?: string } }
+
+// Response
+{ message: string; intent_detected?: string; should_execute?: boolean }
+```
+
+### 29.4 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `frontend/src/core/api/chat.ts` | Chat API クライアント |
+| `frontend/src/core/chat/apiExecutor.ts` | executeChatFallback 追加 |
+
+**フォールバック経路**:
+```
+classifyIntentChain → unknown → executeUnknownWithNlRouter 
+→ nlRouter も unknown → executeChatFallback → /api/chat/message
+```
+
+### 29.5 コスト最適化
+
+| 戦略 | 内容 |
+|------|------|
+| 定型応答 | 「こんにちは」「ありがとう」等はLLMスキップ |
+| 履歴制限 | 直近5ターンのみLLMに送信 |
+| 低コストモデル | gpt-4o-mini（temperature: 0.7） |
+| 応答制限 | max_tokens: 200（短い応答） |
+
+### 29.6 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/chat.spec.ts` | CHAT-1: 挨拶への応答 |
+| | CHAT-2: ヘルプへの応答 |
+| | CHAT-3: 雑談から機能への切り替え |
+| | CHAT-4: 感謝への応答 |
+
+### 29.7 設計ポイント
+
+1. **機能優先**: classifyIntentChain → nlRouter の後に雑談フォールバック
+2. **自然な誘導**: 雑談でも「何かお手伝いできることは？」で機能へ誘導
+3. **履歴永続化**: chat_messages テーブルに保存
+4. **エラー耐性**: LLMエラー時もフレンドリーな応答を返す
+
+### 29.8 関連ドキュメント
+
+- [CONV_CHAT_DESIGN.md](./CONV_CHAT_DESIGN.md) - 詳細設計書
+
+---
+
 *最終更新: 2026-01-24*
