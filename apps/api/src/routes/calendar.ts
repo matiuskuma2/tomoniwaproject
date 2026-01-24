@@ -10,6 +10,8 @@
 import { Hono } from 'hono';
 import { GoogleCalendarService } from '../services/googleCalendar';
 import { generateAvailableSlots, getTimeWindowFromPrefer } from '../utils/slotGenerator';
+import { getBatchFreeBusy, getThreadParticipants } from '../services/freebusyBatch';
+import type { ParticipantInfo } from '../services/freebusyBatch';
 import type { Env } from '../../../../packages/shared/src/types/env';
 
 type Variables = {
@@ -328,6 +330,105 @@ app.get('/freebusy', async (c) => {
       available_slots: [],
       warning: 'fetch_error',
     });
+  }
+});
+
+/**
+ * POST /api/calendar/freebusy/batch
+ * P3-INTERSECT1: 複数参加者の共通空き枠を計算
+ * 
+ * @body threadId - スレッドIDから参加者を自動取得（優先）
+ * @body participants - 参加者リスト（threadIdがない場合に使用）
+ * @body range - 'today' | 'week' | 'next_week' (default: 'week')
+ * @body prefer - 'morning' | 'afternoon' | 'evening' | 'business' (optional)
+ * @body meeting_length - ミーティング長（分、default: 60）
+ */
+app.post('/freebusy/batch', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const body = await c.req.json<{
+      threadId?: string;
+      participants?: ParticipantInfo[];
+      range?: 'today' | 'week' | 'next_week';
+      prefer?: string;
+      meeting_length?: number;
+    }>();
+
+    const range = body.range || 'week';
+    const prefer = body.prefer;
+    const meetingLength = body.meeting_length || 60;
+
+    console.log('[Calendar] POST /freebusy/batch - userId:', userId, 'range:', range, 'prefer:', prefer);
+
+    // 1. 参加者リストを取得
+    let participants: ParticipantInfo[];
+    
+    if (body.threadId) {
+      // スレッドから参加者を取得
+      participants = await getThreadParticipants(env.DB, body.threadId, userId);
+    } else if (body.participants && body.participants.length > 0) {
+      // 直接指定された参加者を使用
+      participants = body.participants;
+    } else {
+      // 主催者のみ
+      participants = [{ type: 'self', userId }];
+    }
+
+    // 2. 期間を計算
+    let timeMin: string;
+    let timeMax: string;
+
+    if (range === 'next_week') {
+      const bounds = getNextWeekBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    } else if (range === 'week') {
+      const bounds = getWeekBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    } else {
+      const bounds = getTodayBounds('Asia/Tokyo');
+      timeMin = bounds.timeMin;
+      timeMax = bounds.timeMax;
+    }
+
+    // 3. バッチfreebusyを実行
+    const result = await getBatchFreeBusy(env.DB, env, {
+      organizerUserId: userId,
+      participants,
+      timeMin,
+      timeMax,
+      meetingLengthMin: meetingLength,
+      stepMin: 30,
+      maxResults: 8,
+      prefer,
+      timezone: 'Asia/Tokyo',
+    });
+
+    return c.json({
+      range,
+      timezone: 'Asia/Tokyo',
+      available_slots: result.available_slots,
+      busy_union: result.busy_union,
+      per_participant: result.per_participant,
+      coverage: result.coverage,
+      excluded_count: result.excluded_count,
+      linked_count: result.linked_count,
+      prefer: result.prefer,
+      warning: result.warning,
+    });
+  } catch (error) {
+    console.error('[Calendar] Error in freebusy/batch:', error);
+    return c.json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
   }
 });
 

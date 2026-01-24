@@ -23,6 +23,7 @@ export {
   executeToday,
   executeWeek,
   executeFreeBusy,
+  executeFreeBusyBatch,  // P3-INTERSECT1
 } from './calendar';
 
 // List executors

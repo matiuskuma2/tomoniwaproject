@@ -75,6 +75,49 @@ export interface FreeBusyParams {
 }
 
 // ============================================================
+// P3-INTERSECT1: Batch FreeBusy Types
+// ============================================================
+
+// 参加者の種類
+export interface ParticipantInfo {
+  type: 'self' | 'app_user' | 'external';
+  userId?: string;
+  email?: string;
+  name?: string;
+}
+
+// 参加者ごとのbusy結果
+export interface ParticipantBusy {
+  participant: ParticipantInfo;
+  busy: Array<{ start: string; end: string }>;
+  status: 'success' | 'not_linked' | 'error' | 'external_excluded';
+  error?: string;
+}
+
+// バッチfreebusyリクエスト
+export interface BatchFreeBusyParams {
+  threadId?: string;
+  participants?: ParticipantInfo[];
+  range?: 'today' | 'week' | 'next_week';
+  prefer?: TimePreference;
+  meetingLength?: number;
+}
+
+// バッチfreebusyレスポンス
+export interface BatchFreeBusyResponse {
+  range: 'today' | 'week' | 'next_week';
+  timezone: string;
+  available_slots: AvailableSlot[];
+  busy_union: Array<{ start: string; end: string }>;
+  per_participant: ParticipantBusy[];
+  coverage: SlotCoverage;
+  excluded_count: number;
+  linked_count: number;
+  prefer: string | null;
+  warning: string | null;
+}
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -118,5 +161,25 @@ export const calendarApi = {
     }
     
     return api.get(`/api/calendar/freebusy?${queryParts.join('&')}`);
+  },
+
+  /**
+   * P3-INTERSECT1: Get common available slots for multiple participants
+   * 
+   * @param params - Batch freebusy parameters
+   * @param params.threadId - Thread ID to get participants from (priority)
+   * @param params.participants - Direct participant list (if no threadId)
+   * @param params.range - 'today' | 'week' | 'next_week'
+   * @param params.prefer - Time preference filter
+   * @param params.meetingLength - Meeting duration in minutes
+   */
+  async getBatchFreeBusy(params: BatchFreeBusyParams): Promise<BatchFreeBusyResponse> {
+    return api.post('/api/calendar/freebusy/batch', {
+      threadId: params.threadId,
+      participants: params.participants,
+      range: params.range || 'week',
+      prefer: params.prefer,
+      meeting_length: params.meetingLength || 60,
+    });
   },
 };

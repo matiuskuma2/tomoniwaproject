@@ -240,4 +240,52 @@ test.describe('Phase Next-3: カレンダー閲覧', () => {
       response.includes('⚠️');
     expect(hasValidResponse).toBe(true);
   });
+
+  // ============================================================
+  // P3-INTERSECT1: 共通空き（複数参加者）テスト
+  // ============================================================
+
+  test('P3-INTERSECT1a: 全員の共通空きを確認できる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // 全員の共通空きを確認するコマンドを送信
+    await sendChatMessage(page, '来週全員の空きを教えて');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] Common availability response: ${response.substring(0, 300)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 応答に共通空き関連の内容が含まれていることを確認
+    // 成功時: 「共通空き候補」「✅」「👥」
+    // 失敗時: 「⚠️」「見つかりませんでした」
+    const hasValidResponse =
+      response.includes('共通空き') ||
+      response.includes('空いている候補') ||
+      response.includes('👥') ||
+      response.includes('見つかりませんでした') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+  });
+
+  test('P3-INTERSECT1b: みんなで空いてる時間を確認できる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // 「みんなで空いてる」パターン
+    await sendChatMessage(page, '今週みんなで空いてるとこは？');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] Everyone available response: ${response.substring(0, 300)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 応答が存在することを確認
+    expect(response.length).toBeGreaterThan(0);
+  });
 });

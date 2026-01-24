@@ -3,14 +3,16 @@
  * 
  * P1-1: apiExecutor.ts から分離
  * P3-SLOTGEN1: freebusy に空き枠表示を追加
+ * P3-INTERSECT1: 共通空き（複数参加者）
  * 
  * - schedule.today
  * - schedule.week
  * - schedule.freebusy
+ * - schedule.freebusy.batch
  */
 
 import { calendarApi } from '../../api/calendar';
-import type { FreeBusyParams, TimePreference } from '../../api/calendar';
+import type { FreeBusyParams, TimePreference, BatchFreeBusyParams } from '../../api/calendar';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../../utils/datetime';
@@ -277,6 +279,113 @@ export async function executeFreeBusy(intentResult: IntentResult): Promise<Execu
       message,
       data: {
         kind: 'calendar.freebusy',
+        payload: response,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * P3-INTERSECT1: schedule.freebusy.batch
+ * 複数参加者の共通空き枠を表示
+ */
+export async function executeFreeBusyBatch(intentResult: IntentResult): Promise<ExecutionResult> {
+  // Extract params from intent
+  const range = (intentResult.params.range as BatchFreeBusyParams['range']) || 'week';
+  const prefer = intentResult.params.prefer as TimePreference | undefined;
+  const meetingLength = intentResult.params.meeting_length as number | undefined;
+  const threadId = intentResult.params.threadId as string | undefined;
+  
+  try {
+    // Call batch freebusy API
+    const response = await calendarApi.getBatchFreeBusy({
+      threadId,
+      range,
+      prefer,
+      meetingLength,
+    });
+    
+    const rangeLabel = getRangeLabel(range);
+    const preferLabel = getPreferLabel(prefer);
+    
+    // Build message
+    let message = '';
+    
+    // Warning handling
+    if (response.warning === 'google_calendar_not_linked_all') {
+      return {
+        success: true,
+        message: '⚠️ Google カレンダーが連携されているユーザーがいません。設定画面から連携してください。',
+        data: {
+          kind: 'calendar.freebusy.batch',
+          payload: response,
+        },
+      };
+    }
+    
+    // 1. 参加者情報
+    const linkedCount = response.linked_count;
+    const excludedCount = response.excluded_count;
+    const totalCount = linkedCount + excludedCount;
+    
+    if (totalCount > 1) {
+      message += `👥 ${totalCount}名中${linkedCount}名のカレンダーを参照\n`;
+      if (excludedCount > 0) {
+        message += `⚠️ ${excludedCount}名は未連携のため共通空き計算から除外\n`;
+      }
+      message += '\n';
+    }
+    
+    // 2. 共通空き枠（メイン表示）
+    if (response.available_slots && response.available_slots.length > 0) {
+      const durationLabel = meetingLength ? `${meetingLength}分` : '60分';
+      message += `✅ ${rangeLabel}の共通空き候補（${durationLabel}枠）:\n\n`;
+      
+      if (preferLabel) {
+        message += `📌 ${preferLabel}で絞り込み\n\n`;
+      }
+      
+      response.available_slots.forEach((slot, index) => {
+        message += `${index + 1}. ${slot.label}\n`;
+      });
+      
+      // 候補数が多い場合のヒント
+      if (response.coverage && response.coverage.slot_count >= 8) {
+        message += `\n💡 他にも候補があります。条件を変えて再検索できます。`;
+      }
+    } else {
+      // 共通空きがない場合
+      if (preferLabel) {
+        message += `⚠️ ${rangeLabel}の${preferLabel}では${meetingLength || 60}分の共通空きが見つかりませんでした。\n`;
+        message += `💡 条件（時間帯/日付/ミーティング時間）を変えて再検索してください。`;
+      } else {
+        message += `⚠️ ${rangeLabel}は${meetingLength || 60}分の共通空きが見つかりませんでした。\n`;
+        message += `💡 別の期間を指定して再検索してください。`;
+      }
+    }
+    
+    // 3. 全体のbusy（補助表示）
+    if (response.busy_union && response.busy_union.length > 0) {
+      message += `\n\n📊 ${rangeLabel}の誰かが埋まっている時間:\n`;
+      const busyToShow = response.busy_union.slice(0, 5); // 最大5件
+      busyToShow.forEach((slot, index) => {
+        message += `${index + 1}. ${formatDateTimeRange(slot.start, slot.end)}\n`;
+      });
+      if (response.busy_union.length > 5) {
+        message += `他${response.busy_union.length - 5}件...\n`;
+      }
+    }
+    
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'calendar.freebusy.batch',
         payload: response,
       },
     };

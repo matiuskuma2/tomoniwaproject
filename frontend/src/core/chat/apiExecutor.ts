@@ -42,6 +42,7 @@ import {
   executeToday,
   executeWeek,
   executeFreeBusy,
+  executeFreeBusyBatch,  // P3-INTERSECT1
   executeListCreate,
   executeListList,
   executeListMembers,
@@ -450,6 +451,10 @@ export async function executeIntent(
     
     case 'schedule.freebusy':
       return executeFreeBusy(intentResult);
+    
+    // P3-INTERSECT1: 共通空き（複数参加者）
+    case 'schedule.freebusy.batch':
+      return executeFreeBusyBatch(intentResult);
     
     // Phase Next-2 (P0): Scheduling - TD-002: Use split executors
     case 'thread.create':

@@ -2,10 +2,12 @@
  * classifier/calendar.ts
  * TD-003: Phase Next-3 (P1) Calendar Read-only
  * P3-SLOTGEN1: 空き枠候補生成のための拡張
+ * P3-INTERSECT1: 共通空き（複数参加者）
  * 
  * - schedule.today: 今日の予定
  * - schedule.week: 今週の予定
  * - schedule.freebusy: 空き時間（range + prefer 対応）
+ * - schedule.freebusy.batch: 共通空き（複数参加者）
  */
 
 import type { IntentResult, IntentContext, ClassifierFn } from './types';
@@ -57,12 +59,35 @@ function extractRange(input: string): 'today' | 'week' | 'next_week' | undefined
 }
 
 /**
+ * P3-INTERSECT1: 共通空き（複数参加者）の判定
+ * Keywords: 全員、みんな、共通、〜と、〜で空き
+ */
+function isCommonAvailabilityQuery(input: string, context: IntentContext | undefined): boolean {
+  // 明示的な共通空きキーワード
+  if (/(全員|みんな|共通|一緒).*空き/.test(input)) {
+    return true;
+  }
+  if (/空き.*(全員|みんな|共通|一緒)/.test(input)) {
+    return true;
+  }
+  // 「〜と空いてる」「〜で空いてる」パターン
+  if (/(と|で).*(空き|空いて|フリー)/.test(input)) {
+    return true;
+  }
+  // スレッドが選択されている状態で「全員」「このスレッド」
+  if (context?.selectedThreadId && /(全員|このスレッド|参加者)/.test(input)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * カレンダー関連の分類器
  */
 export const classifyCalendar: ClassifierFn = (
   _input: string,
   normalizedInput: string,
-  _context: IntentContext | undefined,
+  context: IntentContext | undefined,
   _activePending: PendingState | null
 ): IntentResult | null => {
   // ============================================================
@@ -90,11 +115,14 @@ export const classifyCalendar: ClassifierFn = (
   }
 
   // ============================================================
-  // P1-3 + P3-SLOTGEN1: schedule.freebusy
-  // Keywords: 空き、あき、空いて、あいて、フリー、候補
-  // P3-SLOTGEN1: range と prefer を抽出
+  // P3-INTERSECT1: schedule.freebusy.batch (共通空き)
+  // 複数参加者の空きを計算
+  // Keywords: 全員、みんな、共通、〜と空き
   // ============================================================
   if (/(空き|あき|空いて|あいて|フリー|候補|枠)/.test(normalizedInput)) {
+    // 共通空きかどうか判定
+    const isCommon = isCommonAvailabilityQuery(normalizedInput, context);
+    
     // Extract range
     const extractedRange = extractRange(normalizedInput);
     const range = extractedRange || 'week'; // Default to week
@@ -118,6 +146,20 @@ export const classifyCalendar: ClassifierFn = (
     const params: Record<string, unknown> = { range };
     if (prefer) {
       params.prefer = prefer;
+    }
+    
+    // P3-INTERSECT1: 共通空きの場合
+    if (isCommon) {
+      // スレッドが選択されていれば threadId を追加
+      if (context?.selectedThreadId) {
+        params.threadId = context.selectedThreadId;
+      }
+      
+      return {
+        intent: 'schedule.freebusy.batch',
+        confidence: confidence + 0.05, // 共通空きはより具体的なのでconfidence UP
+        params,
+      };
     }
     
     // Need clarification only if nothing is specified

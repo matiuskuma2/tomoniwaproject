@@ -20,6 +20,7 @@ export type IntentType =
   | 'schedule.today'      // Phase Next-3 (P1)
   | 'schedule.week'       // Phase Next-3 (P1)
   | 'schedule.freebusy'   // Phase Next-3 (P1)
+  | 'schedule.freebusy.batch' // P3-INTERSECT1: 共通空き（複数参加者）
   | 'schedule.auto_propose' // Phase Next-5 (P2) - 自動調整提案
   | 'schedule.auto_propose.confirm' // Phase Next-5 Day2 - 提案確定
   | 'schedule.auto_propose.cancel'  // Phase Next-5 Day2 - 提案キャンセル
