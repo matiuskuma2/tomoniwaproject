@@ -360,7 +360,7 @@ export async function executeProgressSummary(
  * PROG-1: フォールバック用のフォーマット（APIがchatを返さない場合）
  */
 function formatSummaryFallback(data: ThreadSummaryResponse['data']): string {
-  const { thread, proposal, counts, next_recommended_action, recommendation_reason, notes } = data;
+  const { thread, proposal, counts, failure, next_recommended_action, recommendation_reason, notes } = data;
   
   const statusLabels: Record<string, string> = {
     draft: '下書き',
@@ -396,6 +396,17 @@ function formatSummaryFallback(data: ThreadSummaryResponse['data']): string {
   };
   const hint = actionHints[next_recommended_action];
   if (hint) message += `\n💡 ${hint}`;
+
+  // FAIL-1: 失敗回数とエスカレーション
+  if (failure && failure.total_failures > 0) {
+    message += `\n\n❌ **失敗: ${failure.total_failures}回**\n`;
+    if (failure.escalation_level === 2 && failure.recommended_actions?.length > 0) {
+      message += '合わない状態が続いています。次の手を選んでください:\n';
+      for (const action of failure.recommended_actions) {
+        message += `• 「${action.label}」→ ${action.description}\n`;
+      }
+    }
+  }
 
   if (notes && notes.length > 0) {
     message += `\n\n⚠️ 注意:\n`;

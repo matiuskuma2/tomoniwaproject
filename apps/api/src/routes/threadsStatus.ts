@@ -323,6 +323,11 @@ import {
   type ThreadProgressSummary 
 } from '../services/threadProgressSummary';
 
+import { 
+  createThreadFailuresRepository,
+  type FailureSummary 
+} from '../repositories/threadFailuresRepository';
+
 /**
  * GET /api/threads/:id/summary
  * 
@@ -382,5 +387,239 @@ app.get('/:id/summary', async (c) => {
     }, 500);
   }
 });
+
+// ============================================================
+// FAIL-1: GET /api/threads/:id/failures
+// 失敗回数サマリー（read-only）
+// ============================================================
+
+/**
+ * GET /api/threads/:id/failures
+ * 
+ * FAIL-1: スレッドの失敗回数サマリーを返す
+ * - PROG-1要約やエスカレーション判定に使用
+ * - side_effect: read-only（外部送信なし）
+ */
+app.get('/:id/failures', async (c) => {
+  const { env } = c;
+  
+  try {
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    const { workspaceId, ownerUserId } = getTenant(c);
+    const threadId = c.req.param('id');
+    
+    // スレッド存在確認（tenant isolation）
+    const thread = await env.DB.prepare(`
+      SELECT id FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first();
+    
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+    
+    // 失敗サマリーを取得
+    const failuresRepo = createThreadFailuresRepository(env.DB);
+    const summary = await failuresRepo.getFailureSummaryByThread(threadId);
+    
+    // エスカレーション推奨アクションを生成
+    const recommendedActions = getRecommendedEscalationActions(summary);
+    
+    return c.json({
+      success: true,
+      data: {
+        ...summary,
+        recommended_actions: recommendedActions,
+      },
+    });
+    
+  } catch (error) {
+    console.error('[ThreadsFailures] Error:', error);
+    return c.json({
+      error: 'Failed to get thread failures',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/threads/:id/failures/report
+ * 
+ * FAIL-1: 主催者が「合わなかった」と報告
+ * - manual_fail として記録
+ * - side_effect: write_local only（DBへの書き込みのみ）
+ */
+app.post('/:id/failures/report', async (c) => {
+  const { env } = c;
+  
+  try {
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    const { workspaceId, ownerUserId } = getTenant(c);
+    const threadId = c.req.param('id');
+    
+    // スレッド存在確認（tenant isolation）
+    const thread = await env.DB.prepare(`
+      SELECT id, status FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first<{ id: string; status: string }>();
+    
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+    
+    // リクエストボディを取得
+    const body = await c.req.json<{
+      reason?: string;
+      stage?: 'propose' | 'reschedule' | 'finalize' | 'invite';
+      participant_key?: string;
+    }>().catch(() => ({ reason: undefined, stage: undefined, participant_key: undefined }));
+    
+    const failuresRepo = createThreadFailuresRepository(env.DB);
+    const failure = await failuresRepo.incrementFailure({
+      workspaceId,
+      ownerUserId,
+      threadId,
+      participantKey: body.participant_key,
+      type: 'manual_fail',
+      stage: body.stage || 'propose',
+      meta: {
+        reason: body.reason,
+        thread_status: thread.status,
+        reported_by: userId,
+      },
+    });
+    
+    // 更新後のサマリーを取得
+    const summary = await failuresRepo.getFailureSummaryByThread(threadId);
+    const recommendedActions = getRecommendedEscalationActions(summary);
+    
+    return c.json({
+      success: true,
+      message: '失敗を記録しました',
+      data: {
+        failure,
+        summary: {
+          ...summary,
+          recommended_actions: recommendedActions,
+        },
+      },
+    });
+    
+  } catch (error) {
+    console.error('[ThreadsFailures] Report Error:', error);
+    return c.json({
+      error: 'Failed to report failure',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /api/threads/:id/failures
+ * 
+ * FAIL-1: 失敗記録をリセット（再調整成功後など）
+ * - side_effect: write_local only
+ */
+app.delete('/:id/failures', async (c) => {
+  const { env } = c;
+  
+  try {
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    const { workspaceId, ownerUserId } = getTenant(c);
+    const threadId = c.req.param('id');
+    
+    // スレッド存在確認（tenant isolation）
+    const thread = await env.DB.prepare(`
+      SELECT id FROM scheduling_threads
+      WHERE id = ? AND workspace_id = ? AND organizer_user_id = ?
+    `).bind(threadId, workspaceId, ownerUserId).first();
+    
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+    
+    const failuresRepo = createThreadFailuresRepository(env.DB);
+    const deletedCount = await failuresRepo.resetFailuresByThread(threadId);
+    
+    return c.json({
+      success: true,
+      message: '失敗記録をリセットしました',
+      deleted_count: deletedCount,
+    });
+    
+  } catch (error) {
+    console.error('[ThreadsFailures] Reset Error:', error);
+    return c.json({
+      error: 'Failed to reset failures',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// ============================================================
+// Helper: エスカレーション推奨アクション生成
+// ============================================================
+
+interface EscalationAction {
+  id: string;
+  label: string;
+  description: string;
+  intent: string;  // 既存intentへの合流先
+  priority: number;
+}
+
+function getRecommendedEscalationActions(summary: FailureSummary): EscalationAction[] {
+  const actions: EscalationAction[] = [];
+  
+  if (summary.escalation_level === 0) {
+    // 問題なし
+    return [];
+  }
+  
+  if (summary.escalation_level >= 1) {
+    // 1回失敗: 追加候補を提案
+    actions.push({
+      id: 'additional_propose',
+      label: '追加候補を出す',
+      description: '別の日時候補を追加で提案します',
+      intent: 'schedule.additional_propose',
+      priority: 1,
+    });
+  }
+  
+  if (summary.escalation_level >= 2) {
+    // 2回失敗: より強い選択肢を追加
+    actions.push({
+      id: 'reschedule',
+      label: '再調整する',
+      description: '条件を変えて最初から調整し直します',
+      intent: 'schedule.reschedule',
+      priority: 2,
+    });
+    
+    actions.push({
+      id: 'cancel',
+      label: '一旦中止する',
+      description: 'この調整を一旦中止します',
+      intent: 'schedule.cancel',
+      priority: 3,
+    });
+  }
+  
+  // 優先度順にソート
+  return actions.sort((a, b) => a.priority - b.priority);
+}
 
 export default app;

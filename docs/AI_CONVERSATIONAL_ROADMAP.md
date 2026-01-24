@@ -1560,4 +1560,128 @@ classifyIntentChain → calendar intent検出 → maybeAssistParams
 
 ---
 
+## 31. FAIL-1（失敗回数トラッキング＆エスカレーション）実装完了 ✅
+
+### 31.1 概要
+
+- **目的**: 失敗を定義・記録し、エスカレーション判定で「次の手」を提示
+- **特徴**:
+  - スレッド単位・参加者単位で失敗を記録
+  - 2回失敗したらAI秘書が会話で「次の手」を提示
+  - PROG-1要約にも失敗情報を表示
+  - 外部送信なし（read/write_local only）
+
+### 31.2 失敗の定義
+
+| 失敗タイプ | 説明 | 自動/手動 |
+|-----------|------|----------|
+| `no_common_slot` | 共通空きが0件 | 自動 |
+| `proposal_rejected` | 提案が却下された | 将来 |
+| `reschedule_failed` | 再調整でも合わなかった | 将来 |
+| `manual_fail` | 主催者が「合わなかった」と報告 | 手動 |
+| `invite_expired` | 招待期限切れ | 将来 |
+| `candidate_exhausted` | 候補枯渇 | 自動 |
+
+### 31.3 エスカレーションレベル
+
+| Level | 条件 | AI秘書の行動 |
+|-------|------|-------------|
+| 0 | 失敗0回 | 通常動作 |
+| 1 | 失敗1回 | 「追加候補を出す」を提案 |
+| 2 | 失敗2回以上 | 選択肢を明示提示（追加候補/再調整/中止） |
+
+### 31.4 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `db/migrations/0080_create_thread_failures.sql` | 失敗記録テーブル |
+| `apps/api/src/repositories/threadFailuresRepository.ts` | CRUD操作 |
+| `apps/api/src/routes/threadsStatus.ts` | GET/POST/DELETE endpoints |
+| `apps/api/src/routes/calendar.ts` | slot 0件時のフック |
+| `apps/api/src/services/threadProgressSummary.ts` | PROG-1への統合 |
+
+**API仕様**:
+```typescript
+// GET /api/threads/:id/failures
+{
+  success: true,
+  data: {
+    total_failures: number;
+    escalation_level: 0 | 1 | 2;
+    by_type: Record<FailureType, number>;
+    last_failed_at: string | null;
+    recommended_actions: EscalationAction[];
+  }
+}
+
+// POST /api/threads/:id/failures/report
+{ reason?: string; stage?: string; participant_key?: string }
+→ { success: true, message: '失敗を記録しました', data: {...} }
+
+// DELETE /api/threads/:id/failures
+→ { success: true, deleted_count: number }
+```
+
+### 31.5 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `frontend/src/core/api/threads.ts` | 型定義追加 |
+| `frontend/src/core/chat/executors/thread.ts` | PROG-1表示にエスカレーション追加 |
+
+### 31.6 PROG-1要約への統合
+
+**表示例（失敗あり）**:
+```
+📌 **進捗: MTG調整**
+
+状態: 募集中（v2 / 追加候補あと1回可）
+候補数: 4件
+
+👥 **招待者: 3名**
+• 未回答: 1名
+• 回答済み: 2名
+
+❌ **失敗: 2回**
+合わない状態が続いています。次の手を選んでください:
+• 「追加候補を出す」→ 別の日時候補を追加で提案します
+• 「再調整する」→ 条件を変えて最初から調整し直します
+• 「一旦中止する」→ この調整を一旦中止します
+
+⚠️ 注意:
+• 🚨 2回以上失敗しています（再調整または中止をご検討ください）
+```
+
+### 31.7 エスカレーション合流先
+
+| 選択肢 | 合流先intent |
+|-------|-------------|
+| 追加候補を出す | `schedule.additional_propose` |
+| 再調整する | `schedule.reschedule` |
+| 一旦中止する | `schedule.cancel` |
+
+### 31.8 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/failures.spec.ts` | FAIL-1a: 進捗要約に失敗情報表示 |
+| | FAIL-1b: エスカレーション選択肢表示 |
+| | FAIL-1c: 手動失敗報告（skip） |
+| | FAIL-1d: 共通空き0件応答 |
+
+### 31.9 安全設計
+
+1. **外部送信なし**: 失敗記録はDB操作のみ
+2. **既存intent合流**: エスカレーションは既存の安全導線へ
+3. **勝手に実行しない**: 選択肢提示→ユーザー選択→実行
+4. **ログ記録**: 失敗時のメタ情報を保存（デバッグ用）
+
+### 31.10 今後の拡張
+
+- `schedule.fail.report` intent追加（「合わなかった」で手動報告）
+- 自動判定の拡充（期限切れ、全員辞退など）
+- ワークスペース全体の失敗統計（管理画面）
+
+---
+
 *最終更新: 2026-01-24*

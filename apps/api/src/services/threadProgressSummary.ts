@@ -11,6 +11,11 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { 
+  createThreadFailuresRepository,
+  type FailureSummary,
+  type FailureType
+} from '../repositories/threadFailuresRepository';
 
 // ============================================================
 // Types
@@ -26,6 +31,15 @@ export type NextRecommendedAction =
   | 'reschedule'          // 再調整が必要
   | 'wait'                // 待機中
   | 'none';               // 完了/キャンセル
+
+// FAIL-1: エスカレーションアクション
+export interface EscalationAction {
+  id: string;
+  label: string;
+  description: string;
+  intent: string;
+  priority: number;
+}
 
 export interface ThreadProgressSummary {
   thread: {
@@ -55,7 +69,12 @@ export interface ThreadProgressSummary {
   };
   failure: {
     propose_retry_count: number;
-    // 将来: reschedule_count, last_failure_reason
+    // FAIL-1: 失敗トラッキング
+    total_failures: number;
+    escalation_level: 0 | 1 | 2;
+    by_type: Record<FailureType, number>;
+    last_failed_at: string | null;
+    recommended_actions: EscalationAction[];
   };
   next_recommended_action: NextRecommendedAction;
   recommendation_reason: string;
@@ -149,6 +168,11 @@ export async function getThreadProgressSummary(
     ORDER BY created_at DESC LIMIT 1
   `).bind(threadId).first<{ created_at: string }>();
 
+  // 6.5 FAIL-1: 失敗サマリーを取得
+  const failuresRepo = createThreadFailuresRepository(db);
+  const failureSummary = await failuresRepo.getFailureSummaryByThread(threadId);
+  const escalationActions = getEscalationActions(failureSummary);
+
   // 7. カウント計算
   const currentVersion = thread.proposal_version;
   const selectionByKey = new Map(selections.map(s => [s.invitee_key, s]));
@@ -201,6 +225,12 @@ export async function getThreadProgressSummary(
   if (thread.additional_propose_count >= 2) {
     notes.push('追加候補の上限（2回）に達しています');
   }
+  // FAIL-1: 失敗回数に関する注意
+  if (failureSummary.escalation_level === 1) {
+    notes.push('⚠️ 1回失敗しています（次の手をおすすめします）');
+  } else if (failureSummary.escalation_level === 2) {
+    notes.push('🚨 2回以上失敗しています（再調整または中止をご検討ください）');
+  }
 
   // 10. 結果を構築
   return {
@@ -238,6 +268,12 @@ export async function getThreadProgressSummary(
     },
     failure: {
       propose_retry_count: thread.additional_propose_count,
+      // FAIL-1: 失敗トラッキング
+      total_failures: failureSummary.total_failures,
+      escalation_level: failureSummary.escalation_level,
+      by_type: failureSummary.by_type,
+      last_failed_at: failureSummary.last_failed_at,
+      recommended_actions: escalationActions,
     },
     next_recommended_action: action,
     recommendation_reason: reason,
@@ -309,6 +345,47 @@ function calculateNextAction(input: NextActionInput): { action: NextRecommendedA
   return { action: 'wait', reason: '回答を待っています' };
 }
 
+/**
+ * FAIL-1: エスカレーションアクションを生成
+ */
+function getEscalationActions(failureSummary: FailureSummary): EscalationAction[] {
+  const actions: EscalationAction[] = [];
+  
+  if (failureSummary.escalation_level === 0) {
+    return [];
+  }
+  
+  if (failureSummary.escalation_level >= 1) {
+    actions.push({
+      id: 'additional_propose',
+      label: '追加候補を出す',
+      description: '別の日時候補を追加で提案します',
+      intent: 'schedule.additional_propose',
+      priority: 1,
+    });
+  }
+  
+  if (failureSummary.escalation_level >= 2) {
+    actions.push({
+      id: 'reschedule',
+      label: '再調整する',
+      description: '条件を変えて最初から調整し直します',
+      intent: 'schedule.reschedule',
+      priority: 2,
+    });
+    
+    actions.push({
+      id: 'cancel',
+      label: '一旦中止する',
+      description: 'この調整を一旦中止します',
+      intent: 'schedule.cancel',
+      priority: 3,
+    });
+  }
+  
+  return actions.sort((a, b) => a.priority - b.priority);
+}
+
 // ============================================================
 // 会話向け要約テキスト生成（pure function）
 // ============================================================
@@ -317,7 +394,7 @@ function calculateNextAction(input: NextActionInput): { action: NextRecommendedA
  * 会話向けの要約テキストを生成
  */
 export function formatProgressSummaryForChat(summary: ThreadProgressSummary): string {
-  const { thread, proposal, counts, next_recommended_action, recommendation_reason, notes } = summary;
+  const { thread, proposal, counts, failure, next_recommended_action, recommendation_reason, notes } = summary;
 
   // ステータスラベル
   const statusLabels: Record<ThreadStatusLabel, string> = {
@@ -368,6 +445,17 @@ export function formatProgressSummaryForChat(summary: ThreadProgressSummary): st
   const hint = actionHints[next_recommended_action];
   if (hint) {
     message += `\n💡 ${hint}`;
+  }
+
+  // FAIL-1: 失敗回数とエスカレーション
+  if (failure.total_failures > 0) {
+    message += `\n\n❌ **失敗: ${failure.total_failures}回**\n`;
+    if (failure.escalation_level === 2 && failure.recommended_actions.length > 0) {
+      message += '合わない状態が続いています。次の手を選んでください:\n';
+      for (const action of failure.recommended_actions) {
+        message += `• 「${action.label}」→ ${action.description}\n`;
+      }
+    }
   }
 
   // 注意点
