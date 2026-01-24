@@ -340,4 +340,60 @@ test.describe('Phase Next-3: カレンダー閲覧', () => {
       response.includes('⚠️');
     expect(hasValidResponse).toBe(true);
   });
+
+  // ============================================================
+  // CONV-1.0: AIフォールバック（自然文→unknown→nlRouter）
+  // ============================================================
+
+  test('CONV-1.0: 自然文→unknown→nlRouter→freebusy にフォールバックできる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // intent固定文言を避けた自然文（既存classifierで拾えない可能性が高い）
+    await sendChatMessage(page, '来週の午後で空いてるところ教えて');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] CONV-1.0 fallback response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 成功判定（どれかが出ていればOK）
+    // 空きがある場合: 「来週」「空いている候補」「午後」
+    // 空きがない場合: 「見つかりませんでした」
+    // Google未連携: 「⚠️」「Google」
+    const hasValidResponse =
+      response.includes('来週') ||
+      response.includes('空いている候補') ||
+      response.includes('共通空き') ||
+      response.includes('午後') ||
+      response.includes('available') ||
+      response.includes('見つかりませんでした') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+
+    // 事故検知（unknownフォールバックが死んでいる時に出がち）
+    expect(response).not.toContain('まだ実装されていません');
+    expect(response).not.toContain('理解できませんでした');
+  });
+
+  test('CONV-1.0: 口語的な空き確認にも対応できる', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // より口語的な自然文
+    await sendChatMessage(page, '来週の午後、空いてる枠をいくつか候補で');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] CONV-1.0 colloquial response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 応答が存在し、エラーではないことを確認
+    expect(response.length).toBeGreaterThan(0);
+    expect(response).not.toContain('まだ実装されていません');
+  });
 });

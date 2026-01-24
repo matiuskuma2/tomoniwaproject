@@ -831,6 +831,16 @@ interface ScoredSlot {
 
 **実装ファイル**:
 
+**Backend（calendar限定 /api/nl/route）**:
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/routes/nlRouter.ts` | /api/nl/route エンドポイント（LLM呼び出し） |
+| `apps/api/src/utils/nlRouterSchema.ts` | Zodスキーマ（IntentEnum, RangeEnum, DayTimeEnum） |
+| `apps/api/src/utils/nlRouterPrompt.ts` | システムプロンプト全文 |
+
+**Frontend（nlRouter モジュール）**:
+
 | ファイル | 概要 |
 |---------|------|
 | `nlRouter/types.ts` | Zod スキーマ + ActionPlan/NlRouterOutput 型定義 |
@@ -839,6 +849,14 @@ interface ScoredSlot {
 | `nlRouter/policyGate.ts` | 安全ゲート（write_external必ず確認、pending中制限） |
 | `nlRouter/executorBridge.ts` | ActionPlan→IntentResult変換、既存実行への橋渡し |
 | `nlRouter/index.ts` | 統合エントリポイント |
+
+**Frontend（統合）**:
+
+| ファイル | 概要 |
+|---------|------|
+| `core/api/nlRouter.ts` | Backend /api/nl/route APIクライアント |
+| `core/chat/apiExecutor.ts` | unknown時のAIフォールバック統合 |
+| `core/chat/classifier/index.ts` | unknown時にrawInputをparamsに含める |
 
 **使い方**:
 ```typescript
@@ -1050,8 +1068,76 @@ const result = await classifyWithFallback(userInput, context);
 | 高 | policyGate 実装 | ✅ 完了 |
 | 高 | executorBridge 実装 | ✅ 完了 |
 | 高 | 統合エントリポイント | ✅ 完了 |
-| 中 | AI サービス接続 | 未着手 |
-| 中 | E2E テスト | 未着手 |
+| 高 | Backend /api/nl/route | ✅ 完了 |
+| 高 | Frontend APIクライアント | ✅ 完了 |
+| 高 | apiExecutor フォールバック統合 | ✅ 完了 |
+| 中 | E2E テスト（calendar.spec.ts） | ✅ 完了 |
+| 中 | AI サービス接続（本番APIキー設定） | 手動確認待ち |
+| 低 | 監査ログ保存 | 未着手 |
+
+---
+
+## 26. CONV-1.0（calendar限定）実装完了 ✅
+
+### 26.1 実装概要
+
+- **unknown intent の場合のみ** NL Router にフォールバック
+- **calendar系のみ許可**（read-only: schedule.today/week/freebusy/freebusy.batch）
+- **write系は対象外**（invite/send/finalize/remind は NL Router から返さない）
+- threadId が必要な場合は `needs_clarification` を返す
+
+### 26.2 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/routes/nlRouter.ts` | /api/nl/route エンドポイント |
+| `apps/api/src/utils/nlRouterSchema.ts` | Zod スキーマ（IntentEnum, RangeEnum, DayTimeEnum, RouteResultSchema） |
+| `apps/api/src/utils/nlRouterPrompt.ts` | システムプロンプト（buildNlRouterSystemPrompt, buildNlRouterUserPrompt） |
+
+**API仕様（/api/nl/route）**:
+```typescript
+// Request
+{ text: string; context: { selected_thread_id?: string; viewer_timezone: string } }
+
+// Response（成功）
+{ intent: 'schedule.freebusy'; confidence: 0.82; params: { range: 'next_week', dayTimeWindow: 'afternoon', durationMinutes: 60 }; rationale: '来週+午後+' }
+
+// Response（要確認）
+{ intent: 'schedule.freebusy.batch'; confidence: 0.78; needs_clarification: { field: 'threadId', message: 'どのスレッド...' } }
+
+// Response（不明）
+{ intent: 'unknown'; confidence: 0.2; params: {} }
+```
+
+### 26.3 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `frontend/src/core/api/nlRouter.ts` | Backend APIクライアント |
+| `frontend/src/core/chat/apiExecutor.ts` | unknown時のフォールバック統合（executeUnknownWithNlRouter） |
+| `frontend/src/core/chat/classifier/index.ts` | unknown時に rawInput を params に含める |
+
+### 26.4 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/calendar.spec.ts` | CONV-1.0: 自然文→unknown→nlRouter→freebusy フォールバック |
+| | CONV-1.0: 口語的な空き確認にも対応 |
+
+### 26.5 安全ポリシー
+
+- `.confirm` 系 intent は AI が直接返すことを禁止
+- `write_external` 系（invite/send/finalize/remind）は AI が直接返すことを禁止
+- pending 中は `pending.action.decide`, `schedule.today/week/freebusy` 等のみ許可
+- 確認必須 intent は `requires_confirm` を強制 true
+
+### 26.6 次のステップ
+
+| 優先度 | タスク | 状態 |
+|--------|--------|------|
+| 高 | 本番環境でAPIキー設定＋手動確認 | 手動確認待ち |
+| 中 | preference.set の自然言語対応（CONV-1.1） | 未着手 |
+| 中 | propose 系の AI サポート（CONV-1.2） | 未着手 |
 | 低 | 監査ログ保存 | 未着手 |
 
 ---
