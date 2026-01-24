@@ -1,0 +1,543 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "2026-01-24",
+  "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
+
+  "principles": {
+    "ai_role": "interpret_only",
+    "execution": "rule_executor_only",
+    "external_side_effect": "always_confirm"
+  },
+
+  "side_effect_types": {
+    "none": "副作用なし（キャンセル系）",
+    "read": "参照のみ（安全）",
+    "write_local": "DB更新など（外部送信なし）",
+    "write_external": "メール/SMS/Slack/Chatwork等（必ず確認）"
+  },
+
+  "intents": [
+    {
+      "intent": "schedule.today",
+      "category": "calendar.read",
+      "description": "今日の予定を取得",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:0",
+      "params_schema": {
+        "date": { "type": "string", "format": "date", "optional": true }
+      },
+      "executor": "calendar.today",
+      "api": "GET /api/calendar/today"
+    },
+    {
+      "intent": "schedule.week",
+      "category": "calendar.read",
+      "description": "今週の予定を取得",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:0",
+      "params_schema": {
+        "week_offset": { "type": "integer", "optional": true }
+      },
+      "executor": "calendar.week",
+      "api": "GET /api/calendar/week"
+    },
+    {
+      "intent": "schedule.freebusy",
+      "category": "calendar.read",
+      "description": "自分の空き時間/空き枠を取得",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "range": { "type": "string", "enum": ["today", "week", "next_week"], "required": true },
+        "prefer": { "type": "string", "enum": ["morning", "afternoon", "evening", "business"], "optional": true },
+        "meetingLength": { "type": "integer", "default": 60, "optional": true }
+      },
+      "executor": "calendar.freebusy",
+      "api": "GET /api/calendar/freebusy"
+    },
+    {
+      "intent": "schedule.freebusy.batch",
+      "category": "calendar.read.multi",
+      "description": "複数参加者の共通空き時間を取得（P3-INTERSECT1）",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "N:N",
+      "params_schema": {
+        "threadId": { "type": "string", "optional": true },
+        "participants": { "type": "array", "optional": true },
+        "range": { "type": "string", "enum": ["today", "week", "next_week"], "default": "week" },
+        "prefer": { "type": "string", "optional": true },
+        "meetingLength": { "type": "integer", "default": 60, "optional": true }
+      },
+      "executor": "calendar.freebusy.batch",
+      "api": "POST /api/calendar/freebusy/batch"
+    },
+
+    {
+      "intent": "schedule.status.check",
+      "category": "thread.read",
+      "description": "スレッドの状況確認",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" }
+      },
+      "executor": "thread.status",
+      "api": "GET /api/threads/:id/status"
+    },
+    {
+      "intent": "schedule.invite.list",
+      "category": "thread.read",
+      "description": "招待者一覧を取得",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true }
+      },
+      "executor": "thread.invites",
+      "api": "GET /api/threads/:id/invites"
+    },
+
+    {
+      "intent": "invite.prepare.emails",
+      "category": "invite.prepare",
+      "description": "メールアドレス貼り付けから招待準備",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "この宛先に招待を送る準備をしますか？（送る/キャンセル/別スレッドで）",
+      "topology": "1:N",
+      "params_schema": {
+        "emails": { "type": "array", "items": { "type": "string", "format": "email" }, "required": true },
+        "rawText": { "type": "string", "optional": true },
+        "mode": { "type": "string", "enum": ["new_thread", "add_to_thread"], "default": "new_thread" },
+        "threadId": { "type": "string", "optional": true }
+      },
+      "executor": "invite.prepare.emails",
+      "api": "POST /api/threads/prepare-send"
+    },
+    {
+      "intent": "invite.prepare.list",
+      "category": "invite.prepare",
+      "description": "リスト選択から招待準備",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "このリストに招待を送る準備をしますか？（送る/キャンセル/別スレッドで）",
+      "topology": "1:N",
+      "params_schema": {
+        "listName": { "type": "string", "required": true },
+        "mode": { "type": "string", "enum": ["new_thread", "add_to_thread"], "default": "new_thread" },
+        "threadId": { "type": "string", "optional": true }
+      },
+      "executor": "invite.prepare.list",
+      "api": "POST /api/threads/prepare-send"
+    },
+    {
+      "intent": "pending.action.decide",
+      "category": "pending.decide",
+      "description": "送信決定（送る/キャンセル/別スレッドで）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": null,
+      "params_schema": {
+        "decision": { "type": "string", "enum": ["send", "cancel", "new_thread"], "required": true }
+      },
+      "executor": "pending.decide",
+      "api": "POST /api/pending-actions/:token/confirm",
+      "notes": "decisionがsendの場合、次のexecuteで外部送信される"
+    },
+
+    {
+      "intent": "schedule.auto_propose",
+      "category": "schedule.propose",
+      "description": "自動調整提案",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "自動で候補日を提案しますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "emails": { "type": "array", "optional": true },
+        "duration": { "type": "integer", "default": 60 },
+        "range": { "type": "string", "default": "week" }
+      },
+      "executor": "schedule.auto_propose",
+      "api": "POST /api/threads/auto-propose"
+    },
+    {
+      "intent": "schedule.auto_propose.confirm",
+      "category": "schedule.propose",
+      "description": "自動提案確定",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "executor": "schedule.auto_propose.confirm",
+      "api": null
+    },
+    {
+      "intent": "schedule.auto_propose.cancel",
+      "category": "schedule.propose",
+      "description": "自動提案キャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.auto_propose.cancel",
+      "api": null
+    },
+    {
+      "intent": "schedule.additional_propose",
+      "category": "schedule.propose",
+      "description": "追加候補提案",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "追加候補を出しますか？（追加/キャンセル）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" },
+        "slots": { "type": "array", "required": true }
+      },
+      "executor": "schedule.additional_propose",
+      "api": "POST /api/threads/:id/proposals/prepare"
+    },
+
+    {
+      "intent": "schedule.remind.pending",
+      "category": "schedule.remind",
+      "description": "未返信者へのリマインド提案",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "未返信の人にリマインドを送りますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" }
+      },
+      "executor": "schedule.remind.pending",
+      "api": "POST /api/threads/:id/remind"
+    },
+    {
+      "intent": "schedule.remind.pending.confirm",
+      "category": "schedule.remind",
+      "description": "未返信リマインド確定",
+      "side_effect": "write_external",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.pending.confirm",
+      "api": "POST /api/threads/:id/remind/execute"
+    },
+    {
+      "intent": "schedule.remind.pending.cancel",
+      "category": "schedule.remind",
+      "description": "未返信リマインドキャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.pending.cancel",
+      "api": null
+    },
+    {
+      "intent": "schedule.need_response.list",
+      "category": "schedule.remind",
+      "description": "再回答必要者リスト表示",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" }
+      },
+      "executor": "schedule.need_response.list",
+      "api": "GET /api/threads/:id/status"
+    },
+    {
+      "intent": "schedule.remind.need_response",
+      "category": "schedule.remind",
+      "description": "再回答必要者にリマインド",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "再回答が必要な人にだけリマインドを送りますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true },
+        "targetInviteeKeys": { "type": "array", "optional": true }
+      },
+      "executor": "schedule.remind.need_response",
+      "api": "POST /api/threads/:id/remind"
+    },
+    {
+      "intent": "schedule.remind.need_response.confirm",
+      "category": "schedule.remind",
+      "description": "再回答リマインド確定",
+      "side_effect": "write_external",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.need_response.confirm",
+      "api": null
+    },
+    {
+      "intent": "schedule.remind.need_response.cancel",
+      "category": "schedule.remind",
+      "description": "再回答リマインドキャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.need_response.cancel",
+      "api": null
+    },
+    {
+      "intent": "schedule.remind.responded",
+      "category": "schedule.remind",
+      "description": "回答済み者へのリマインド",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "回答済みの人にだけ再通知しますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true },
+        "targetInviteeKeys": { "type": "array", "optional": true }
+      },
+      "executor": "schedule.remind.responded",
+      "api": "POST /api/threads/:id/remind"
+    },
+    {
+      "intent": "schedule.remind.responded.confirm",
+      "category": "schedule.remind",
+      "description": "回答済みリマインド確定",
+      "side_effect": "write_external",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.responded.confirm",
+      "api": null
+    },
+    {
+      "intent": "schedule.remind.responded.cancel",
+      "category": "schedule.remind",
+      "description": "回答済みリマインドキャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.remind.responded.cancel",
+      "api": null
+    },
+
+    {
+      "intent": "schedule.notify.confirmed",
+      "category": "schedule.notify",
+      "description": "確定通知提案",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "確定を全員に通知しますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true }
+      },
+      "executor": "schedule.notify.confirmed",
+      "api": "POST /api/threads/:id/notify/confirmed"
+    },
+    {
+      "intent": "schedule.notify.confirmed.confirm",
+      "category": "schedule.notify",
+      "description": "確定通知確定",
+      "side_effect": "write_external",
+      "requires_confirmation": false,
+      "executor": "schedule.notify.confirmed.confirm",
+      "api": null
+    },
+    {
+      "intent": "schedule.notify.confirmed.cancel",
+      "category": "schedule.notify",
+      "description": "確定通知キャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.notify.confirmed.cancel",
+      "api": null
+    },
+
+    {
+      "intent": "schedule.propose_for_split",
+      "category": "schedule.propose",
+      "description": "票割れ時の追加候補提案",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true }
+      },
+      "executor": "schedule.propose_for_split",
+      "api": "POST /api/threads/:id/proposals/split"
+    },
+    {
+      "intent": "schedule.propose_for_split.confirm",
+      "category": "schedule.propose",
+      "description": "票割れ提案確定",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "executor": "schedule.propose_for_split.confirm",
+      "api": null
+    },
+    {
+      "intent": "schedule.propose_for_split.cancel",
+      "category": "schedule.propose",
+      "description": "票割れ提案キャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.propose_for_split.cancel",
+      "api": null
+    },
+
+    {
+      "intent": "schedule.finalize",
+      "category": "schedule.commit",
+      "description": "日程確定",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "この候補で確定しますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true },
+        "slotId": { "type": "string", "required": true }
+      },
+      "executor": "schedule.finalize",
+      "api": "POST /api/threads/:id/finalize"
+    },
+
+    {
+      "intent": "schedule.reschedule",
+      "category": "schedule.reschedule",
+      "description": "確定後の再調整（やり直し）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "同じメンバーで新しい日程調整を開始しますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" }
+      },
+      "executor": "schedule.reschedule",
+      "api": "GET /api/threads/:id/reschedule/info"
+    },
+    {
+      "intent": "schedule.reschedule.confirm",
+      "category": "schedule.reschedule",
+      "description": "再調整確定",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "新しい日程調整を作成し、招待の送信準備をします。よいですか？",
+      "params_schema": {
+        "originalThreadId": { "type": "string", "required": true },
+        "participants": { "type": "array", "required": true },
+        "suggestedTitle": { "type": "string", "optional": true }
+      },
+      "executor": "schedule.reschedule.confirm",
+      "api": "POST /api/threads/prepare-send"
+    },
+    {
+      "intent": "schedule.reschedule.cancel",
+      "category": "schedule.reschedule",
+      "description": "再調整キャンセル",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "schedule.reschedule.cancel",
+      "api": null
+    },
+
+    {
+      "intent": "preference.set",
+      "category": "preference",
+      "description": "スケジュール好み設定",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": null,
+      "params_schema": {
+        "prefs": { "type": "object", "required": true }
+      },
+      "executor": "preference.set",
+      "api": "PUT /api/users/me/schedule-prefs"
+    },
+    {
+      "intent": "preference.show",
+      "category": "preference",
+      "description": "スケジュール好み表示",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "executor": "preference.show",
+      "api": "GET /api/users/me/schedule-prefs"
+    },
+    {
+      "intent": "preference.clear",
+      "category": "preference",
+      "description": "スケジュール好みクリア",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "executor": "preference.clear",
+      "api": "DELETE /api/users/me/schedule-prefs"
+    },
+
+    {
+      "intent": "list.create",
+      "category": "list",
+      "description": "リスト作成",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "name": { "type": "string", "required": true }
+      },
+      "executor": "list.create",
+      "api": "POST /api/lists"
+    },
+    {
+      "intent": "list.list",
+      "category": "list",
+      "description": "リスト一覧表示",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "executor": "list.list",
+      "api": "GET /api/lists"
+    },
+    {
+      "intent": "list.members",
+      "category": "list",
+      "description": "リストメンバー表示",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "params_schema": {
+        "listName": { "type": "string", "required": true }
+      },
+      "executor": "list.members",
+      "api": "GET /api/lists/:id/members"
+    },
+    {
+      "intent": "list.add_member",
+      "category": "list",
+      "description": "リストにメンバー追加",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "listName": { "type": "string", "required": true },
+        "email": { "type": "string", "format": "email", "required": true },
+        "name": { "type": "string", "optional": true }
+      },
+      "executor": "list.add_member",
+      "api": "POST /api/lists/:id/members"
+    },
+
+    {
+      "intent": "unknown",
+      "category": "fallback",
+      "description": "分類不能（AIフォールバック対象）",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "fallback.unknown",
+      "api": null,
+      "notes": "CONV-1以降でnlRouterに渡される"
+    }
+  ],
+
+  "category_summary": {
+    "calendar.read": "カレンダー参照（安全）",
+    "calendar.read.multi": "複数参加者のカレンダー参照",
+    "thread.read": "スレッド状態参照",
+    "invite.prepare": "招待準備（確認必要）",
+    "pending.decide": "送信決定",
+    "schedule.propose": "候補提案",
+    "schedule.remind": "リマインド",
+    "schedule.notify": "通知",
+    "schedule.commit": "確定操作",
+    "schedule.reschedule": "再調整",
+    "preference": "好み設定",
+    "list": "リスト管理",
+    "fallback": "フォールバック"
+  }
+}
