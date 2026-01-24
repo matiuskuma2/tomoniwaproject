@@ -297,6 +297,24 @@ export type NextRecommendedAction =
   | 'wait'
   | 'none';
 
+// FAIL-1: エスカレーションアクション
+export interface EscalationAction {
+  id: string;
+  label: string;
+  description: string;
+  intent: string;
+  priority: number;
+}
+
+// FAIL-1: 失敗タイプ
+export type FailureType =
+  | 'no_common_slot'
+  | 'proposal_rejected'
+  | 'reschedule_failed'
+  | 'manual_fail'
+  | 'invite_expired'
+  | 'candidate_exhausted';
+
 export interface ThreadProgressSummary {
   thread: {
     id: string;
@@ -325,6 +343,12 @@ export interface ThreadProgressSummary {
   };
   failure: {
     propose_retry_count: number;
+    // FAIL-1: 失敗トラッキング
+    total_failures: number;
+    escalation_level: 0 | 1 | 2;
+    by_type: Record<FailureType, number>;
+    last_failed_at: string | null;
+    recommended_actions: EscalationAction[];
   };
   next_recommended_action: NextRecommendedAction;
   recommendation_reason: string;

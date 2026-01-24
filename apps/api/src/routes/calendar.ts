@@ -13,6 +13,8 @@ import { generateAvailableSlots, getTimeWindowFromPrefer } from '../utils/slotGe
 import { getBatchFreeBusy, getThreadParticipants } from '../services/freebusyBatch';
 import type { ParticipantInfo } from '../services/freebusyBatch';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { createThreadFailuresRepository } from '../repositories/threadFailuresRepository';
+import { getTenant } from '../utils/workspaceContext';
 
 type Variables = {
   userId?: string;
@@ -411,6 +413,37 @@ app.post('/freebusy/batch', async (c) => {
       timezone: 'Asia/Tokyo',
     });
 
+    // FAIL-1: スレッドに関連付けた空き検索で候補0件の場合、失敗を記録
+    let failureSummary = null;
+    if (body.threadId && result.available_slots.length === 0) {
+      try {
+        const { workspaceId, ownerUserId } = getTenant(c);
+        const failuresRepo = createThreadFailuresRepository(env.DB);
+        
+        await failuresRepo.incrementFailure({
+          workspaceId,
+          ownerUserId,
+          threadId: body.threadId,
+          type: 'no_common_slot',
+          stage: 'propose',
+          meta: {
+            range,
+            prefer: prefer || null,
+            meeting_length: meetingLength,
+            linked_count: result.linked_count,
+            excluded_count: result.excluded_count,
+          },
+        });
+        
+        // 更新後のサマリーを取得
+        failureSummary = await failuresRepo.getFailureSummaryByThread(body.threadId);
+        console.log('[Calendar] FAIL-1: No common slots found, failure recorded for thread:', body.threadId);
+      } catch (failError) {
+        // 失敗記録のエラーはログのみ（メイン処理を止めない）
+        console.error('[Calendar] FAIL-1: Error recording failure:', failError);
+      }
+    }
+
     return c.json({
       range,
       timezone: 'Asia/Tokyo',
@@ -424,6 +457,8 @@ app.post('/freebusy/batch', async (c) => {
       prefer: result.prefer,
       warning: result.warning,
       has_preferences: result.has_preferences,
+      // FAIL-1: 失敗サマリーを追加（候補0件の場合のみ）
+      failure_summary: failureSummary,
     });
   } catch (error) {
     console.error('[Calendar] Error in freebusy/batch:', error);
