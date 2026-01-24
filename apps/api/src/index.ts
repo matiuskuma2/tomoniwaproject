@@ -36,6 +36,7 @@ import pendingActionsRoutes from './routes/pendingActions';
 import usersMeRoutes from './routes/usersMe';
 import workspaceNotificationsRoutes from './routes/workspaceNotifications';
 import nlRouterRoutes from './routes/nlRouter';
+import nlPrefsRoutes from './routes/nlPrefs';
 
 // Middleware
 import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
@@ -215,6 +216,9 @@ app.route('/api/calendar', calendarRoutes);
 app.use('/api/nl', requireAuth);
 app.use('/api/nl/*', requireAuth);
 app.route('/api/nl', nlRouterRoutes);
+
+// NL Prefs API (PREF-SET-1 - Natural Language to Preference extraction)
+app.route('/api/nl/prefs', nlPrefsRoutes);
 
 // Billing API (MyASP課金連携 - Phase Next-11)
 // 認証境界を「コードで固定」する（運用事故防止 - Day3-0）

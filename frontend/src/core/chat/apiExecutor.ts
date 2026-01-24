@@ -65,11 +65,13 @@ import {
   executeRemindRespondedConfirm as executeRemindRespondedConfirmFromExecutors,
   executeRemindRespondedCancel as executeRemindRespondedCancelFromExecutors,
 } from './executors';
-// P3-PREF: 好み設定 executor
+// P3-PREF: 好み設定 executor (PREF-SET-1: AI確認フロー追加)
 import {
   executePreferenceSet,
   executePreferenceShow,
   executePreferenceClear,
+  executePreferenceSetConfirm,
+  executePreferenceSetCancel,
 } from './executors/preference';
 // CONV-1.0: nlRouter API client
 import { nlRouterApi, isCalendarIntent } from '../api/nlRouter';
@@ -661,12 +663,22 @@ async function executeInvitePrepareList(intentResult: IntentResult): Promise<Exe
  * - 通常: 3語固定 (送る/キャンセル/別スレッドで)
  * - 追加候補: 2語固定 (追加/キャンセル)
  * P0-1: 正規化された pending を使用
+ * PREF-SET-1: prefs_confirm / prefs_cancel 対応
  */
 async function executePendingDecision(
   intentResult: IntentResult,
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
   const { decision, confirmToken } = intentResult.params;
+  
+  // PREF-SET-1: 好み設定の確認/キャンセル
+  if (decision === 'prefs_confirm') {
+    return executePreferenceSetConfirm(context);
+  }
+  if (decision === 'prefs_cancel') {
+    return executePreferenceSetCancel();
+  }
+  
   // P0-1: 正規化された pending から pending.action を取得
   const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
   const pending = isPendingAction(activePending) ? activePending : null;

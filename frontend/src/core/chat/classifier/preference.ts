@@ -1,8 +1,11 @@
 /**
  * classifier/preference.ts
  * P3-PREF3: スケジュール好み設定の分類
+ * PREF-SET-1: AIフォールバック対応
  * 
  * - preference.set: 好み設定（自然文から）
+ *   - params.parsed_prefs がある場合: ルール抽出成功
+ *   - params.needs_ai_extraction がある場合: AI抽出が必要
  * - preference.show: 好み表示
  * - preference.clear: 好みクリア
  */
@@ -234,6 +237,7 @@ export const classifyPreference: ClassifierFn = (
     const parsedPrefs = parsePreferenceFromText(input);
     
     if (parsedPrefs) {
+      // ルール抽出成功
       return {
         intent: 'preference.set',
         confidence: 0.85,
@@ -243,6 +247,16 @@ export const classifyPreference: ClassifierFn = (
         },
       };
     }
+    
+    // PREF-SET-1: ルールで抽出できなかった場合、AIフォールバック用にマーク
+    return {
+      intent: 'preference.set',
+      confidence: 0.6,  // 低めの信頼度（AI抽出が必要なため）
+      params: {
+        needs_ai_extraction: true,
+        original_text: input,
+      },
+    };
   }
 
   // マッチしない場合は null（次の分類器へ）

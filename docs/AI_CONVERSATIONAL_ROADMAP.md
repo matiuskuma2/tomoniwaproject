@@ -933,19 +933,20 @@ const result = await classifyWithAiFallback({
 
 1. ✅ **P3-SCORE1（理由表示）実装**: `rule.label` 自動生成、executors表示強化
 2. ✅ **Phase CONV-1 設計**: nlRouter のプロンプト設計、Zodスキーマ定義
-3. **AI サービス接続**: 実際の LLM API（OpenAI/Claude/Azure）との接続実装
+3. ✅ **CONV-1.0（calendar限定）実装**: unknown時のAIフォールバック、E2Eテスト
+4. ✅ **PREF-SET-1（好み設定の会話入力）**: AIによる自然文からの好み抽出、確認フロー
 
 ### 中期
 
-4. **Phase CONV-1 統合テスト**: unknown時のAIフォールバック動作確認
-4. **好み設定UI**: チャットから好みを設定できる `preference.set` の自然言語対応
-5. **状態遷移の可視化**: 調整フローの進捗表示（UIコンポーネント）
+5. **AI サービス接続**: 本番環境でのAPIキー設定＋手動確認
+6. **CONV-1.1（補助解釈）**: 既存classifierより優先度低い"補助解釈"としてAIを使う
+7. **状態遷移の可視化**: 調整フローの進捗表示（UIコンポーネント）
 
 ### 将来
 
-6. **N:1割当ロジック**: 担当者自動選出
-7. **グループルール**: チーム共通の暗黙知明文化
-8. **家族モード**: 即時挿入機能
+8. **N:1割当ロジック**: 担当者自動選出
+9. **グループルール**: チーム共通の暗黙知明文化
+10. **家族モード**: 即時挿入機能
 
 ---
 
@@ -1136,9 +1137,113 @@ const result = await classifyWithFallback(userInput, context);
 | 優先度 | タスク | 状態 |
 |--------|--------|------|
 | 高 | 本番環境でAPIキー設定＋手動確認 | 手動確認待ち |
-| 中 | preference.set の自然言語対応（CONV-1.1） | 未着手 |
+| 高 | ✅ PREF-SET-1（好み設定の会話入力） | 完了 |
 | 中 | propose 系の AI サポート（CONV-1.2） | 未着手 |
 | 低 | 監査ログ保存 | 未着手 |
+
+---
+
+## 27. PREF-SET-1（好み設定の会話入力）実装完了 ✅
+
+### 27.1 実装概要
+
+- **ルールベース抽出**: 既存の `parsePreferenceFromText()` で抽出可能な場合は即保存
+- **AIフォールバック**: ルールで抽出できない場合、AI（/api/nl/prefs/extract）で抽出
+- **確認フロー**: AI抽出結果は必ず確認フロー（prefs.pending）を経由して保存
+- **安全設計**: 外部送信なし、DB更新のみ、確認後に保存
+
+### 27.2 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/routes/nlPrefs.ts` | /api/nl/prefs/extract エンドポイント |
+| `apps/api/src/utils/nlPrefsSchema.ts` | Zodスキーマ（ExtractPrefsInput/Output） |
+| `apps/api/src/utils/nlPrefsPrompt.ts` | システムプロンプト（好み抽出ルール） |
+
+**API仕様（/api/nl/prefs/extract）**:
+```typescript
+// Request
+{ text: string; viewer_timezone: string; existing_prefs?: any }
+
+// Response（成功）
+{
+  success: true,
+  data: {
+    proposed_prefs: { windows?: [...], avoid?: [...] },
+    changes: [{ op: 'add', path: '...', reason: '...' }],
+    summary: '平日のランチ時間(12:00-13:00)を回避します',
+    confidence: 0.85,
+    needs_confirmation: true
+  }
+}
+```
+
+### 27.3 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `core/api/nlPrefs.ts` | Backend APIクライアント |
+| `classifier/preference.ts` | AI抽出マーク（needs_ai_extraction） |
+| `executors/preference.ts` | AI抽出実行＋確認フロー作成 |
+| `classifier/pendingDecision.ts` | prefs.pending の確認/キャンセル処理 |
+| `apiExecutor.ts` | prefs_confirm/prefs_cancel の統合 |
+
+### 27.4 データフロー
+
+```
+ユーザー入力: "ランチ時間は避けて"
+    ↓
+classifier/preference.ts
+  parsePreferenceFromText() → null（ルールで抽出不可）
+  → { intent: 'preference.set', params: { needs_ai_extraction: true } }
+    ↓
+apiExecutor.ts → executePreferenceSet()
+  → executePreferenceSetWithAi()
+    ↓
+/api/nl/prefs/extract（AI抽出）
+  → { proposed_prefs: { avoid: [...] }, summary: '...' }
+    ↓
+確認フローメッセージ表示
+  "この設定を保存しますか？ はい/いいえ"
+    ↓
+ユーザー: "はい"
+    ↓
+classifier/pendingDecision.ts
+  → { intent: 'pending.action.decide', params: { decision: 'prefs_confirm' } }
+    ↓
+apiExecutor.ts → executePendingDecision()
+  → executePreferenceSetConfirm()
+    ↓
+/api/users/me/schedule-prefs（保存）
+  → "好みを設定しました"
+```
+
+### 27.5 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/preferences.spec.ts` | PREF-1a: ルールベース「午後14時以降がいい」→ 即保存 |
+| | PREF-1b: ルールベース「夜は避けたい」→ 即保存 |
+| | PREF-2a: AIフォールバック「ランチ時間は避けて」→ 確認フロー |
+| | PREF-2b: AIフォールバック → 「はい」で保存 |
+| | PREF-3a: 好み表示「好み見せて」 |
+| | PREF-3b: 好みクリア「好みクリア」 |
+| | PREF-4: 保存後に freebusy → 設定反映確認 |
+
+### 27.6 安全ポリシー
+
+- AI抽出結果は **必ず確認フローを経由**（誤保存防止）
+- 外部送信なし（DBへの保存のみ）
+- 確認フロー中は他の操作をブロック（prefs.pending）
+- キャンセルでいつでも中止可能
+
+### 27.7 次のステップ
+
+| 優先度 | タスク | 状態 |
+|--------|--------|------|
+| 高 | 本番環境でAPIキー設定＋手動確認 | 手動確認待ち |
+| 中 | CONV-1.1（補助解釈） | 未着手 |
+| 低 | グループ好み設定 | 未着手 |
 
 ---
 
