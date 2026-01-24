@@ -179,7 +179,7 @@ export const classifyThread: ClassifierFn = (
     /誰.*(未回答|返事)/,
     /まだ.*(返事|回答)/,
     /何人.*(回答|返事)/,
-    /次.*(どうする|すべき)/,
+    /次.*(どうする|すべき|すれば)/,  // 「次どうすればいい？」対応
   ];
 
   if (conversationalProgressPatterns.some(p => p.test(normalizedInput))) {
