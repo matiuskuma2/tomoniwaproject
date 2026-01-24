@@ -1,16 +1,19 @@
 /**
  * Thread Executors
  * TD-002: Split from apiExecutor.ts
+ * PROG-1: 進捗要約機能追加
  * 
  * Handles:
  * - schedule.create (P0-2a)
  * - schedule.status.check (P0-2)
+ * - schedule.progress.summary (PROG-1) - 会話向け進捗要約
  * - schedule.finalize (P0-3)
  * - thread.create (P0-5)
  * - schedule.invite.list (P0-4)
  */
 
 import { threadsApi, listsApi } from '../../api';
+import type { ThreadSummaryResponse } from '../../api/threads';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import type { ThreadStatus_API } from '../../models';
@@ -194,13 +197,19 @@ export async function executeCreate(
 
 /**
  * P0-2: schedule.status.check
+ * PROG-1: mode='summary' の場合は会話向け要約を返す
  */
 export async function executeStatusCheck(
   intentResult: IntentResult
 ): Promise<ExecutionResult> {
-  const { threadId, scope } = intentResult.params;
+  const { threadId, scope, mode } = intentResult.params;
 
   try {
+    // PROG-1: 会話向け要約モード
+    if (mode === 'summary' && threadId) {
+      return executeProgressSummary(threadId);
+    }
+
     // All threads
     if (scope === 'all' || !threadId) {
       const response = await threadsApi.list();
@@ -229,7 +238,13 @@ export async function executeStatusCheck(
       };
     }
 
-    // Single thread status
+    // PROG-1: threadId がある場合はデフォルトで要約を返す
+    // （従来の詳細表示が必要な場合は mode='detail' を指定）
+    if (mode !== 'detail') {
+      return executeProgressSummary(threadId);
+    }
+
+    // Single thread status (従来の詳細表示)
     const status = await getStatusWithCache(threadId);
     
     let message = `📊 ${status.thread.title}\n\n`;
@@ -298,6 +313,98 @@ export async function executeStatusCheck(
       message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
     };
   }
+}
+
+/**
+ * PROG-1: 進捗要約（会話向け）
+ * 「今どうなってる？」に答えるための要約
+ */
+export async function executeProgressSummary(
+  threadId: string
+): Promise<ExecutionResult> {
+  try {
+    const response: ThreadSummaryResponse = await threadsApi.getSummary(threadId, 'chat');
+    
+    if (!response.success) {
+      return {
+        success: false,
+        message: '❌ 進捗の取得に失敗しました。',
+      };
+    }
+
+    // format=chat の場合、message が会話向けテキスト
+    const message = response.message || formatSummaryFallback(response.data);
+
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'thread.progress.summary',
+        payload: response.data,
+      },
+    };
+  } catch (error) {
+    log.error('executeProgressSummary failed', { 
+      module: 'thread', 
+      threadId, 
+      err: error 
+    });
+    return {
+      success: false,
+      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
+ * PROG-1: フォールバック用のフォーマット（APIがchatを返さない場合）
+ */
+function formatSummaryFallback(data: ThreadSummaryResponse['data']): string {
+  const { thread, proposal, counts, next_recommended_action, recommendation_reason, notes } = data;
+  
+  const statusLabels: Record<string, string> = {
+    draft: '下書き',
+    active: '募集中',
+    confirmed: '確定済み',
+    cancelled: 'キャンセル',
+  };
+
+  let message = `📌 **進捗: ${thread.title}**\n\n`;
+  message += `状態: ${statusLabels[thread.status] || thread.status}（v${proposal.current_version}`;
+  if (proposal.remaining_proposals > 0) {
+    message += ` / 追加候補あと${proposal.remaining_proposals}回可`;
+  }
+  message += `）\n`;
+  message += `候補数: ${proposal.total_slots}件\n\n`;
+
+  message += `👥 **招待者: ${counts.total}名**\n`;
+  if (counts.pending > 0) message += `• 未回答: ${counts.pending}名\n`;
+  if (counts.responded_old > 0) message += `• 再回答必要: ${counts.responded_old}名\n`;
+  if (counts.responded_latest > 0) message += `• 回答済み: ${counts.responded_latest}名\n`;
+  if (counts.declined > 0) message += `• 辞退: ${counts.declined}名\n`;
+
+  message += `\n✅ **次のおすすめ:**\n${recommendation_reason}\n`;
+
+  const actionHints: Record<string, string> = {
+    remind: '「リマインドして」と入力してください',
+    remind_need_response: '「再回答リマインドして」と入力してください',
+    propose_more: '「追加候補出して」と入力してください',
+    finalize: '「確定して」と入力してください',
+    reschedule: '「再調整して」と入力してください',
+    wait: '回答をお待ちください',
+    none: '',
+  };
+  const hint = actionHints[next_recommended_action];
+  if (hint) message += `\n💡 ${hint}`;
+
+  if (notes && notes.length > 0) {
+    message += `\n\n⚠️ 注意:\n`;
+    for (const note of notes) {
+      message += `• ${note}\n`;
+    }
+  }
+
+  return message;
 }
 
 /**

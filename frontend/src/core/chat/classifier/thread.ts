@@ -167,8 +167,52 @@ export const classifyThread: ClassifierFn = (
   }
 
   // ============================================================
+  // PROG-1: 会話的な進捗質問（優先判定）
+  // Keywords: 今どうなってる、返事きた、誰が未回答、進捗教えて
+  // → mode: 'summary' で会話向け要約を返す
+  // ============================================================
+  const conversationalProgressPatterns = [
+    /今どうなってる/,
+    /今の状況/,
+    /進捗(教えて|は|どう)/,
+    /返事.*(きた|来た|あった)/,
+    /誰.*(未回答|返事)/,
+    /まだ.*(返事|回答)/,
+    /何人.*(回答|返事)/,
+    /次.*(どうする|すべき)/,
+  ];
+
+  if (conversationalProgressPatterns.some(p => p.test(normalizedInput))) {
+    if (!context?.selectedThreadId) {
+      return {
+        intent: 'schedule.status.check',
+        confidence: 0.85,
+        params: {
+          mode: 'summary',
+          scope: 'all',
+        },
+        needsClarification: {
+          field: 'threadId',
+          message:
+            'どのスレッドの進捗を確認しますか？\n左のスレッド一覧から選択してください。',
+        },
+      };
+    }
+
+    return {
+      intent: 'schedule.status.check',
+      confidence: 0.9,
+      params: {
+        threadId: context.selectedThreadId,
+        mode: 'summary',  // PROG-1: 会話向け要約
+      },
+    };
+  }
+
+  // ============================================================
   // P0-2: schedule.status.check
   // Keywords: 状況、進捗、確認、教えて、何がある
+  // PROG-1: デフォルトで mode: 'summary' を使用（会話向け）
   // ============================================================
   if (/(状況|進捗|確認|教えて|何.*ある|見(る|て)|どう|参加|未返信)/.test(normalizedInput)) {
     return {
@@ -177,6 +221,7 @@ export const classifyThread: ClassifierFn = (
       params: {
         threadId: context?.selectedThreadId,
         scope: normalizedInput.includes('募集') || normalizedInput.includes('全') ? 'all' : 'single',
+        mode: 'summary',  // PROG-1: デフォルトで会話向け要約
       },
       needsClarification:
         !context?.selectedThreadId && !normalizedInput.includes('募集')

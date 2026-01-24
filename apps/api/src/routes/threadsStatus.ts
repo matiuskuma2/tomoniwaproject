@@ -312,4 +312,75 @@ app.get('/:id/status', async (c) => {
   }
 });
 
+// ============================================================
+// PROG-1: GET /api/threads/:id/summary
+// 会話向けの進捗要約（read-only）
+// ============================================================
+
+import { 
+  getThreadProgressSummary, 
+  formatProgressSummaryForChat,
+  type ThreadProgressSummary 
+} from '../services/threadProgressSummary';
+
+/**
+ * GET /api/threads/:id/summary
+ * 
+ * PROG-1: 会話向けの進捗要約を返す
+ * - AIが「今どうなってる？」に答えるための要約
+ * - side_effect: read-only（外部送信なし）
+ */
+app.get('/:id/summary', async (c) => {
+  const { env } = c;
+  
+  try {
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+    
+    const { workspaceId, ownerUserId } = getTenant(c);
+    const threadId = c.req.param('id');
+    
+    // 進捗要約を取得
+    const summary = await getThreadProgressSummary(
+      env.DB,
+      workspaceId,
+      ownerUserId,
+      threadId
+    );
+    
+    if (!summary) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+    
+    // クエリパラメータで形式を指定可能
+    const format = c.req.query('format') || 'json';
+    
+    if (format === 'chat') {
+      // 会話向けテキスト形式
+      return c.json({
+        success: true,
+        format: 'chat',
+        message: formatProgressSummaryForChat(summary),
+        data: summary,
+      });
+    }
+    
+    // デフォルト: JSON形式
+    return c.json({
+      success: true,
+      format: 'json',
+      data: summary,
+    });
+    
+  } catch (error) {
+    console.error('[ThreadsSummary] Error:', error);
+    return c.json({
+      error: 'Failed to get thread summary',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;

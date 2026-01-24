@@ -262,4 +262,78 @@ export const threadsApi = {
   }> {
     return api.get(`/api/threads/${threadId}/reschedule/info`);
   },
+
+  // ============================================================
+  // PROG-1: 進捗要約（会話向け）
+  // ============================================================
+
+  /**
+   * 進捗要約を取得
+   * GET /api/threads/:threadId/summary
+   * 
+   * PROG-1: AIが「今どうなってる？」に答えるための要約
+   * - format=json: 構造化データ
+   * - format=chat: 会話向けテキスト付き
+   */
+  async getSummary(
+    threadId: string,
+    format: 'json' | 'chat' = 'chat'
+  ): Promise<ThreadSummaryResponse> {
+    return api.get(`/api/threads/${threadId}/summary?format=${format}`);
+  },
 };
+
+// ============================================================
+// PROG-1: Types
+// ============================================================
+
+export type ThreadStatusLabel = 'draft' | 'active' | 'confirmed' | 'cancelled';
+export type NextRecommendedAction = 
+  | 'remind'
+  | 'remind_need_response'
+  | 'propose_more'
+  | 'finalize'
+  | 'reschedule'
+  | 'wait'
+  | 'none';
+
+export interface ThreadProgressSummary {
+  thread: {
+    id: string;
+    title: string;
+    status: ThreadStatusLabel;
+    created_at: string;
+  };
+  proposal: {
+    current_version: number;
+    remaining_proposals: number;
+    total_slots: number;
+  };
+  counts: {
+    total: number;
+    pending: number;
+    responded_latest: number;
+    responded_old: number;
+    declined: number;
+    accepted: number;
+  };
+  last_actions: {
+    last_invite_sent_at?: string;
+    last_remind_at?: string;
+    last_additional_propose_at?: string;
+    finalized_at?: string;
+  };
+  failure: {
+    propose_retry_count: number;
+  };
+  next_recommended_action: NextRecommendedAction;
+  recommendation_reason: string;
+  notes: string[];
+}
+
+export interface ThreadSummaryResponse {
+  success: boolean;
+  format: 'json' | 'chat';
+  message?: string;  // format=chat の場合のみ
+  data: ThreadProgressSummary;
+}

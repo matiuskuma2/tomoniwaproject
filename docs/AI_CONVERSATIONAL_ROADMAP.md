@@ -1247,4 +1247,112 @@ apiExecutor.ts → executePendingDecision()
 
 ---
 
+## 28. PROG-1（進捗要約）実装完了 ✅
+
+### 28.1 概要
+
+- **目的**: AIが「今どうなってる？」に答えるための進捗要約機能
+- **特徴**: 
+  - read-only（外部送信なし、side_effect: read）
+  - 会話向けのテキスト形式で返答
+  - 次のアクション推奨を自動計算
+
+### 28.2 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/services/threadProgressSummary.ts` | 進捗要約サービス（集計ロジック） |
+| `apps/api/src/routes/threadsStatus.ts` | GET /api/threads/:id/summary エンドポイント追加 |
+
+**API仕様（GET /api/threads/:id/summary）**:
+```typescript
+// Request
+GET /api/threads/{threadId}/summary?format=chat
+
+// Response
+{
+  success: true,
+  format: 'chat',
+  message: '📌 **進捗: ミーティング調整**\n\n状態: 募集中（v1 / 追加候補あと2回可）...',
+  data: {
+    thread: { id, title, status, created_at },
+    proposal: { current_version, remaining_proposals, total_slots },
+    counts: { total, pending, responded_latest, responded_old, declined, accepted },
+    next_recommended_action: 'remind' | 'finalize' | 'wait' | ...,
+    recommendation_reason: '3名が未回答です。リマインドをおすすめします',
+    notes: ['2名が旧候補で回答済み（再回答リマインド推奨）']
+  }
+}
+```
+
+### 28.3 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `core/api/threads.ts` | getSummary() 追加、型定義追加 |
+| `classifier/thread.ts` | 会話パターン追加（「今どうなってる？」等） |
+| `executors/thread.ts` | executeProgressSummary() 追加 |
+
+### 28.4 会話パターン
+
+以下のパターンで進捗要約が返る：
+
+| 入力例 | 説明 |
+|--------|------|
+| 「今どうなってる？」 | 会話的な進捗質問 |
+| 「返事きた？」 | 回答状況の確認 |
+| 「誰が未回答？」 | 未回答者の確認 |
+| 「進捗教えて」 | 進捗状況の確認 |
+| 「次どうすればいい？」 | 推奨アクションの確認 |
+| 「状況確認」 | 従来の状況確認（要約形式） |
+
+### 28.5 次のアクション推奨ロジック
+
+| 状況 | 推奨アクション | 理由 |
+|------|---------------|------|
+| 未回答者あり | `remind` | リマインド送信 |
+| 旧世代回答者あり | `remind_need_response` | 再回答リマインド |
+| 全員回答済み | `finalize` | 確定可能 |
+| 全員辞退 | `reschedule` | 再調整が必要 |
+| その他 | `wait` | 回答待ち |
+
+### 28.6 応答フォーマット
+
+```
+📌 **進捗: ミーティング調整**
+
+状態: 募集中（v1 / 追加候補あと2回可）
+候補数: 5件
+
+👥 **招待者: 4名**
+• 未回答: 2名
+• 回答済み: 1名
+• 辞退: 1名
+
+✅ **次のおすすめ:**
+2名が未回答です。リマインドをおすすめします
+
+💡 「リマインドして」と入力してください
+```
+
+### 28.7 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/progress.spec.ts` | PROG-1a: 「今どうなってる？」→ スレッド選択案内または一覧 |
+| | PROG-1b: 「返事きた？」→ スレッド選択案内または要約 |
+| | PROG-1c: 「状況確認」→ 要約形式または一覧 |
+| | PROG-1d: 「募集中の予定」→ 一覧表示 |
+| | PROG-1e: 「次どうすればいい？」→ アクション推奨 |
+
+### 28.8 設計ポイント
+
+1. **read-only**: 外部送信なし、DBの読み取りのみ
+2. **既存との共存**: threadsStatus.ts のエンドポイント追加（破壊なし）
+3. **会話向け**: format=chat でテキスト形式、format=json でデータ形式
+4. **推奨アクション**: 状況に応じた次のアクションを自動計算
+5. **フォールバック**: API失敗時もフロントでテキスト生成可能
+
+---
+
 *最終更新: 2026-01-24*
