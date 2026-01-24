@@ -396,4 +396,74 @@ test.describe('Phase Next-3: カレンダー閲覧', () => {
     expect(response.length).toBeGreaterThan(0);
     expect(response).not.toContain('まだ実装されていません');
   });
+
+  // ============================================================
+  // CONV-1.1: AI Assist（params補完）テスト
+  // ============================================================
+
+  test('CONV-1.1a: 来週の午後、空いてる？→ AI Assist で午後params補完', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // AI Assist が午後 (afternoon) を補完するケース
+    await sendChatMessage(page, '来週の午後、空いてる？');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] CONV-1.1a afternoon assist response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 成功判定:
+    // 午後の候補が出る: 「午後」「14時」「15時」「16時」「17時」「18時」
+    // または空きがない場合: 「見つかりませんでした」
+    // Google未連携: 「⚠️」「Google」
+    const hasValidResponse =
+      response.includes('午後') ||
+      response.includes('14') ||
+      response.includes('15') ||
+      response.includes('16') ||
+      response.includes('17') ||
+      response.includes('空いている候補') ||
+      response.includes('見つかりませんでした') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+
+    // 事故検知
+    expect(response).not.toContain('まだ実装されていません');
+  });
+
+  test('CONV-1.1b: 今週、夜いける？→ AI Assist で夜params補完', async ({ page }) => {
+    await page.goto('/chat');
+    await waitForUIStable(page);
+
+    // AI Assist が夜 (night=evening) を補完するケース
+    await sendChatMessage(page, '今週、夜いける？');
+
+    // アシスタントからの応答を待つ
+    const response = await waitForAssistantMessage(page, 30000);
+    console.log(`[E2E] CONV-1.1b night assist response: ${response.substring(0, 400)}...`);
+
+    // 致命的なエラーがないことを確認
+    await assertNoErrorEnhanced(page);
+
+    // 成功判定:
+    // 夜（18時以降）の候補が出る: 「夜」「18時」「19時」「20時」「21時」「22時」
+    // または空きがない場合: 「見つかりませんでした」
+    // Google未連携: 「⚠️」「Google」
+    const hasValidResponse =
+      response.includes('夜') ||
+      response.includes('18') ||
+      response.includes('19') ||
+      response.includes('20') ||
+      response.includes('21') ||
+      response.includes('空いている候補') ||
+      response.includes('見つかりませんでした') ||
+      response.includes('⚠️');
+    expect(hasValidResponse).toBe(true);
+
+    // 事故検知
+    expect(response).not.toContain('まだ実装されていません');
+  });
 });

@@ -74,7 +74,8 @@ import {
   executePreferenceSetCancel,
 } from './executors/preference';
 // CONV-1.0: nlRouter API client
-import { nlRouterApi, isCalendarIntent } from '../api/nlRouter';
+// CONV-1.1: assist API追加
+import { nlRouterApi, isCalendarIntent, type NlRouterCalendarIntent } from '../api/nlRouter';
 // CONV-CHAT: 雑談API client
 import { chatApi } from '../api/chat';
 
@@ -104,6 +105,104 @@ async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> 
   } catch (e) {
     // P1-2: 構造化ログで追跡可能に
     log.warn('refreshAfterWrite failed', { module: 'apiExecutor', writeOp: op, threadId, err: e });
+  }
+}
+
+// ============================================================
+// CONV-1.1: calendar系intentのparams補完
+// ============================================================
+
+/**
+ * calendar系intentで params が弱い場合、AIで補完を試みる
+ * 
+ * 設計原則:
+ * - intentは絶対に変更しない
+ * - 失敗しても従来通り動く（エラー時はそのまま返す）
+ * - 既存paramsは上書きしない
+ */
+async function maybeAssistParams(intentResult: IntentResult): Promise<IntentResult> {
+  const { intent, params } = intentResult;
+  
+  // calendar系以外はスキップ
+  if (!isCalendarIntent(intent)) {
+    return intentResult;
+  }
+  
+  // rawInput がなければスキップ
+  const rawInput = params?.rawInput || params?.rawText;
+  if (!rawInput || typeof rawInput !== 'string' || rawInput.length < 3) {
+    return intentResult;
+  }
+  
+  // paramsが十分ある場合はスキップ（補完不要）
+  const hasRange = !!params?.range;
+  const hasPrefer = !!params?.prefer || !!params?.dayTimeWindow;
+  const hasDuration = !!params?.meetingLength || !!params?.durationMinutes;
+  
+  // 2つ以上のパラメータがあれば補完不要
+  if ([hasRange, hasPrefer, hasDuration].filter(Boolean).length >= 2) {
+    log.info('[CONV-1.1] params already sufficient, skipping assist', {
+      module: 'apiExecutor',
+      intent,
+      hasRange,
+      hasPrefer,
+      hasDuration,
+    });
+    return intentResult;
+  }
+  
+  try {
+    log.info('[CONV-1.1] attempting params assist', {
+      module: 'apiExecutor',
+      intent,
+      rawInputLength: rawInput.length,
+    });
+    
+    const response = await nlRouterApi.assist({
+      text: rawInput,
+      detected_intent: intent as NlRouterCalendarIntent,
+      existing_params: params || {},
+      viewer_timezone: 'Asia/Tokyo',
+      now_iso: new Date().toISOString(),
+    });
+    
+    // 失敗または低confidence時はそのまま返す
+    if (!response.success || !response.data || response.data.confidence < 0.6) {
+      log.info('[CONV-1.1] assist returned low confidence or failed', {
+        module: 'apiExecutor',
+        success: response.success,
+        confidence: response.data?.confidence,
+      });
+      return intentResult;
+    }
+    
+    // params_patchをマージ（既存優先）
+    const mergedParams = {
+      ...response.data.params_patch,  // AI補完（下位）
+      ...params,                       // 既存（上位、上書き）
+    };
+    
+    log.info('[CONV-1.1] params assist success', {
+      module: 'apiExecutor',
+      intent,
+      confidence: response.data.confidence,
+      patchKeys: Object.keys(response.data.params_patch),
+      rationale: response.data.rationale,
+    });
+    
+    return {
+      ...intentResult,
+      params: mergedParams,
+    };
+    
+  } catch (error) {
+    // エラー時は従来通り動く
+    log.warn('[CONV-1.1] params assist error, continuing without assist', {
+      module: 'apiExecutor',
+      intent,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return intentResult;
   }
 }
 
@@ -350,6 +449,7 @@ export interface ExecutionContext {
  * Execute API call based on intent
  * Phase Next-2: P0 intents only
  * Phase Next-5 Day2.1: Type-safe ExecutionContext
+ * CONV-1.1: calendar系intentのparams補完
  */
 export async function executeIntent(
   intentResult: IntentResult,
@@ -364,7 +464,11 @@ export async function executeIntent(
     };
   }
 
-  switch (intentResult.intent) {
+  // CONV-1.1: calendar系intentのparams補完
+  const enhancedIntentResult = await maybeAssistParams(intentResult);
+
+  switch (enhancedIntentResult.intent) {
+    // NOTE: CONV-1.1 - 以下のintentResultはenhancedIntentResultに置換済み
     // ============================================================
     // Beta A: 送信確認フロー
     // ============================================================
@@ -448,7 +552,7 @@ export async function executeIntent(
     case 'schedule.propose_for_split.cancel':
       return executeProposeForSplitCancel();
     
-    // Phase Next-3 (P1): Calendar
+    // Phase Next-3 (P1): Calendar - CONV-1.1: params補完済み
     case 'schedule.today':
       return executeToday();
     
@@ -456,11 +560,11 @@ export async function executeIntent(
       return executeWeek();
     
     case 'schedule.freebusy':
-      return executeFreeBusy(intentResult);
+      return executeFreeBusy(enhancedIntentResult);  // CONV-1.1
     
     // P3-INTERSECT1: 共通空き（複数参加者）
     case 'schedule.freebusy.batch':
-      return executeFreeBusyBatch(intentResult);
+      return executeFreeBusyBatch(enhancedIntentResult);  // CONV-1.1
     
     // Phase Next-2 (P0): Scheduling - TD-002: Use split executors
     case 'thread.create':
