@@ -14,8 +14,10 @@ import type { AvailableSlot } from './slotGenerator';
 import {
   SchedulePrefs,
   ScoreReason,
+  ScoreReasonKind,
   ScoredSlot,
   isSlotMatchingRule,
+  generateRuleLabel,
   PROXIMITY_SCORE_FACTOR,
   DEFAULT_PREFS_TIMEZONE,
 } from './schedulePrefs';
@@ -26,8 +28,8 @@ import {
 
 export interface ParticipantPrefs {
   userId: string;
-  name?: string;           // 表示用名前
-  prefs: SchedulePrefs | null;  // null = 未設定
+  displayName: string;         // P3-SCORE1: 表示用名前（必須）
+  prefs: SchedulePrefs | null; // null = 未設定
 }
 
 export interface SlotScorerParams {
@@ -55,7 +57,9 @@ const DEFAULT_MAX_RESULTS = 8;
 // ============================================================
 
 /**
- * 単一スロットの単一参加者からのスコアを計算
+ * P3-SCORE1: 単一スロットの単一参加者からのスコアを計算
+ * - participant_label を必須で返す
+ * - rule_label を自動生成
  */
 function scoreSlotForParticipant(
   slotStart: Date,
@@ -78,10 +82,14 @@ function scoreSlotForParticipant(
     for (const rule of prefs.time_windows) {
       if (isSlotMatchingRule(slotStart, rule, prefsTimezone)) {
         score += rule.weight;
+        const ruleLabel = generateRuleLabel(rule, false);
         reasons.push({
           source: participant.userId,
-          label: rule.label || `${rule.start}-${rule.end}`,
+          participant_label: participant.displayName,
+          rule_label: ruleLabel,
           delta: rule.weight,
+          kind: 'prefer',
+          label: ruleLabel, // 後方互換
         });
       }
     }
@@ -94,10 +102,14 @@ function scoreSlotForParticipant(
         // avoid_windowsの weight は負として扱う
         const delta = -Math.abs(rule.weight);
         score += delta;
+        const ruleLabel = generateRuleLabel(rule, true);
         reasons.push({
           source: participant.userId,
-          label: `回避: ${rule.label || `${rule.start}-${rule.end}`}`,
+          participant_label: participant.displayName,
+          rule_label: ruleLabel,
           delta,
+          kind: 'avoid',
+          label: ruleLabel, // 後方互換
         });
       }
     }
@@ -107,7 +119,7 @@ function scoreSlotForParticipant(
 }
 
 /**
- * 直近の枠へのスコア（タイブレーカー）
+ * P3-SCORE1: 直近の枠へのスコア（タイブレーカー）
  */
 function calculateProximityScore(slotStart: Date, now: Date): { score: number; reason: ScoreReason | null } {
   const hoursFromNow = (slotStart.getTime() - now.getTime()) / (1000 * 60 * 60);
@@ -118,8 +130,11 @@ function calculateProximityScore(slotStart: Date, now: Date): { score: number; r
       score: -1000,
       reason: {
         source: 'proximity',
-        label: '過去の枠',
+        participant_label: '',
+        rule_label: '過去の枠',
         delta: -1000,
+        kind: 'tiebreak',
+        label: '過去の枠',
       },
     };
   }
@@ -136,8 +151,11 @@ function calculateProximityScore(slotStart: Date, now: Date): { score: number; r
     score,
     reason: {
       source: 'proximity',
-      label: '直近',
+      participant_label: '',
+      rule_label: '直近優先',
       delta: score,
+      kind: 'tiebreak',
+      label: '直近',
     },
   };
 }
@@ -207,32 +225,26 @@ export function scoreSlots(params: SlotScorerParams): SlotScorerResult {
 }
 
 /**
- * スコア理由を要約（上位N件のみ）
- * 
- * @param reasons - 理由配列
- * @param maxReasons - 表示する最大件数
- * @returns 要約文字列
+ * P3-SCORE1: スコア理由を要約（上位N件のみ）
+ * @deprecated 新しい compressReasons を使用してください
  */
 export function summarizeReasons(reasons: ScoreReason[], maxReasons: number = 3): string {
   if (reasons.length === 0) return '';
   
-  // delta の絶対値でソートして上位を取得
-  const sorted = [...reasons].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  // tiebreakを除外し、delta の絶対値でソート
+  const filtered = reasons.filter(r => r.kind !== 'tiebreak');
+  const sorted = [...filtered].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   const top = sorted.slice(0, maxReasons);
   
   return top.map(r => {
     const sign = r.delta >= 0 ? '+' : '';
-    return `${sign}${r.delta} ${r.label}`;
+    return `${sign}${r.delta} ${r.rule_label || r.label}`;
   }).join(', ');
 }
 
 /**
- * ユーザー名付きの理由を生成（チャット表示用）
- * 
- * @param reasons - 理由配列
- * @param userMap - userId → 名前 のマップ
- * @param maxReasons - 表示する最大件数
- * @returns ユーザー名付きの理由文字列
+ * P3-SCORE1: ユーザー名付きの理由を生成（チャット表示用）
+ * @deprecated 新しい compressReasons を使用してください
  */
 export function formatReasonsWithUsers(
   reasons: ScoreReason[],
@@ -241,16 +253,60 @@ export function formatReasonsWithUsers(
 ): string {
   if (reasons.length === 0) return '';
   
-  // delta の絶対値でソートして上位を取得
-  const sorted = [...reasons].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  // tiebreakを除外し、delta の絶対値でソート
+  const filtered = reasons.filter(r => r.kind !== 'tiebreak');
+  const sorted = [...filtered].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   const top = sorted.slice(0, maxReasons);
   
   return top.map(r => {
     const sign = r.delta >= 0 ? '+' : '';
-    const userName = r.source === 'proximity' ? '' : (userMap.get(r.source) || r.source);
+    // P3-SCORE1: participant_label を優先使用
+    const userName = r.participant_label || (r.source === 'proximity' ? '' : (userMap.get(r.source) || r.source));
     if (userName) {
-      return `${sign}${r.delta} ${userName}: ${r.label}`;
+      return `${sign}${r.delta} ${userName}: ${r.rule_label || r.label}`;
     }
-    return `${sign}${r.delta} ${r.label}`;
+    return `${sign}${r.delta} ${r.rule_label || r.label}`;
   }).join(', ');
+}
+
+/**
+ * P3-SCORE1: 理由を参加者別に圧縮して上位N件を返す
+ * - 同一参加者の同種理由はdeltaを合算
+ * - tiebreakは除外
+ * - deltaの絶対値が大きい順に上位N件
+ */
+export interface CompressedReason {
+  participant_label: string;
+  rule_label: string;
+  delta: number;
+  kind: ScoreReasonKind;
+}
+
+export function compressReasons(reasons: ScoreReason[], maxReasons: number = 3): CompressedReason[] {
+  if (reasons.length === 0) return [];
+  
+  // tiebreakを除外
+  const filtered = reasons.filter(r => r.kind !== 'tiebreak');
+  
+  // 参加者+ルール別に合算
+  const aggregated = new Map<string, CompressedReason>();
+  
+  for (const r of filtered) {
+    const key = `${r.participant_label}:${r.rule_label}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.delta += r.delta;
+    } else {
+      aggregated.set(key, {
+        participant_label: r.participant_label,
+        rule_label: r.rule_label,
+        delta: r.delta,
+        kind: r.kind,
+      });
+    }
+  }
+  
+  // deltaの絶対値でソートして上位を取得
+  const sorted = [...aggregated.values()].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  return sorted.slice(0, maxReasons);
 }

@@ -39,12 +39,20 @@ export interface SchedulePrefs {
 }
 
 /**
- * スロットスコアの詳細理由
+ * P3-SCORE1: スロットスコアの詳細理由
+ * - participant_label を必須化（ユーザー名付き表示用）
+ * - kind を追加（理由の種別）
  */
+export type ScoreReasonKind = 'prefer' | 'avoid' | 'tiebreak';
+
 export interface ScoreReason {
-  source: string;          // どのユーザーの好みか（user_id または 'proximity'）
-  label: string;           // 理由のラベル（例: '午後希望', '木曜夜希望', '直近'）
-  delta: number;           // スコアへの影響（正/負）
+  source: string;              // どのユーザーの好みか（user_id または 'proximity'）
+  participant_label: string;   // P3-SCORE1: 表示用名前（田中さん / xxx@email.com）
+  rule_label: string;          // ルールのラベル（例: '午後(14:00-18:00)', '木曜夜(18:00-22:00)'）
+  delta: number;               // スコアへの影響（正/負）
+  kind: ScoreReasonKind;       // 理由の種別
+  // 後方互換: 旧 label を保持
+  label?: string;
 }
 
 /**
@@ -86,6 +94,80 @@ export const DEFAULT_PREFS_TIMEZONE = 'Asia/Tokyo';
  * スコア = -0.001 * hours_from_now (微小なタイブレーカー)
  */
 export const PROXIMITY_SCORE_FACTOR = -0.001;
+
+// ============================================================
+// P3-SCORE1: Label Generation Helpers
+// ============================================================
+
+/**
+ * 曜日を日本語に変換
+ */
+export const DAY_OF_WEEK_TO_JA: Record<DayOfWeek, string> = {
+  sun: '日', mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土',
+};
+
+/**
+ * 時間帯を日本語ラベルに変換
+ * @param start - 開始時刻 (HH:mm)
+ * @param end - 終了時刻 (HH:mm)
+ * @returns 時間帯ラベル（例: '午前', '午後', '夜'）
+ */
+export function getDaypartLabel(start: string, end: string): string {
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  
+  // 午前: 6:00-12:00
+  if (startMinutes >= 360 && endMinutes <= 720) return '午前';
+  // 午後: 12:00-18:00
+  if (startMinutes >= 720 && endMinutes <= 1080) return '午後';
+  // 夜: 18:00-24:00
+  if (startMinutes >= 1080) return '夜';
+  // 営業時間: 9:00-18:00
+  if (startMinutes === 540 && endMinutes === 1080) return '営業時間';
+  
+  return '';
+}
+
+/**
+ * TimeWindowRule から表示用ラベルを生成
+ * @param rule - 時間帯ルール
+ * @param isAvoid - 回避ルールかどうか
+ * @returns 表示用ラベル（例: '午後(14:00-18:00)', '木曜夜(18:00-22:00)', '午前回避(09:00-12:00)'）
+ */
+export function generateRuleLabel(rule: TimeWindowRule, isAvoid: boolean = false): string {
+  // 明示的なラベルがある場合はそれを使用
+  if (rule.label && rule.label.trim() !== '') {
+    return isAvoid ? `${rule.label}回避` : rule.label;
+  }
+  
+  const parts: string[] = [];
+  
+  // 曜日
+  if (rule.days && rule.days.length > 0 && rule.days.length < 7) {
+    const dayLabels = rule.days.map(d => DAY_OF_WEEK_TO_JA[d]);
+    if (dayLabels.length <= 2) {
+      parts.push(dayLabels.join('・'));
+    } else {
+      parts.push(`${dayLabels[0]}他`);
+    }
+  }
+  
+  // 時間帯名（午前/午後/夜）
+  const daypartLabel = getDaypartLabel(rule.start, rule.end);
+  if (daypartLabel) {
+    parts.push(daypartLabel);
+  }
+  
+  // 回避フラグ
+  if (isAvoid) {
+    parts.push('回避');
+  }
+  
+  // 時間範囲
+  const timeRange = `(${rule.start}-${rule.end})`;
+  
+  return parts.length > 0 ? `${parts.join('')}${timeRange}` : timeRange;
+}
 
 // ============================================================
 // Helper Functions

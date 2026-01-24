@@ -234,31 +234,79 @@ export async function getBatchFreeBusy(
     warning = `${excludedCount}名のカレンダーが連携されていないため、共通空き計算から除外しました。`;
   }
   
-  // P3-GEN1: 参加者の好みを取得してスコアリング
+  // P3-GEN1 + P3-SCORE1: 参加者の好みを取得してスコアリング
+  // contacts.display_name を優先して participant_label を解決
   const participantPrefsForScoring: ParticipantPrefs[] = [];
   
   for (const pp of perParticipant) {
     if (pp.status === 'success' && pp.participant.userId) {
-      // DBから好みを取得
+      // DBから好みと表示名を取得
       try {
         const userResult = await db
-          .prepare('SELECT schedule_prefs_json FROM users WHERE id = ?')
+          .prepare('SELECT schedule_prefs_json, display_name, email FROM users WHERE id = ?')
           .bind(pp.participant.userId)
-          .first<{ schedule_prefs_json: string | null }>();
+          .first<{ schedule_prefs_json: string | null; display_name: string | null; email: string | null }>();
         
         const prefs = parseSchedulePrefs(userResult?.schedule_prefs_json);
+        
+        // P3-SCORE1: displayName 解決優先順位
+        // 1. contacts.display_name（主催者がつけた名前）
+        // 2. participant.name（招待時の名前）
+        // 3. users.display_name（ユーザー自身の名前）
+        // 4. email
+        // 5. '不明'
+        let displayName = pp.participant.name || userResult?.display_name || userResult?.email || '不明';
+        
+        // contactsからdisplay_nameを取得（主催者がつけた名前を優先）
+        if (pp.participant.email) {
+          const contactResult = await db
+            .prepare('SELECT display_name FROM contacts WHERE user_id = ? AND email = ?')
+            .bind(organizerUserId, pp.participant.email)
+            .first<{ display_name: string | null }>();
+          
+          if (contactResult?.display_name) {
+            displayName = contactResult.display_name;
+          }
+        }
+        
         participantPrefsForScoring.push({
           userId: pp.participant.userId,
-          name: pp.participant.name,
+          displayName,
           prefs,
         });
       } catch (e) {
         // 好み取得失敗時はスコア0で継続
         participantPrefsForScoring.push({
           userId: pp.participant.userId,
-          name: pp.participant.name,
+          displayName: pp.participant.name || pp.participant.email || '不明',
           prefs: null,
         });
+      }
+    }
+  }
+  
+  // P3-SCORE1: 主催者自身もスコアリング対象に追加（self）
+  for (const pp of perParticipant) {
+    if (pp.participant.type === 'self' && pp.status === 'success') {
+      try {
+        const organizerResult = await db
+          .prepare('SELECT schedule_prefs_json, display_name, email FROM users WHERE id = ?')
+          .bind(organizerUserId)
+          .first<{ schedule_prefs_json: string | null; display_name: string | null; email: string | null }>();
+        
+        const prefs = parseSchedulePrefs(organizerResult?.schedule_prefs_json);
+        const displayName = organizerResult?.display_name || organizerResult?.email || 'あなた';
+        
+        // 既に追加されていない場合のみ追加
+        if (!participantPrefsForScoring.some(p => p.userId === organizerUserId)) {
+          participantPrefsForScoring.push({
+            userId: organizerUserId,
+            displayName,
+            prefs,
+          });
+        }
+      } catch (e) {
+        // エラー時はスキップ
       }
     }
   }

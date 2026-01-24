@@ -45,11 +45,17 @@ export interface AvailableSlot {
   label: string;      // 表示用ラベル（例: "1/24(金) 14:00-15:00"）
 }
 
-// P3-GEN1: スコア理由
+// P3-SCORE1: スコア理由の種別
+export type ScoreReasonKind = 'prefer' | 'avoid' | 'tiebreak';
+
+// P3-SCORE1: スコア理由
 export interface ScoreReason {
-  source: string;     // ユーザーIDまたは'proximity'
-  label: string;      // 理由のラベル
-  delta: number;      // スコアへの影響
+  source: string;              // ユーザーIDまたは'proximity'
+  participant_label: string;   // 表示用名前（例: '田中さん', 'xxx@email.com'）
+  rule_label: string;          // ルールのラベル（例: '午後(14:00-18:00)'）
+  delta: number;               // スコアへの影響
+  kind: ScoreReasonKind;       // 理由の種別
+  label?: string;              // 後方互換用
 }
 
 // P3-GEN1: スコア付きスロット

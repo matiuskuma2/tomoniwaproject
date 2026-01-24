@@ -12,7 +12,7 @@
  */
 
 import { calendarApi } from '../../api/calendar';
-import type { FreeBusyParams, TimePreference, BatchFreeBusyParams, ScoredSlot, ScoreReason } from '../../api/calendar';
+import type { FreeBusyParams, TimePreference, BatchFreeBusyParams, ScoredSlot, ScoreReason, ScoreReasonKind } from '../../api/calendar';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import { formatDateTimeForViewer, formatDateTimeRangeForViewer, DEFAULT_TIMEZONE } from '../../../utils/datetime';
@@ -199,23 +199,69 @@ function getPreferLabel(prefer: string | undefined): string | null {
 }
 
 /**
- * P3-GEN1: Format score reasons for display
- * 上位N件の理由を表示
+ * P3-SCORE1: 理由を参加者別に圧縮して返す
+ */
+interface CompressedReason {
+  participant_label: string;
+  rule_label: string;
+  delta: number;
+  kind: ScoreReasonKind;
+}
+
+function compressReasons(reasons: ScoreReason[], maxReasons: number = 3): CompressedReason[] {
+  if (!reasons || reasons.length === 0) return [];
+  
+  // tiebreakを除外
+  const filtered = reasons.filter(r => r.kind !== 'tiebreak');
+  
+  // 参加者+ルール別に合算
+  const aggregated = new Map<string, CompressedReason>();
+  
+  for (const r of filtered) {
+    const key = `${r.participant_label}:${r.rule_label}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.delta += r.delta;
+    } else {
+      aggregated.set(key, {
+        participant_label: r.participant_label,
+        rule_label: r.rule_label,
+        delta: r.delta,
+        kind: r.kind,
+      });
+    }
+  }
+  
+  // deltaの絶対値でソートして上位を取得
+  const sorted = [...aggregated.values()].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  return sorted.slice(0, maxReasons);
+}
+
+/**
+ * P3-SCORE1: 圧縮した理由を表示用文字列にフォーマット
+ * 例: "- 田中さん: 午後(14:00-18:00)に合致 (+10)"
+ */
+function formatCompressedReasons(reasons: CompressedReason[]): string {
+  if (reasons.length === 0) return '';
+  
+  return reasons.map(r => {
+    const sign = r.delta >= 0 ? '+' : '';
+    const actionWord = r.kind === 'avoid' ? 'に該当' : 'に合致';
+    return `- ${r.participant_label}: ${r.rule_label}${actionWord} (${sign}${r.delta})`;
+  }).join('\n');
+}
+
+/**
+ * P3-GEN1: Format score reasons for display (後方互換)
+ * @deprecated compressReasons + formatCompressedReasons を使用
  */
 function formatScoreReasons(reasons: ScoreReason[], maxReasons: number = 2): string {
-  if (!reasons || reasons.length === 0) return '';
+  const compressed = compressReasons(reasons, maxReasons);
+  if (compressed.length === 0) return '';
   
-  // delta の絶対値でソートして上位を取得
-  const sorted = [...reasons]
-    .filter(r => r.source !== 'proximity') // プロキシミティは表示しない
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  
-  const top = sorted.slice(0, maxReasons);
-  if (top.length === 0) return '';
-  
-  return top.map(r => {
+  return compressed.map(r => {
     const sign = r.delta >= 0 ? '+' : '';
-    return `${sign}${r.delta} ${r.label}`;
+    return `${sign}${r.delta} ${r.rule_label}`;
   }).join(', ');
 }
 
@@ -378,14 +424,23 @@ export async function executeFreeBusyBatch(intentResult: IntentResult): Promise<
       }
       
       if (hasScoring) {
-        // P3-GEN1: スコア付きで表示
+        // P3-SCORE1: スコア付きで表示（理由は上位3件のみ表示）
         message += `⭐ 好みに基づいてスコア順で表示:\n\n`;
         (response.scored_slots as ScoredSlot[]).forEach((slot, index) => {
-          const reasonsStr = formatScoreReasons(slot.reasons);
+          const compressed = compressReasons(slot.reasons, 3);
+          const reasonsStr = formatCompressedReasons(compressed);
+          
+          // スロット行
+          message += `${index + 1}. ${slot.label}`;
+          if (slot.score !== 0) {
+            message += ` [スコア: ${slot.score}]`;
+          }
+          message += '\n';
+          
+          // P3-SCORE1: 理由行（上位3件のみ、インデント付き）
           if (reasonsStr) {
-            message += `${index + 1}. ${slot.label} (スコア: ${slot.score}) ${reasonsStr}\n`;
-          } else {
-            message += `${index + 1}. ${slot.label}\n`;
+            const indentedReasons = reasonsStr.split('\n').map(line => `   ${line}`).join('\n');
+            message += `${indentedReasons}\n`;
           }
         });
       } else {
