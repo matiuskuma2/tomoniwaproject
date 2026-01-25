@@ -38,7 +38,7 @@ export interface PendingBase {
 // ============================================================
 
 export type PendingState =
-  // Beta A: 招待送信 / 招待追加 / 候補追加
+  // Beta A: 招待送信 / 招待追加 / 候補追加 / PREF-SET-1: 好み設定確認
   | (PendingBase & {
       kind: 'pending.action';
       confirmToken: string;
@@ -50,9 +50,12 @@ export type PendingState =
         thread_title?: string;
         [key: string]: unknown;
       };
-      mode: 'new_thread' | 'add_to_thread' | 'add_slots';
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots' | 'preference_set';
       threadTitle?: string;
-      actionType?: 'send_invites' | 'add_invites' | 'add_slots';
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots' | 'prefs.pending';
+      // PREF-SET-1: 好み設定確認フロー用
+      proposed_prefs?: Record<string, unknown>;
+      merged_prefs?: Record<string, unknown>;
     })
   
   // Phase Next-6 Day1: 未回答者へのリマインド

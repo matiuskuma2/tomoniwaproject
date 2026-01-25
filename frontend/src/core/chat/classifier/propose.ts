@@ -24,7 +24,7 @@ export const classifyPropose: ClassifierFn = (
   // P2-4: schedule.additional_propose (Phase Next-5 Day3)
   // Keywords: 追加候補、もっと候補、追加で候補
   // ============================================================
-  if (/(追加.*候補|もっと.*候補|追加で.*候補|追加して)/.test(normalizedInput)) {
+  if (/(追加.?候補|もっと.?候補|追加で.?候補|追加して)/.test(normalizedInput)) {
     // Require threadId context
     if (!context?.selectedThreadId) {
       return {

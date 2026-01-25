@@ -163,7 +163,8 @@ export const NL_ROUTER_MULTI_INTENTS = {
  * multi-intent判定用ヘルパー
  */
 export function isMultiIntentCategory(intent: string, category: keyof typeof NL_ROUTER_MULTI_INTENTS): boolean {
-  return NL_ROUTER_MULTI_INTENTS[category].includes(intent as any);
+  const arr = NL_ROUTER_MULTI_INTENTS[category] as readonly string[];
+  return arr.includes(intent);
 }
 
 /**

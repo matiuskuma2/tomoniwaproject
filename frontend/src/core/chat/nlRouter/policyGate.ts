@@ -9,8 +9,6 @@
  */
 
 import type { ActionPlan, NlRouterContext, PolicyGateResult } from './types';
-import type { IntentType } from '../classifier/types';
-import type { PendingState } from '../pendingTypes';
 
 // ============================================================
 // Intent ごとの side_effect マッピング

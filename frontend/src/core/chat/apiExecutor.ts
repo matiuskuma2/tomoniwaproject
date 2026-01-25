@@ -79,10 +79,8 @@ import {
 import { 
   nlRouterApi, 
   isCalendarIntent, 
-  isImmediateExecutionIntent,
   isPendingFlowIntent,
   type NlRouterCalendarIntent,
-  type NlMultiRouteResponse,
 } from '../api/nlRouter';
 // CONV-CHAT: 雑談API client
 import { chatApi } from '../api/chat';
@@ -297,7 +295,9 @@ export type ExecutionResultData =
   | { kind: 'calendar.today'; payload: CalendarTodayResponse }
   | { kind: 'calendar.week'; payload: CalendarWeekResponse }
   | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
+  | { kind: 'calendar.freebusy.batch'; payload: any }  // P3-INTERSECT1
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
+  | { kind: 'thread.progress.summary'; payload: any }  // PROG-1
   | { kind: 'thread.create'; payload: { threadId: string } }
   | { kind: 'thread.finalize'; payload: any }
   | { kind: 'thread.invites.batch'; payload: any }
@@ -340,12 +340,15 @@ export type ExecutionResultData =
       confirmToken: string;
       expiresAt: string;
       summary: any;
-      mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots' | 'preference_set'; // Phase2: add_slots, PREF-SET-1: preference_set 追加
       threadId?: string;
       threadTitle?: string;
-      actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots' | 'prefs.pending'; // Phase2: action_type, PREF-SET-1: prefs.pending 追加
       proposalVersion?: number; // Phase2: 次の proposal_version
       remainingProposals?: number; // Phase2: 残り提案回数
+      // PREF-SET-1: 好み設定用
+      proposed_prefs?: Record<string, unknown>;
+      merged_prefs?: Record<string, unknown>;
     } }
   | { kind: 'pending.action.decided'; payload: {
       decision: 'send' | 'cancel' | 'new_thread' | 'add'; // Phase2: add 追加
@@ -431,6 +434,13 @@ export type ExecutionResultData =
       errors?: Array<{ email: string; error: string }>;
     } }
   | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } }
+  // P3-PREF: 好み設定
+  | { kind: 'preference.set'; payload: { prefs: Record<string, unknown> } }
+  | { kind: 'preference.set.pending'; payload: { proposed_prefs: Record<string, unknown>; merged_prefs: Record<string, unknown>; confirmPrompt: string } }
+  | { kind: 'preference.set.confirmed'; payload: { saved_prefs: Record<string, unknown> } }
+  | { kind: 'preference.set.cancelled'; payload: {} }
+  | { kind: 'preference.show'; payload: { prefs: Record<string, unknown> | null } }
+  | { kind: 'preference.clear'; payload: {} }
   // CONV-1.2: AI確認待ち
   | { kind: 'ai.confirm.pending'; payload: {
       intent: string;

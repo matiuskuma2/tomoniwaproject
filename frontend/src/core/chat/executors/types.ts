@@ -12,7 +12,9 @@ export type ExecutionResultData =
   | { kind: 'calendar.today'; payload: CalendarTodayResponse }
   | { kind: 'calendar.week'; payload: CalendarWeekResponse }
   | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
+  | { kind: 'calendar.freebusy.batch'; payload: any }  // P3-INTERSECT1
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
+  | { kind: 'thread.progress.summary'; payload: any }  // PROG-1
   | { kind: 'thread.create'; payload: { threadId: string } }
   | { kind: 'thread.finalize'; payload: any }
   | { kind: 'thread.invites.batch'; payload: any }
@@ -55,12 +57,15 @@ export type ExecutionResultData =
       confirmToken: string;
       expiresAt: string;
       summary: any;
-      mode: 'new_thread' | 'add_to_thread' | 'add_slots';
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots' | 'preference_set';  // PREF-SET-1
       threadId?: string;
       threadTitle?: string;
-      actionType?: 'send_invites' | 'add_invites' | 'add_slots';
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots' | 'prefs.pending';  // PREF-SET-1
       proposalVersion?: number;
       remainingProposals?: number;
+      // PREF-SET-1: 好み設定用
+      proposed_prefs?: Record<string, unknown>;
+      merged_prefs?: Record<string, unknown>;
     } }
   | { kind: 'pending.action.decided'; payload: {
       decision: 'send' | 'cancel' | 'new_thread' | 'add';
@@ -134,7 +139,13 @@ export type ExecutionResultData =
       errorCount: number;
       errors?: Array<{ email: string; error: string }>;
     } }
-  | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } };
+  | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } }
+  // P3-PREF: 好み設定
+  | { kind: 'preference.set'; payload: any }
+  | { kind: 'preference.set.confirmed'; payload: any }
+  | { kind: 'preference.set.cancelled'; payload: {} }
+  | { kind: 'preference.show'; payload: any }
+  | { kind: 'preference.clear'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;
@@ -176,11 +187,17 @@ export interface ExecutionContext {
     confirmToken: string;
     expiresAt: string;
     summary: any;
-    mode: 'new_thread' | 'add_to_thread' | 'add_slots';
+    mode: 'new_thread' | 'add_to_thread' | 'add_slots' | 'preference_set';
     threadId?: string;
     threadTitle?: string;
-    actionType?: 'send_invites' | 'add_invites' | 'add_slots';
+    actionType?: 'send_invites' | 'add_invites' | 'add_slots' | 'prefs.pending';
+    // PREF-SET-1: 好み設定フロー用
+    proposed_prefs?: Record<string, unknown>;
+    merged_prefs?: Record<string, unknown>;
   } | null;
+  // P0-1: 正規化された pending (ChatLayout から渡される)
+  pendingForThread?: import('../pendingTypes').PendingState | null;
+  globalPendingAction?: import('../pendingTypes').PendingState | null;
   pendingRemindNeedResponse?: {
     threadId: string;
     targetInvitees: Array<{ email: string; name?: string; inviteeKey: string }>;

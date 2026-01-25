@@ -12,7 +12,6 @@ import { test, expect } from '@playwright/test';
 import {
   sendChatMessage,
   waitForUIStable,
-  assertNoError,
   waitForAssistantMessage,
   assertNoErrorEnhanced,
 } from './helpers/test-helpers';
