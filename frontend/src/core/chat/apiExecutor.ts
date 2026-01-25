@@ -22,8 +22,8 @@ import { setStatus as setCacheStatus } from '../cache';
 // P0-1: PendingState 正規化
 import type { PendingState } from './pendingTypes';
 // P0-2: Write 後の refresh 強制
-import { getRefreshActions, type WriteOp } from '../refresh/refreshMap';
-import { runRefresh } from '../refresh/runRefresh';
+// Phase 1-2: refreshAfterWrite は shared/ に一元化
+import { refreshAfterWrite } from './executors/shared/refresh';
 // P1-2: Structured logger
 import { log } from '../platform';
 // TD-REMIND-UNIFY: remind 系は executors に統一したため、以下の import は不要になった
@@ -103,19 +103,9 @@ async function getStatusWithCache(threadId: string): Promise<ThreadStatus_API> {
   return status;
 }
 
-/**
- * P0-2: Write 操作後に必須の refresh を実行
- * refresh 失敗で Write を失敗扱いにしない（運用インシデント回避）
- */
-async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> {
-  try {
-    const actions = getRefreshActions(op, threadId ? { threadId } : undefined);
-    await runRefresh(actions);
-  } catch (e) {
-    // P1-2: 構造化ログで追跡可能に
-    log.warn('refreshAfterWrite failed', { module: 'apiExecutor', writeOp: op, threadId, err: e });
-  }
-}
+// ============================================================
+// P0-2: refreshAfterWrite は executors/shared/refresh.ts に一元化済み
+// ============================================================
 
 // ============================================================
 // CONV-1.1: calendar系intentのparams補完

@@ -14,30 +14,8 @@ import { isPendingAction } from '../pendingTypes';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult, ExecutionContext } from './types';
 import { executePreferenceSetConfirm, executePreferenceSetCancel } from './preference';
-import { log } from '../../platform';
-// P0-2: refresh 系
-import { getRefreshActions, type WriteOp } from '../../refresh/refreshMap';
-import { runRefresh } from '../../refresh/runRefresh';
-
-// ============================================================
-// Helper Functions
-// ============================================================
-
-/**
- * P0-2: Write 操作後に必須の refresh を実行
- * refresh 失敗で Write を失敗扱いにしない（運用インシデント回避）
- * 
- * Note: この関数は apiExecutor.ts にも存在します。
- * 将来的には shared/ に移動することを検討。
- */
-async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> {
-  try {
-    const actions = getRefreshActions(op, threadId ? { threadId } : undefined);
-    await runRefresh(actions);
-  } catch (e) {
-    log.warn('refreshAfterWrite failed', { module: 'pending', writeOp: op, threadId, err: e });
-  }
-}
+// Phase 1-2: refreshAfterWrite は shared/ に一元化（二重管理回避）
+import { refreshAfterWrite } from './shared/refresh';
 
 // ============================================================
 // Executors
