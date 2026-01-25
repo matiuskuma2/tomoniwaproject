@@ -11,8 +11,11 @@
  * - remind.ts: remind.status, remind.pending, need_response.list, remind.need_response (P2-R1)
  * - batch.ts: 一括招待バッチ処理最適化 (P2-B1)
  * 
+ * - invite.ts: invite.prepare.emails, invite.prepare.list (Phase 1-1)
+ * - pending.ts: pending.action.decide (Phase 1-2)
+ * 
  * 今後の分割予定:
- * - pending.ts: pending.action.decide, invite.prepare
+ * - autoPropose.ts: schedule.auto_propose 系 (Phase 1-3)
  */
 
 // 型定義
@@ -93,3 +96,8 @@ export {
   // Types
   type ParsedInvitee,
 } from './invite';
+
+// Pending executors (Phase 1-2: apiExecutor.ts から分離)
+export {
+  executePendingDecision,
+} from './pending';

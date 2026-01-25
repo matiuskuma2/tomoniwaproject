@@ -14,7 +14,7 @@
 
 import { threadsApi } from '../api/threads';
 // Phase 1-1: listsApi, contactsApi は executors/invite.ts に移動
-import { pendingActionsApi, type PendingDecision } from '../api/pendingActions';
+// Phase 1-2: pendingActionsApi, PendingDecision は executors/pending.ts に移動
 import type { IntentResult } from './intentClassifier';
 import type { ThreadStatus_API, CalendarTodayResponse, CalendarWeekResponse, CalendarFreeBusyResponse } from '../models';
 import { formatDateTimeForViewer, DEFAULT_TIMEZONE } from '../../utils/datetime';
@@ -22,14 +22,14 @@ import { setStatus as setCacheStatus } from '../cache';
 // P0-1: PendingState 正規化
 import type { PendingState } from './pendingTypes';
 // P0-2: Write 後の refresh 強制
-import { getRefreshActions, type WriteOp } from '../refresh/refreshMap';
-import { runRefresh } from '../refresh/runRefresh';
+// Phase 1-2: refreshAfterWrite は shared/ に一元化
+import { refreshAfterWrite } from './executors/shared/refresh';
 // P1-2: Structured logger
 import { log } from '../platform';
 // TD-REMIND-UNIFY: remind 系は executors に統一したため、以下の import は不要になった
 // isPendingRemind, isPendingRemindNeedResponse, messageFormatter 関連
 import { 
-  isPendingAction, 
+  // Phase 1-2: isPendingAction は executors/pending.ts に移動
   isPendingNotify,
   isPendingSplit,
   isPendingAutoPropose,
@@ -67,14 +67,14 @@ import {
   executeInvitePrepareEmails as executeInvitePrepareEmailsFromExecutors,
   executeInvitePrepareList as executeInvitePrepareListFromExecutors,
   buildPrepareMessage,
+  // Phase 1-2: Pending executors
+  executePendingDecision as executePendingDecisionFromExecutors,
 } from './executors';
 // P3-PREF: 好み設定 executor (PREF-SET-1: AI確認フロー追加)
 import {
   executePreferenceSet,
   executePreferenceShow,
   executePreferenceClear,
-  executePreferenceSetConfirm,
-  executePreferenceSetCancel,
 } from './executors/preference';
 // CONV-1.0: nlRouter API client
 // CONV-1.1: assist API追加
@@ -103,19 +103,9 @@ async function getStatusWithCache(threadId: string): Promise<ThreadStatus_API> {
   return status;
 }
 
-/**
- * P0-2: Write 操作後に必須の refresh を実行
- * refresh 失敗で Write を失敗扱いにしない（運用インシデント回避）
- */
-async function refreshAfterWrite(op: WriteOp, threadId?: string): Promise<void> {
-  try {
-    const actions = getRefreshActions(op, threadId ? { threadId } : undefined);
-    await runRefresh(actions);
-  } catch (e) {
-    // P1-2: 構造化ログで追跡可能に
-    log.warn('refreshAfterWrite failed', { module: 'apiExecutor', writeOp: op, threadId, err: e });
-  }
-}
+// ============================================================
+// P0-2: refreshAfterWrite は executors/shared/refresh.ts に一元化済み
+// ============================================================
 
 // ============================================================
 // CONV-1.1: calendar系intentのparams補完
@@ -433,7 +423,8 @@ export async function executeIntent(
     // Beta A: 送信確認フロー
     // ============================================================
     case 'pending.action.decide':
-      return executePendingDecision(intentResult, context);
+      // Phase 1-2: executors/pending.ts に分離
+      return executePendingDecisionFromExecutors(intentResult, context);
     
     case 'invite.prepare.emails':
       // Phase 1-1: executors/invite.ts に分離
@@ -584,147 +575,8 @@ export async function executeIntent(
 // Beta A: 送信確認フロー (prepare → confirm → execute)
 // Phase 1-1: executeInvitePrepareEmails, executeInvitePrepareList は
 // executors/invite.ts に分離済み
+// Phase 1-2: executePendingDecision は executors/pending.ts に分離済み
 // ============================================================
-
-/**
- * Beta A / Phase2: 決定処理
- * - 通常: 3語固定 (送る/キャンセル/別スレッドで)
- * - 追加候補: 2語固定 (追加/キャンセル)
- * P0-1: 正規化された pending を使用
- * PREF-SET-1: prefs_confirm / prefs_cancel 対応
- */
-async function executePendingDecision(
-  intentResult: IntentResult,
-  context?: ExecutionContext
-): Promise<ExecutionResult> {
-  const { decision, confirmToken } = intentResult.params;
-  
-  // PREF-SET-1: 好み設定の確認/キャンセル
-  if (decision === 'prefs_confirm') {
-    return executePreferenceSetConfirm(context);
-  }
-  if (decision === 'prefs_cancel') {
-    return executePreferenceSetCancel();
-  }
-  
-  // P0-1: 正規化された pending から pending.action を取得
-  const activePending = context?.pendingForThread ?? context?.globalPendingAction ?? null;
-  const pending = isPendingAction(activePending) ? activePending : null;
-  
-  if (!pending && !confirmToken) {
-    return {
-      success: false,
-      message: '❌ 確認中の送信がありません。\n先にメールアドレスまたはリストを入力してください。',
-    };
-  }
-  
-  const token = confirmToken || pending?.confirmToken;
-  if (!token) {
-    return {
-      success: false,
-      message: '❌ 確認トークンが見つかりません。',
-    };
-  }
-  
-  try {
-    // Map Japanese decision to API decision
-    // Phase2: 「追加」を「send」として扱う
-    const apiDecision: PendingDecision = 
-      decision === '送る' ? 'send' :
-      decision === '追加' ? 'send' :    // Phase2: 追加候補用
-      decision === '追加する' ? 'send' : // Phase2: 追加候補用
-      decision === 'キャンセル' ? 'cancel' :
-      decision === 'やめる' ? 'cancel' : // Phase2: 追加候補用
-      decision === '別スレッドで' ? 'new_thread' :
-      decision;
-    
-    // Step 1: Confirm
-    const confirmResponse = await pendingActionsApi.confirm(token, apiDecision);
-    
-    // キャンセルの場合は終了
-    if (confirmResponse.decision === 'cancel') {
-      return {
-        success: true,
-        message: confirmResponse.message_for_chat || '✅ キャンセルしました。',
-        data: {
-          kind: 'pending.action.cleared',
-          payload: {},
-        },
-      };
-    }
-    
-    // 送る or 別スレッドで の場合は execute
-    if (confirmResponse.can_execute) {
-      const executeResponse = await pendingActionsApi.execute(token);
-      
-      // Phase2: add_slots の場合は別のレスポンス形式
-      const isAddSlots = (executeResponse as any).proposal_version !== undefined;
-      
-      if (isAddSlots) {
-        // Phase2: 追加候補の実行結果
-        const addSlotsResponse = executeResponse as any;
-        
-        // P0-2: Write 後の refresh 強制
-        await refreshAfterWrite('ADD_SLOTS', addSlotsResponse.thread_id);
-        
-        return {
-          success: true,
-          message: addSlotsResponse.message_for_chat || 
-            `✅ ${addSlotsResponse.result.slots_added}件の追加候補を追加しました。`,
-          data: {
-            kind: 'pending.action.executed',
-            payload: {
-              threadId: addSlotsResponse.thread_id,
-              actionType: 'add_slots',
-              slotsAdded: addSlotsResponse.result.slots_added,
-              proposalVersion: addSlotsResponse.proposal_version,
-              remainingProposals: addSlotsResponse.remaining_proposals,
-              notifications: addSlotsResponse.result.notifications,
-            },
-          },
-        };
-      }
-      
-      // 通常の招待送信
-      const message = executeResponse.message_for_chat || 
-        `✅ ${executeResponse.result.inserted}名に招待を送信しました。`;
-      
-      // P0-2: Write 後の refresh 強制
-      await refreshAfterWrite('INVITE_SEND', executeResponse.thread_id);
-      
-      return {
-        success: true,
-        message,
-        data: {
-          kind: 'pending.action.executed',
-          payload: {
-            threadId: executeResponse.thread_id,
-            inserted: executeResponse.result.inserted,
-            emailQueued: executeResponse.result.deliveries.email_queued,
-          },
-        },
-      };
-    }
-    
-    // can_execute が false の場合（異常系）
-    return {
-      success: false,
-      message: confirmResponse.message_for_chat || '❌ 実行できませんでした。',
-      data: {
-        kind: 'pending.action.decided',
-        payload: {
-          decision: confirmResponse.decision,
-          canExecute: confirmResponse.can_execute,
-        },
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
-    };
-  }
-}
 
 // ============================================================
 // Beta A: buildPrepareMessage
