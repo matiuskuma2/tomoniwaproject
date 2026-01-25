@@ -20,6 +20,8 @@ import type { Env } from '../../../../../packages/shared/src/types/env';
 
 // Phase 2-2: list.ts (GET /, GET /:id)
 import listRoutes from './list';
+// Phase 2-3: create.ts (POST /)
+import createRoutes from './create';
 
 // 共通の Variables 型定義（threads.ts と同一）
 export type Variables = {
@@ -39,8 +41,8 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // PR 2-2: list.ts (GET /, GET /:id) ✅
 app.route('/', listRoutes);
 
-// PR 2-3: create.ts をマウント予定
-// app.route('/', createRoutes);
+// PR 2-3: create.ts (POST /) ✅
+app.route('/', createRoutes);
 
 // PR 2-4: proposals.ts をマウント予定
 // app.route('/', proposalsRoutes);
