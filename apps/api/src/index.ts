@@ -17,7 +17,10 @@ import authRoutes from './routes/auth';
 import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
 import voiceRoutes from './routes/voice';
-import threadsRoutes from './routes/threads';
+// Phase 2-2: threads/index.ts に集約開始（GET系は threads/list.ts に移動）
+import threadsRoutes from './routes/threads/index';
+// Phase 2: 残りのルート（POST等）は threads.ts に残存
+import threadsLegacyRoutes from './routes/threads';
 import threadsStatusRoutes from './routes/threadsStatus';
 import threadsRemindRoutes from './routes/threadsRemind';
 import threadsFinalizeRoutes from './routes/threadsFinalize';
@@ -157,9 +160,11 @@ app.use('/api/voice/*', requireAuth);
 app.route('/api/voice', voiceRoutes);
 
 // Threads API (Ticket 10 + Phase B)
+// Phase 2-2: GET系は threads/index.ts 経由で threads/list.ts に移動
 app.use('/api/threads', requireAuth);     // Match /api/threads
 app.use('/api/threads/*', requireAuth);   // Match /api/threads/* (including /api/threads/:id/status)
-app.route('/api/threads', threadsRoutes);
+app.route('/api/threads', threadsRoutes);         // Phase 2: 集約ルータ（GET系）
+app.route('/api/threads', threadsLegacyRoutes);   // Phase 2: 残存ルート（POST等）
 app.route('/api/threads', threadsStatusRoutes);   // GET /:id/status
 app.route('/api/threads', threadsRemindRoutes);   // POST /:id/remind
 app.route('/api/threads', threadsFinalizeRoutes); // POST /:id/finalize
