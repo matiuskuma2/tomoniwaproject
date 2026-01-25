@@ -75,7 +75,15 @@ import {
 } from './executors/preference';
 // CONV-1.0: nlRouter API client
 // CONV-1.1: assist API追加
-import { nlRouterApi, isCalendarIntent, type NlRouterCalendarIntent } from '../api/nlRouter';
+// CONV-1.2: multi-intent API追加
+import { 
+  nlRouterApi, 
+  isCalendarIntent, 
+  isImmediateExecutionIntent,
+  isPendingFlowIntent,
+  type NlRouterCalendarIntent,
+  type NlMultiRouteResponse,
+} from '../api/nlRouter';
 // CONV-CHAT: 雑談API client
 import { chatApi } from '../api/chat';
 
@@ -422,7 +430,19 @@ export type ExecutionResultData =
       errorCount: number;
       errors?: Array<{ email: string; error: string }>;
     } }
-  | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } };
+  | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } }
+  // CONV-1.2: AI確認待ち
+  | { kind: 'ai.confirm.pending'; payload: {
+      intent: string;
+      params: Record<string, unknown>;
+      sideEffect: string;
+      confirmationPrompt?: string;
+    } }
+  // CONV-CHAT: 雑談レスポンス
+  | { kind: 'chat.response'; payload: {
+      intent_detected?: string;
+      should_execute?: boolean;
+    } };
 
 export interface ExecutionResult {
   success: boolean;
@@ -1838,15 +1858,16 @@ function executeRescheduleCancel(): ExecutionResult {
 }
 
 // ============================================================
-// CONV-1.0: nlRouter フォールバック（calendar限定）
+// CONV-1.2: nlRouter フォールバック（multi-intent対応）
 // ============================================================
 
 /**
- * CONV-1.0: unknown 時に nlRouter を呼び出すフォールバック
+ * CONV-1.2: unknown 時に nlRouter/multi を呼び出すフォールバック
  * 
- * - calendar 系のみ対応（READ-ONLY）
- * - nlRouter が calendar intent を返した場合のみ再実行
- * - write 系は一切返さない（安全）
+ * - calendar系は即実行
+ * - write_local系は即実行（確認不要のもの）
+ * - write_external系/確認必要系は既存intentフローへ合流
+ * - chat.general は雑談フォールバック
  * 
  * @param intentResult - 元の unknown IntentResult
  * @param context - ExecutionContext
@@ -1865,12 +1886,13 @@ async function executeUnknownWithNlRouter(
   }
 
   try {
-    // nlRouter を呼び出し
-    const nlResult = await nlRouterApi.route({
+    // CONV-1.2: nlRouter/multi を呼び出し
+    const nlResult = await nlRouterApi.multi({
       text: rawInput,
       context: {
         selected_thread_id: intentResult.params?.threadId || null,
         viewer_timezone: 'Asia/Tokyo',
+        has_pending_action: !!(context?.pendingForThread || context?.globalPendingAction),
       },
     });
 
@@ -1886,14 +1908,18 @@ async function executeUnknownWithNlRouter(
       };
     }
 
-    // CONV-CHAT: unknown のままなら雑談フォールバックへ
-    if (nlResult.intent === 'unknown' || nlResult.confidence < 0.5) {
+    // chat.general は雑談フォールバックへ
+    if (nlResult.intent === 'chat.general') {
+      log.info('[CONV-1.2] chat.general, falling back to chat', {
+        module: 'apiExecutor',
+        confidence: nlResult.confidence,
+      });
       return executeChatFallback(rawInput, intentResult.params?.threadId);
     }
 
-    // CONV-CHAT: calendar 系以外は雑談フォールバックへ
-    if (!isCalendarIntent(nlResult.intent)) {
-      log.info('[CONV-CHAT] nlRouter returned non-calendar intent, falling back to chat', {
+    // unknown のままなら雑談フォールバックへ
+    if (nlResult.intent === 'unknown' || nlResult.confidence < 0.5) {
+      log.info('[CONV-1.2] unknown or low confidence, falling back to chat', {
         module: 'apiExecutor',
         intent: nlResult.intent,
         confidence: nlResult.confidence,
@@ -1901,32 +1927,97 @@ async function executeUnknownWithNlRouter(
       return executeChatFallback(rawInput, intentResult.params?.threadId);
     }
 
-    // calendar intent を再実行
-    log.info('[CONV-1.0] nlRouter fallback success', {
+    log.info('[CONV-1.2] nlRouter/multi success', {
       module: 'apiExecutor',
       intent: nlResult.intent,
       confidence: nlResult.confidence,
-      params: nlResult.params,
+      sideEffect: nlResult.side_effect,
+      requiresConfirmation: nlResult.requires_confirmation,
     });
 
+    // 確認が必要で、pendingフロー対象のintent
+    if (nlResult.requires_confirmation && isPendingFlowIntent(nlResult.intent)) {
+      // 確認プロンプトを表示（まだ実行しない）
+      return {
+        success: true,
+        message: nlResult.confirmation_prompt || '実行しますか？（はい/いいえ）',
+        data: {
+          kind: 'ai.confirm.pending',
+          payload: {
+            intent: nlResult.intent,
+            params: nlResult.params,
+            sideEffect: nlResult.side_effect,
+            confirmationPrompt: nlResult.confirmation_prompt,
+          },
+        },
+      };
+    }
+
+    // 既存のintentとしてマッピングして再実行
+    const mappedIntent = mapMultiIntentToExisting(nlResult.intent);
+    
     const newIntentResult: IntentResult = {
-      intent: nlResult.intent as IntentResult['intent'],
+      intent: mappedIntent,
       confidence: nlResult.confidence,
-      params: nlResult.params,
+      params: {
+        ...nlResult.params,
+        rawInput,  // 元の入力を保持
+      },
     };
 
     // 再帰的に executeIntent を呼び出す
     return executeIntent(newIntentResult, context);
 
   } catch (error) {
-    log.warn('[CONV-1.0] nlRouter fallback error', {
+    log.warn('[CONV-1.2] nlRouter/multi fallback error', {
       module: 'apiExecutor',
       error: error instanceof Error ? error.message : String(error),
     });
     
-    // CONV-CHAT: nlRouterエラー時は雑談フォールバック
+    // エラー時は雑談フォールバック
     return executeChatFallback(rawInput, intentResult.params?.threadId);
   }
+}
+
+/**
+ * CONV-1.2: multi-intent を既存の IntentType にマッピング
+ */
+function mapMultiIntentToExisting(intent: string): IntentResult['intent'] {
+  // 直接マッピングできるものはそのまま返す
+  const directMap: Record<string, IntentResult['intent']> = {
+    // Calendar
+    'schedule.today': 'schedule.today',
+    'schedule.week': 'schedule.week',
+    'schedule.freebusy': 'schedule.freebusy',
+    'schedule.freebusy.batch': 'schedule.freebusy.batch',
+    // Thread
+    'schedule.status.check': 'schedule.status.check',
+    // Invite
+    'invite.prepare.emails': 'invite.prepare.emails',
+    'invite.prepare.list': 'invite.prepare.list',
+    // Remind
+    'schedule.remind.pending': 'schedule.remind.pending',
+    'schedule.remind.need_response': 'schedule.remind.need_response',
+    'schedule.remind.responded': 'schedule.remind.responded',
+    // Notify
+    'schedule.notify.confirmed': 'schedule.notify.confirmed',
+    // List
+    'list.create': 'list.create',
+    'list.list': 'list.list',
+    'list.members': 'list.members',
+    'list.add_member': 'list.add_member',
+    // Preference
+    'preference.set': 'preference.set',
+    'preference.show': 'preference.show',
+    'preference.clear': 'preference.clear',
+  };
+
+  if (intent in directMap) {
+    return directMap[intent];
+  }
+
+  // 未対応のintentは unknown として返す
+  return 'unknown';
 }
 
 // ============================================================

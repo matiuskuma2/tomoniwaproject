@@ -20,12 +20,20 @@ import type { Variables } from '../middleware/auth';
 import { getTenant } from '../utils/workspaceContext';
 import { buildNlRouterSystemPrompt, buildNlRouterUserPrompt } from '../utils/nlRouterPrompt';
 import { buildAssistSystemPrompt, buildAssistUserPrompt } from '../utils/nlAssistPrompt';
+import { buildMultiIntentSystemPrompt, buildMultiIntentUserPrompt, CONFIRMATION_PROMPTS } from '../utils/nlRouterMultiPrompt';
 import { 
   RouteResultSchema, 
   dayTimeToPrefer,
   AssistRequestSchema,
   AssistResponseSchema,
   type AssistRequest,
+  // CONV-1.2: Multi-intent types
+  MultiRouteResultSchema,
+  MultiRouteRequestSchema,
+  INTENT_SIDE_EFFECTS,
+  INTENTS_REQUIRING_CONFIRMATION,
+  type MultiRouteRequest,
+  type MultiIntent,
 } from '../utils/nlRouterSchema';
 
 // ============================================================
@@ -351,6 +359,171 @@ app.post('/assist', async (c) => {
         confidence: 0,
         rationale: 'error occurred, returning empty patch',
       },
+    });
+  }
+});
+
+// ============================================================
+// CONV-1.2: POST /multi（multi-intent対応）
+// ============================================================
+
+/**
+ * POST /multi
+ * 
+ * CONV-1.2: multi-intent対応のルーティング
+ * - calendar系以外も対応
+ * - write_external系はpendingへ合流
+ * 
+ * Request:
+ * {
+ *   "text": "田中さんに日程調整送って",
+ *   "context": {
+ *     "selected_thread_id": "thread_xxx",
+ *     "viewer_timezone": "Asia/Tokyo",
+ *     "has_pending_action": false
+ *   }
+ * }
+ * 
+ * Response:
+ * {
+ *   "intent": "invite.prepare.emails",
+ *   "confidence": 0.85,
+ *   "params": { "emails": [], "rawText": "田中さんに日程調整送って" },
+ *   "side_effect": "write_local",
+ *   "requires_confirmation": true,
+ *   "confirmation_prompt": "この宛先に招待を送る準備をしますか？",
+ *   "rationale": "送って→invite.prepare"
+ * }
+ */
+app.post('/multi', async (c) => {
+  const { env } = c;
+  const { workspaceId } = getTenant(c);
+
+  let body: MultiRouteRequest;
+  try {
+    const rawBody = await c.req.json();
+    body = MultiRouteRequestSchema.parse(rawBody);
+  } catch (e) {
+    return c.json({
+      intent: 'unknown',
+      confidence: 0.0,
+      params: {},
+      side_effect: 'none',
+      requires_confirmation: false,
+    });
+  }
+
+  const text = body.text.trim();
+  
+  // 空の入力は即座に unknown を返す
+  if (!text) {
+    return c.json({
+      intent: 'unknown',
+      confidence: 0.0,
+      params: {},
+      side_effect: 'none',
+      requires_confirmation: false,
+    });
+  }
+
+  const selectedThreadId = body.context?.selected_thread_id ?? null;
+  const viewerTimezone = body.context?.viewer_timezone ?? 'Asia/Tokyo';
+
+  // プロンプト構築
+  const system = buildMultiIntentSystemPrompt();
+  const user = buildMultiIntentUserPrompt(body);
+
+  try {
+    // LLM呼び出し
+    const raw = await callLLM(system, user, env.OPENAI_API_KEY);
+
+    // JSON抽出
+    const jsonText = extractJSON(raw);
+
+    // バリデーション
+    let parsed = MultiRouteResultSchema.parse(JSON.parse(jsonText));
+
+    // threadIdが必要で不足なら needs_clarification 付ける
+    const intentNeedsThread = [
+      'schedule.freebusy.batch',
+      'schedule.status.check',
+      'thread.summary',
+      'schedule.remind.pending',
+      'schedule.remind.need_response',
+      'schedule.remind.responded',
+      'schedule.notify.confirmed',
+      'schedule.fail.report',
+    ];
+    
+    if (intentNeedsThread.includes(parsed.intent)) {
+      const threadId = parsed.params?.threadId ?? selectedThreadId;
+      if (!threadId) {
+        return c.json({
+          ...parsed,
+          confidence: Math.min(parsed.confidence, 0.8),
+          params: { ...parsed.params },
+          needs_clarification: {
+            field: 'threadId',
+            message: 'どのスレッドの操作ですか？左のスレッドを選択してください。',
+          },
+        });
+      }
+      parsed.params.threadId = threadId;
+    }
+
+    // dayTimeWindow を prefer に変換（既存API互換）
+    if (parsed.params?.dayTimeWindow) {
+      const prefer = dayTimeToPrefer(parsed.params.dayTimeWindow);
+      if (prefer) {
+        parsed.params.prefer = prefer;
+      }
+      delete parsed.params.dayTimeWindow;
+    }
+
+    // durationMinutes を meetingLength に変換（既存API互換）
+    if (parsed.params?.durationMinutes) {
+      parsed.params.meetingLength = parsed.params.durationMinutes;
+      delete parsed.params.durationMinutes;
+    }
+
+    // side_effect を正規化（SSOTから取得）
+    const sideEffect = INTENT_SIDE_EFFECTS[parsed.intent as MultiIntent] || 'none';
+    parsed.side_effect = sideEffect;
+
+    // requires_confirmation を正規化
+    const requiresConfirmation = INTENTS_REQUIRING_CONFIRMATION.includes(parsed.intent as MultiIntent);
+    parsed.requires_confirmation = requiresConfirmation;
+
+    // confirmation_prompt を設定
+    if (requiresConfirmation && !parsed.confirmation_prompt) {
+      parsed.confirmation_prompt = CONFIRMATION_PROMPTS[parsed.intent] || '実行しますか？（はい/いいえ）';
+    }
+
+    // rawText を params に保持（メール抽出等に使用）
+    if (!parsed.params.rawText) {
+      parsed.params.rawText = text;
+    }
+
+    console.log('[nlRouter/multi] success', {
+      workspaceId,
+      intent: parsed.intent,
+      confidence: parsed.confidence,
+      sideEffect: parsed.side_effect,
+      requiresConfirmation: parsed.requires_confirmation,
+    });
+
+    return c.json(parsed);
+  } catch (e) {
+    console.error('[nlRouter/multi] error', e, { workspaceId, text });
+    
+    // エラー時は chat.general を返す（雑談フォールバック）
+    return c.json({
+      intent: 'chat.general',
+      confidence: 0.3,
+      params: { rawText: text },
+      side_effect: 'none',
+      requires_confirmation: false,
+      rationale: 'error fallback to chat',
     });
   }
 });

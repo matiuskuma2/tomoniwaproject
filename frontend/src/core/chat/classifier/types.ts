@@ -57,6 +57,20 @@ export type IntentType =
   | 'list.list'                // Beta A: リスト一覧
   | 'list.members'             // Beta A: リストメンバー表示
   | 'list.add_member'          // Beta A: リストにメンバー追加
+  | 'list.delete'              // CONV-1.2: リスト削除
+  // CONV-1.2: 連絡先
+  | 'contacts.add'             // CONV-1.2: 連絡先追加
+  | 'contacts.list'            // CONV-1.2: 連絡先一覧
+  // CONV-1.2: グループ
+  | 'group.create'             // CONV-1.2: グループ作成
+  | 'group.list'               // CONV-1.2: グループ一覧
+  | 'group.invite'             // CONV-1.2: グループ招待
+  // CONV-1.2: スレッド進捗
+  | 'thread.summary'           // CONV-1.2: 進捗要約
+  // CONV-1.2: 失敗報告
+  | 'schedule.fail.report'     // CONV-1.2: 失敗報告
+  // CONV-1.2: 雑談
+  | 'chat.general'             // CONV-1.2: 雑談
   | 'unknown';
 
 export interface IntentResult {

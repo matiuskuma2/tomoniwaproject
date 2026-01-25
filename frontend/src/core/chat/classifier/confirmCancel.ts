@@ -15,6 +15,7 @@ import {
   isPendingRemindNeedResponse,
   isPendingRemindResponded,
   isPendingReschedule,
+  isPendingAiConfirm,
 } from '../pendingTypes';
 
 /**
@@ -107,6 +108,19 @@ export const classifyConfirmCancel: ClassifierFn = (
       };
     }
 
+    // CONV-1.2: AI確認待ち
+    if (isPendingAiConfirm(activePending)) {
+      // ai.confirmは元のintentに戻して実行
+      return {
+        intent: activePending.targetIntent as any,
+        confidence: 0.95,
+        params: {
+          ...activePending.params,
+          _aiConfirmed: true,  // 確認済みフラグ
+        },
+      };
+    }
+
     // Default to auto_propose flow
     return {
       intent: 'schedule.auto_propose.confirm',
@@ -166,6 +180,18 @@ export const classifyConfirmCancel: ClassifierFn = (
         intent: 'schedule.reschedule.cancel',
         confidence: 0.9,
         params: {},
+      };
+    }
+
+    // CONV-1.2: AI確認待ちのキャンセル
+    if (isPendingAiConfirm(activePending)) {
+      return {
+        intent: 'unknown',  // キャンセルされたのでunknownに戻す
+        confidence: 0.9,
+        params: {
+          _aiCancelled: true,
+          message: 'キャンセルしました。',
+        },
       };
     }
 

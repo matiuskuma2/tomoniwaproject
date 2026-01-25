@@ -1684,4 +1684,149 @@ classifyIntentChain → calendar intent検出 → maybeAssistParams
 
 ---
 
-*最終更新: 2026-01-24*
+## 32. CONV-1.2（会話化拡張 - multi-intent）実装中 🚧
+
+### 32.1 概要
+
+- **目的**: 雑談/曖昧文でもAI秘書が自然に聞き返し・確認・実行できる
+- **特徴**:
+  - calendar限定 → multi-intent対応（招待/リマインド/リスト/名刺/グループ）
+  - write_external系は必ずpendingへ合流（確認必須）
+  - 雑談はchat.generalへフォールバック
+  - 既存intent/executorを壊さない
+
+### 32.2 対象機能
+
+| 機能 | Intent | side_effect | 確認 |
+|------|--------|-------------|------|
+| 招待送信 | invite.prepare.emails | write_local→write_external | ✅ |
+| リマインド | schedule.remind.pending/need_response/responded | write_local→write_external | ✅ |
+| リスト | list.create/list/members/add_member/delete | write_local | △ |
+| 名刺/連絡先 | contacts.add/list | write_local | ✗ |
+| グループ | group.create/list/invite | write_local | ✅(invite) |
+| 進捗確認 | thread.summary | read | ✗ |
+| 失敗報告 | schedule.fail.report | write_local | ✗ |
+| 雑談 | chat.general | none | ✗ |
+
+### 32.3 バックエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `apps/api/src/routes/nlRouter.ts` | POST /api/nl/multi エンドポイント追加 |
+| `apps/api/src/utils/nlRouterSchema.ts` | MultiIntentEnum, MultiRouteResultSchema追加 |
+| `apps/api/src/utils/nlRouterMultiPrompt.ts` | multi-intent用プロンプト |
+| `docs/intent_catalog.json` | SSOT（新intent追加） |
+
+**API仕様（POST /api/nl/multi）**:
+```typescript
+// Request
+{
+  text: string;
+  context?: {
+    selected_thread_id?: string | null;
+    viewer_timezone?: string;
+    has_pending_action?: boolean;
+  };
+}
+
+// Response
+{
+  intent: string;
+  confidence: number;
+  params: Record<string, any>;
+  side_effect: 'none' | 'read' | 'write_local' | 'write_external';
+  requires_confirmation: boolean;
+  confirmation_prompt?: string;
+  needs_clarification?: { field: string; message: string };
+  rationale?: string;
+}
+```
+
+### 32.4 フロントエンド実装
+
+| ファイル | 概要 |
+|---------|------|
+| `frontend/src/core/api/nlRouter.ts` | multi() API追加、ヘルパー関数 |
+| `frontend/src/core/chat/apiExecutor.ts` | executeUnknownWithNlRouter拡張 |
+| `frontend/src/core/chat/pendingTypes.ts` | ai.confirm pending kind追加 |
+| `frontend/src/core/chat/classifier/types.ts` | 新IntentType追加 |
+| `frontend/src/core/chat/classifier/confirmCancel.ts` | ai.confirm対応 |
+
+### 32.5 処理フロー
+
+```
+ユーザー入力
+    ↓
+classifyIntentChain（ルールベース）
+    ↓
+unknown → executeUnknownWithNlRouter
+    ↓
+POST /api/nl/multi
+    ↓
+┌─────────────────────────────────────────────┐
+│ chat.general    → executeChatFallback（雑談）│
+│ calendar系      → 即実行                     │
+│ list系(read)    → 即実行                     │
+│ invite/remind等 → requires_confirmation?     │
+│   ├─ true  → ai.confirm pending → 確認待ち  │
+│   └─ false → 既存intentへマッピング → 実行   │
+└─────────────────────────────────────────────┘
+```
+
+### 32.6 確認フロー（ai.confirm pending）
+
+```
+ユーザー: 田中さんに招待送って
+
+AI秘書: この宛先に招待を送る準備をしますか？（はい/いいえ）
+        ↓
+        [ai.confirm pending 作成]
+        ↓
+ユーザー: はい
+        ↓
+classifyConfirmCancel → ai.confirm検出 → 元intentで実行
+```
+
+### 32.7 intent_catalog.json追加項目
+
+```json
+// CONV-1.2で追加
+- list.delete
+- contacts.add
+- contacts.list
+- group.create
+- group.list
+- group.invite
+- schedule.fail.report
+- thread.summary
+- chat.general
+```
+
+### 32.8 E2Eテスト
+
+| ファイル | テストケース |
+|---------|------------|
+| `frontend/e2e/conv12.spec.ts` | CONV-1.2-1: 雑談フォールバック |
+| | CONV-1.2-2: 進捗確認の会話 |
+| | CONV-1.2-3: リスト操作の会話 |
+| | CONV-1.2-4: 空き時間の会話 |
+| | CONV-1.2-5: 招待準備の会話 |
+| | CONV-1.2-6: 連続会話 |
+
+### 32.9 安全設計
+
+1. **write_external確認必須**: pendingフローへ合流、勝手に送信しない
+2. **既存executor使用**: 新executorは作らず既存に合流
+3. **fallback安全**: LLMエラー時はchat.generalへ
+4. **intent変更禁止**: LLMがintentを変えようとしても拒否
+
+### 32.10 今後の実装予定
+
+- [ ] invite会話化（メール抽出→prepare）
+- [ ] remind会話化（対象者特定→confirm）
+- [ ] schedule.fail.report executor
+- [ ] group.create/invite executor（MVP: ローカル定義）
+
+---
+
+*最終更新: 2026-01-25*
