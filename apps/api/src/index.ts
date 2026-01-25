@@ -5,8 +5,9 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
+import { logger as honoLogger } from 'hono/logger';
 import type { Env } from '../../../packages/shared/src/types/env';
+import { createLogger } from './utils/logger';
 
 // Routes
 import adminSystemRoutes from './routes/adminSystem';
@@ -59,7 +60,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // ============================================================
 // Global Middleware
 // ============================================================
-app.use('*', logger());
+app.use('*', honoLogger());
 
 // Normalize trailing slashes for API endpoints
 // Redirects /api/threads/ to /api/threads (308 Permanent Redirect)
@@ -304,21 +305,22 @@ app.onError((err, c) => {
 
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
   const cron = event.cron;
+  const log = createLogger(env, { module: 'Scheduled' });
   
-  console.log('[Scheduled] Cron triggered:', cron);
+  log.info('Cron triggered', { cron });
   
   // Daily cleanup (0 2 * * *)
   if (cron === '0 2 * * *') {
-    console.log('[Scheduled] Running daily cleanup...');
+    log.info('Running daily cleanup...');
     
     // P0-2: Use ctx.waitUntil to prevent premature termination
     ctx.waitUntil(
       (async () => {
         try {
           const result = await pruneAuditLogs(env.DB);
-          console.log('[Scheduled] Audit log pruning completed:', result);
+          log.info('Audit log pruning completed', result);
         } catch (error) {
-          console.error('[Scheduled] Audit log pruning failed:', error);
+          log.error('Audit log pruning failed', error);
         }
       })()
     );
@@ -326,7 +328,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   
   // Hourly budget check (0 * * * *)
   if (cron === '0 * * * *') {
-    console.log('[Scheduled] Running hourly budget check...');
+    log.info('Running hourly budget check...');
     // TODO: Implement budget check logic
   }
 }
