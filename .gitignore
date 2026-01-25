@@ -91,3 +91,7 @@ secrets/
 # Core dumps (Node.js crash files)
 core.*
 vgcore.*
+
+# Temporary credential files (never commit)
+.dev.vars.temp
+.wrangler-auth.env
