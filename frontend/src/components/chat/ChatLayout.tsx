@@ -89,8 +89,7 @@ export function ChatLayout() {
   };
 
   // Get current thread's messages
-  // P0-5: threadId が無い場合は 'temp' を使う（ChatPane と同期）
-  const currentMessages = messagesByThreadId[threadId || 'temp'] || [];
+  const currentMessages = threadId ? (messagesByThreadId[threadId] || []) : [];
 
   return (
     <div className="h-screen flex flex-col">
