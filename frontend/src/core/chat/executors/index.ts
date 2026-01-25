@@ -101,3 +101,25 @@ export {
 export {
   executePendingDecision,
 } from './pending';
+
+// AutoPropose executors (Phase 1-3a: apiExecutor.ts から分離)
+export {
+  // Core auto-propose
+  executeAutoPropose,
+  executeAutoProposeConfirm,
+  executeAutoProposeCancel,
+  // Additional propose
+  executeAdditionalPropose,
+  executeAdditionalProposeByThreadId,
+  // Split propose
+  executeProposeForSplitConfirm,
+  executeProposeForSplitCancel,
+  // Helpers
+  analyzeStatusForPropose,
+  generateProposalsWithoutBusy,
+  formatProposalLabel,
+} from './autoPropose';
+
+// Shared utilities
+export { getStatusWithCache } from './shared/cache';
+export { refreshAfterWrite } from './shared/refresh';
