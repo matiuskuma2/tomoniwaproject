@@ -17,9 +17,37 @@ jobs:
   # ============================================================
   # Unit Tests (Vitest)
   # ============================================================
+  # ============================================================
+  # Guardrails (Phase 2.5a)
+  # ============================================================
+  guardrails:
+    name: Code Guardrails
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Prevent /api/threads/i/* reintroduction (use /i/* instead)
+      # Note: threads.ts is excluded (Phase 2.5b will delete /i/* routes from it)
+      - name: "Guardrail: forbid /api/threads/i/* routes"
+        run: |
+          echo "Checking for forbidden path '/api/threads/i/'..."
+          # Exclude: threads.ts (legacy, to be deleted in 2.5b), workflow files (contain the pattern)
+          FOUND=$(grep -RIn "/api/threads/i/" apps/ packages/ frontend/ \
+            --include="*.ts" --include="*.tsx" --include="*.js" \
+            --exclude="threads.ts" 2>/dev/null || true)
+          if [ -n "$FOUND" ]; then
+            echo "$FOUND"
+            echo "❌ Found forbidden path '/api/threads/i/' in repo."
+            echo "   Public invites must use '/i/*' routes (served by invite.ts)."
+            exit 1
+          fi
+          echo "✅ Guardrail passed: no /api/threads/i/* references found (excluding legacy threads.ts)"
+
   unit-test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: guardrails
     
     steps:
       - uses: actions/checkout@v4
