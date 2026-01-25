@@ -60,7 +60,20 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // ============================================================
 // Global Middleware
 // ============================================================
-app.use('*', honoLogger());
+// A-2-1: honoLogger is disabled in production to reduce log volume
+// for 1000+ concurrent connections (access logs per request are expensive)
+app.use('*', async (c, next) => {
+  const env = c.env as Env;
+  const isProduction = (env.ENVIRONMENT || '').toLowerCase() === 'production';
+  
+  if (isProduction) {
+    // Skip access logging in production
+    await next();
+  } else {
+    // Use honoLogger in development/staging
+    return honoLogger()(c, next);
+  }
+});
 
 // Normalize trailing slashes for API endpoints
 // Redirects /api/threads/ to /api/threads (308 Permanent Redirect)
