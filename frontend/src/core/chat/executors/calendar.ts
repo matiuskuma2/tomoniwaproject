@@ -251,19 +251,7 @@ function formatCompressedReasons(reasons: CompressedReason[]): string {
   }).join('\n');
 }
 
-/**
- * P3-GEN1: Format score reasons for display (後方互換)
- * @deprecated compressReasons + formatCompressedReasons を使用
- */
-function _formatScoreReasons(reasons: ScoreReason[], maxReasons: number = 2): string {
-  const compressed = compressReasons(reasons, maxReasons);
-  if (compressed.length === 0) return '';
-  
-  return compressed.map(r => {
-    const sign = r.delta >= 0 ? '+' : '';
-    return `${sign}${r.delta} ${r.rule_label}`;
-  }).join(', ');
-}
+// Note: formatScoreReasons was deprecated in favor of compressReasons + formatCompressedReasons
 
 /**
  * P1-3 + P3-SLOTGEN1: schedule.freebusy

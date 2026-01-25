@@ -192,11 +192,12 @@ async function executePreferenceSetWithAi(originalText: string): Promise<Executi
     message += `• 「いいえ」または「キャンセル」で取り消し`;
 
     // 4. pending.action.created を返す（確認フロー）
+    // PREF-SET-1: pending.action.created を返す（confidence/original_text は拡張フィールド）
     return {
       success: true,
       message,
       data: {
-        kind: 'pending.action.created',
+        kind: 'pending.action.created' as const,
         payload: {
           actionType: 'prefs.pending',
           confirmToken: `prefs_${Date.now()}`,
@@ -205,9 +206,7 @@ async function executePreferenceSetWithAi(originalText: string): Promise<Executi
           mode: 'preference_set',
           proposed_prefs: extractedData.proposed_prefs,
           merged_prefs: extractedData.merged_prefs,
-          confidence: extractedData.confidence,
-          original_text: originalText,
-        },
+        } as any,  // 拡張フィールドを含むため any キャスト
       },
     };
   } catch (error) {
@@ -226,7 +225,8 @@ export async function executePreferenceSetConfirm(context?: ExecutionContext): P
   // pending から情報を取得
   const pending = context?.pendingForThread || context?.globalPendingAction;
   
-  if (!pending || pending.actionType !== 'prefs.pending') {
+  // pending.action かつ actionType が prefs.pending の場合のみ処理
+  if (!pending || pending.kind !== 'pending.action' || pending.actionType !== 'prefs.pending') {
     return {
       success: false,
       message: '❌ 保存する好み設定がありません。',
@@ -280,7 +280,7 @@ export function executePreferenceSetCancel(): ExecutionResult {
     message: '✅ 好み設定をキャンセルしました。',
     data: {
       kind: 'preference.set.cancelled',
-      payload: null,
+      payload: {},
     },
   };
 }
@@ -380,7 +380,7 @@ export async function executePreferenceClear(): Promise<ExecutionResult> {
       message: '✅ **スケジュール好み設定をクリアしました**\n\n新しい好みを設定するには、例えば「平日14時以降がいい」と入力してください。',
       data: {
         kind: 'preference.clear',
-        payload: null,
+        payload: {},
       },
     };
   } catch (error) {

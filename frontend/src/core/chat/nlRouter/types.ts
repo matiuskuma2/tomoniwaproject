@@ -132,7 +132,7 @@ export type Clarification = z.infer<typeof ClarificationSchema>;
 export const SuggestedActionSchema = z.object({
   label: z.string(),
   intent: z.string(), // IntentType として扱う
-  params: z.record(z.any()).optional(),
+  params: z.record(z.string(), z.any()).optional(),
 });
 export type SuggestedAction = z.infer<typeof SuggestedActionSchema>;
 

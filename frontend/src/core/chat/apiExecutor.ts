@@ -340,12 +340,15 @@ export type ExecutionResultData =
       confirmToken: string;
       expiresAt: string;
       summary: any;
-      mode: 'new_thread' | 'add_to_thread' | 'add_slots'; // Phase2: add_slots 追加
+      mode: 'new_thread' | 'add_to_thread' | 'add_slots' | 'preference_set'; // Phase2: add_slots, PREF-SET-1: preference_set 追加
       threadId?: string;
       threadTitle?: string;
-      actionType?: 'send_invites' | 'add_invites' | 'add_slots'; // Phase2: action_type
+      actionType?: 'send_invites' | 'add_invites' | 'add_slots' | 'prefs.pending'; // Phase2: action_type, PREF-SET-1: prefs.pending 追加
       proposalVersion?: number; // Phase2: 次の proposal_version
       remainingProposals?: number; // Phase2: 残り提案回数
+      // PREF-SET-1: 好み設定用
+      proposed_prefs?: Record<string, unknown>;
+      merged_prefs?: Record<string, unknown>;
     } }
   | { kind: 'pending.action.decided'; payload: {
       decision: 'send' | 'cancel' | 'new_thread' | 'add'; // Phase2: add 追加
