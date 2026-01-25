@@ -137,6 +137,10 @@ interface DbChatMessage {
   created_at: string;
 }
 
+/**
+ * メッセージをDBに保存
+ * テーブルが存在しない場合は警告ログを出力して処理を継続
+ */
 async function saveMessage(
   db: D1Database,
   workspaceId: string,
@@ -146,27 +150,43 @@ async function saveMessage(
   threadId?: string | null,
   intent?: string | null
 ): Promise<void> {
-  await db.prepare(`
-    INSERT INTO chat_messages (workspace_id, user_id, role, content, thread_id, intent)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(workspaceId, userId, role, content, threadId ?? null, intent ?? null).run();
+  try {
+    await db.prepare(`
+      INSERT INTO chat_messages (workspace_id, user_id, role, content, thread_id, intent)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(workspaceId, userId, role, content, threadId ?? null, intent ?? null).run();
+  } catch (e) {
+    // テーブルが存在しない等のDBエラーは警告ログを出力して処理を継続
+    // チャット機能自体は動作を継続する（履歴保存失敗は許容）
+    console.warn('[chat] saveMessage failed (table may not exist)', e);
+  }
 }
 
+/**
+ * 直近の会話履歴を取得
+ * テーブルが存在しない場合は空配列を返す
+ */
 async function getRecentHistory(
   db: D1Database,
   userId: string,
   limit: number = CHAT_CONFIG.max_history_turns * 2
 ): Promise<DbChatMessage[]> {
-  const result = await db.prepare(`
-    SELECT id, workspace_id, user_id, role, content, thread_id, intent, metadata, created_at
-    FROM chat_messages
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).bind(userId, limit).all<DbChatMessage>();
-  
-  // 古い順に並び替え
-  return (result.results || []).reverse();
+  try {
+    const result = await db.prepare(`
+      SELECT id, workspace_id, user_id, role, content, thread_id, intent, metadata, created_at
+      FROM chat_messages
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).bind(userId, limit).all<DbChatMessage>();
+    
+    // 古い順に並び替え
+    return (result.results || []).reverse();
+  } catch (e) {
+    // テーブルが存在しない等のDBエラーは警告ログを出力して空配列を返す
+    console.warn('[chat] getRecentHistory failed (table may not exist)', e);
+    return [];
+  }
 }
 
 // ============================================================
