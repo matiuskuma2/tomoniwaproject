@@ -91,3 +91,6 @@ secrets/
 # Core dumps (Node.js crash files)
 core.*
 vgcore.*
+
+# Auto-generated version file (Phase 0'-1)
+apps/api/src/version.ts
