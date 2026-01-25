@@ -243,6 +243,7 @@ export interface CalendarEvent {
 export type CalendarWarning = 
   | 'google_calendar_permission_missing' 
   | 'google_account_not_linked' 
+  | 'fetch_error'
   | null;
 
 export interface CalendarTodayResponse {
@@ -260,9 +261,17 @@ export interface CalendarWeekResponse {
 }
 
 export interface CalendarFreeBusyResponse {
-  range: 'today' | 'week';
+  range: 'today' | 'week' | 'next_week';
   timezone: string;
   busy: Array<{ start: string; end: string }>;
+  available_slots?: Array<{ start_at: string; end_at: string; label: string }>;
+  coverage?: {
+    time_min: string;
+    time_max: string;
+    total_free_minutes: number;
+    slot_count: number;
+  };
+  prefer?: string | null;
   warning?: CalendarWarning;
 }
 

@@ -118,7 +118,12 @@ export const classifyCalendar: ClassifierFn = (
   // P3-INTERSECT1: schedule.freebusy.batch (共通空き)
   // 複数参加者の空きを計算
   // Keywords: 全員、みんな、共通、〜と空き
+  // NOTE: 「追加候補」「もっと候補」「候補出して」はproposeに委譲
   // ============================================================
+  // 「追加」「もっと」と「候補」の組み合わせ、および「候補出して」は propose に委譲
+  if (/(追加.?候補|もっと.?候補|追加で.?候補|追加して|候補.*出して)/.test(normalizedInput)) {
+    return null; // proposeに委譲
+  }
   if (/(空き|あき|空いて|あいて|フリー|候補|枠)/.test(normalizedInput)) {
     // 共通空きかどうか判定
     const isCommon = isCommonAvailabilityQuery(normalizedInput, context);

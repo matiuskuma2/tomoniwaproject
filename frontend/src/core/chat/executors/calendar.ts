@@ -255,7 +255,7 @@ function formatCompressedReasons(reasons: CompressedReason[]): string {
  * P3-GEN1: Format score reasons for display (後方互換)
  * @deprecated compressReasons + formatCompressedReasons を使用
  */
-function formatScoreReasons(reasons: ScoreReason[], maxReasons: number = 2): string {
+function _formatScoreReasons(reasons: ScoreReason[], maxReasons: number = 2): string {
   const compressed = compressReasons(reasons, maxReasons);
   if (compressed.length === 0) return '';
   

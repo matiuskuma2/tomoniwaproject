@@ -11,7 +11,7 @@
  */
 
 import { usersMeApi, type SchedulePreferences, type TimeWindow } from '../../api/usersMe';
-import { nlPrefsApi, type ExtractPrefsResult, type ProposedPrefs } from '../../api/nlPrefs';
+import { nlPrefsApi } from '../../api/nlPrefs';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult, ExecutionContext } from './types';
 import { mergePreferences } from '../classifier/preference';

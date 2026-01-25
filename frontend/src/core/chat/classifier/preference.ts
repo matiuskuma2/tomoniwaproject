@@ -33,7 +33,7 @@ function parsePreferenceFromText(input: string): {
   // 曜日パターン
   const weekdaysDow = [1, 2, 3, 4, 5]; // 月〜金
   const weekendDow = [0, 6]; // 土日
-  const allDays = [0, 1, 2, 3, 4, 5, 6];
+  const _allDays = [0, 1, 2, 3, 4, 5, 6]; // Reserved for future use
 
   // 特定曜日マッピング
   const dayMap: Record<string, number> = {
@@ -141,7 +141,9 @@ function parsePreferenceFromText(input: string): {
   const isAvoid = /避け|NG|だめ|ダメ|嫌|いや|なし/.test(normalized);
 
   // 好むパターン（"〜がいい", "〜希望", "〜優先"）
-  const isPrefer = /いい|良い|希望|優先|好き|したい/.test(normalized);
+  // NOTE: isPrefer is currently not used because weight logic uses isAvoid only
+  // Reserved for future enhancement where prefer/avoid weights may differ
+  const _isPrefer = /いい|良い|希望|優先|好き|したい/.test(normalized);
 
   const timeRange = extractTimeRange(input);
   const days = extractDays(input);

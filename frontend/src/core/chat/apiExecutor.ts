@@ -79,10 +79,8 @@ import {
 import { 
   nlRouterApi, 
   isCalendarIntent, 
-  isImmediateExecutionIntent,
   isPendingFlowIntent,
   type NlRouterCalendarIntent,
-  type NlMultiRouteResponse,
 } from '../api/nlRouter';
 // CONV-CHAT: 雑談API client
 import { chatApi } from '../api/chat';
@@ -297,7 +295,9 @@ export type ExecutionResultData =
   | { kind: 'calendar.today'; payload: CalendarTodayResponse }
   | { kind: 'calendar.week'; payload: CalendarWeekResponse }
   | { kind: 'calendar.freebusy'; payload: CalendarFreeBusyResponse }
+  | { kind: 'calendar.freebusy.batch'; payload: any }  // P3-INTERSECT1
   | { kind: 'thread.status'; payload: ThreadStatus_API | { threads: any[] } }
+  | { kind: 'thread.progress.summary'; payload: any }  // PROG-1
   | { kind: 'thread.create'; payload: { threadId: string } }
   | { kind: 'thread.finalize'; payload: any }
   | { kind: 'thread.invites.batch'; payload: any }
@@ -431,6 +431,13 @@ export type ExecutionResultData =
       errors?: Array<{ email: string; error: string }>;
     } }
   | { kind: 'list.member_added.batch'; payload: { listName: string; addedCount: number } }
+  // P3-PREF: 好み設定
+  | { kind: 'preference.set'; payload: { prefs: Record<string, unknown> } }
+  | { kind: 'preference.set.pending'; payload: { proposed_prefs: Record<string, unknown>; merged_prefs: Record<string, unknown>; confirmPrompt: string } }
+  | { kind: 'preference.set.confirmed'; payload: { saved_prefs: Record<string, unknown> } }
+  | { kind: 'preference.set.cancelled'; payload: {} }
+  | { kind: 'preference.show'; payload: { prefs: Record<string, unknown> | null } }
+  | { kind: 'preference.clear'; payload: {} }
   // CONV-1.2: AI確認待ち
   | { kind: 'ai.confirm.pending'; payload: {
       intent: string;
