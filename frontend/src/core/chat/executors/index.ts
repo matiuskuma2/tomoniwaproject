@@ -81,3 +81,15 @@ export {
   BATCH_CHUNK_SIZE,
   BATCH_THRESHOLD,
 } from './batch';
+
+// Invite executors (Phase 1-1: apiExecutor.ts から分離)
+export {
+  executeInvitePrepareEmails,
+  executeInvitePrepareList,
+  // Helper functions
+  parseInviteLines,
+  savePhonesToContacts,
+  buildPrepareMessage,
+  // Types
+  type ParsedInvitee,
+} from './invite';
