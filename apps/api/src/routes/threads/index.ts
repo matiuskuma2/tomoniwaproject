@@ -24,6 +24,8 @@ import listRoutes from './list';
 import createRoutes from './create';
 // Phase 2-4: proposals.ts (POST /:id/proposals/prepare, POST /:id/slots)
 import proposalsRoutes from './proposals';
+// Phase 2-5: invites.ts (POST /:id/invites/batch, POST /:id/invites/prepare)
+import invitesRoutes from './invites';
 
 // 共通の Variables 型定義（threads.ts と同一）
 export type Variables = {
@@ -49,8 +51,8 @@ app.route('/', createRoutes);
 // PR 2-4: proposals.ts (POST /:id/proposals/prepare, POST /:id/slots) ✅
 app.route('/', proposalsRoutes);
 
-// PR 2-5: invites.ts をマウント予定
-// app.route('/', invitesRoutes);
+// PR 2-5: invites.ts (POST /:id/invites/batch, POST /:id/invites/prepare) ✅
+app.route('/', invitesRoutes);
 
 // PR 2-6: actions.ts をマウント予定
 // app.route('/', actionsRoutes);
