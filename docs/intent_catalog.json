@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026-01-24",
+  "version": "2026-01-25",
   "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
 
   "principles": {
@@ -510,7 +510,168 @@
         "name": { "type": "string", "optional": true }
       },
       "executor": "list.add_member",
-      "api": "POST /api/lists/:id/members"
+      "api": "POST /api/lists/:id/members",
+      "examples": [
+        "田中さんを営業リストに追加して",
+        "tanaka@example.comをチームリストに入れて"
+      ]
+    },
+    {
+      "intent": "list.delete",
+      "category": "list",
+      "description": "リスト削除",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "リスト「{listName}」を削除しますか？（はい/いいえ）",
+      "params_schema": {
+        "listName": { "type": "string", "required": true }
+      },
+      "executor": "list.delete",
+      "api": "DELETE /api/lists/:id",
+      "examples": [
+        "営業リストを削除して",
+        "チームリスト消して"
+      ]
+    },
+
+    {
+      "intent": "contacts.add",
+      "category": "contacts",
+      "description": "連絡先追加（名刺等から）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "email": { "type": "string", "format": "email", "required": true },
+        "name": { "type": "string", "optional": true },
+        "phone": { "type": "string", "optional": true },
+        "company": { "type": "string", "optional": true }
+      },
+      "executor": "contacts.add",
+      "api": "POST /api/contacts",
+      "examples": [
+        "田中太郎さん tanaka@example.com を連絡先に追加して",
+        "この名刺を登録して"
+      ]
+    },
+    {
+      "intent": "contacts.list",
+      "category": "contacts",
+      "description": "連絡先一覧",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "params_schema": {
+        "query": { "type": "string", "optional": true }
+      },
+      "executor": "contacts.list",
+      "api": "GET /api/contacts",
+      "examples": [
+        "連絡先を見せて",
+        "誰が登録されてる？"
+      ]
+    },
+
+    {
+      "intent": "group.create",
+      "category": "group",
+      "description": "グループ作成（MVPはローカル定義）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "groupName": { "type": "string", "required": true },
+        "members": { "type": "array", "optional": true }
+      },
+      "executor": "group.create",
+      "api": null,
+      "notes": "MVPではDB未対応、pending保持のみ",
+      "examples": [
+        "営業チームのグループを作って",
+        "開発部グループ作成"
+      ]
+    },
+    {
+      "intent": "group.list",
+      "category": "group",
+      "description": "グループ一覧",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "executor": "group.list",
+      "api": null,
+      "examples": [
+        "グループ一覧を見せて",
+        "登録されてるグループは？"
+      ]
+    },
+    {
+      "intent": "group.invite",
+      "category": "group",
+      "description": "グループメンバーに招待送信",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "グループ「{groupName}」のメンバーに招待を送りますか？（はい/いいえ）",
+      "topology": "1:N",
+      "params_schema": {
+        "groupName": { "type": "string", "required": true }
+      },
+      "executor": "group.invite",
+      "api": "POST /api/threads/prepare-send",
+      "notes": "group.invite → invite.prepare.emails へ合流",
+      "examples": [
+        "営業チームに日程調整送って",
+        "開発部グループに招待を送りたい"
+      ]
+    },
+
+    {
+      "intent": "schedule.fail.report",
+      "category": "schedule.fail",
+      "description": "調整失敗を報告（主催者手動）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" },
+        "reason": { "type": "string", "optional": true }
+      },
+      "executor": "schedule.fail.report",
+      "api": "POST /api/threads/:id/failures/report",
+      "notes": "FAIL-1 エスカレーションに接続",
+      "examples": [
+        "この調整うまくいかなかった",
+        "日程合わなかった"
+      ]
+    },
+
+    {
+      "intent": "thread.summary",
+      "category": "thread.read",
+      "description": "スレッドの進捗要約を取得（PROG-1）",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "params_schema": {
+        "threadId": { "type": "string", "required": true, "source": "selectedThreadId" }
+      },
+      "executor": "thread.summary",
+      "api": "GET /api/threads/:id/summary",
+      "examples": [
+        "今どうなってる？",
+        "進捗教えて",
+        "状況は？"
+      ]
+    },
+
+    {
+      "intent": "chat.general",
+      "category": "chat",
+      "description": "一般的な雑談（機能にマッチしない入力）",
+      "side_effect": "none",
+      "requires_confirmation": false,
+      "executor": "chat.general",
+      "api": "POST /api/chat/message",
+      "notes": "CONV-CHATフォールバック先",
+      "examples": [
+        "こんにちは",
+        "ありがとう",
+        "お疲れ様"
+      ]
     },
 
     {

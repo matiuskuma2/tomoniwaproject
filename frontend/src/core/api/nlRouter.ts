@@ -104,6 +104,98 @@ export interface NlAssistResponse {
 }
 
 // ============================================================
+// CONV-1.2: Multi-intent Types
+// ============================================================
+
+export interface NlMultiRouteRequest {
+  text: string;
+  context?: {
+    selected_thread_id?: string | null;
+    viewer_timezone?: string | null;
+    has_pending_action?: boolean;
+  };
+}
+
+export interface NlMultiRouteResponse {
+  intent: string;
+  confidence: number;
+  params: Record<string, any>;
+  side_effect: 'none' | 'read' | 'write_local' | 'write_external';
+  requires_confirmation: boolean;
+  confirmation_prompt?: string;
+  needs_clarification?: {
+    field: string;
+    message: string;
+  };
+  rationale?: string;
+}
+
+/**
+ * CONV-1.2: multi-intent対応のintent一覧
+ * side_effect: write_localでも、後続でwrite_externalになる可能性がある
+ */
+export const NL_ROUTER_MULTI_INTENTS = {
+  // Calendar (READ-ONLY)
+  CALENDAR: ['schedule.today', 'schedule.week', 'schedule.freebusy', 'schedule.freebusy.batch'],
+  // Thread (READ-ONLY)
+  THREAD_READ: ['schedule.status.check', 'thread.summary'],
+  // Invite (WRITE_LOCAL → pending → WRITE_EXTERNAL)
+  INVITE: ['invite.prepare.emails', 'invite.prepare.list'],
+  // Remind (WRITE_LOCAL → pending → WRITE_EXTERNAL)
+  REMIND: ['schedule.remind.pending', 'schedule.remind.need_response', 'schedule.remind.responded'],
+  // Notify (WRITE_EXTERNAL)
+  NOTIFY: ['schedule.notify.confirmed'],
+  // List (WRITE_LOCAL)
+  LIST: ['list.create', 'list.list', 'list.members', 'list.add_member', 'list.delete'],
+  // Contacts (WRITE_LOCAL)
+  CONTACTS: ['contacts.add', 'contacts.list'],
+  // Group
+  GROUP: ['group.create', 'group.list', 'group.invite'],
+  // Preference (WRITE_LOCAL)
+  PREFERENCE: ['preference.set', 'preference.show', 'preference.clear'],
+  // Failure (WRITE_LOCAL)
+  FAILURE: ['schedule.fail.report'],
+  // Chat
+  CHAT: ['chat.general'],
+} as const;
+
+/**
+ * multi-intent判定用ヘルパー
+ */
+export function isMultiIntentCategory(intent: string, category: keyof typeof NL_ROUTER_MULTI_INTENTS): boolean {
+  return NL_ROUTER_MULTI_INTENTS[category].includes(intent as any);
+}
+
+/**
+ * 即実行可能なintent（read系 + write_local系で確認不要）
+ */
+export function isImmediateExecutionIntent(intent: string): boolean {
+  const immediate = [
+    ...NL_ROUTER_MULTI_INTENTS.CALENDAR,
+    ...NL_ROUTER_MULTI_INTENTS.THREAD_READ,
+    'list.list',
+    'list.members',
+    'contacts.list',
+    'group.list',
+    'preference.show',
+  ];
+  return immediate.includes(intent);
+}
+
+/**
+ * pending.actionへ合流するintent
+ */
+export function isPendingFlowIntent(intent: string): boolean {
+  const pendingFlow = [
+    ...NL_ROUTER_MULTI_INTENTS.INVITE,
+    ...NL_ROUTER_MULTI_INTENTS.REMIND,
+    ...NL_ROUTER_MULTI_INTENTS.NOTIFY,
+    'group.invite',
+  ];
+  return pendingFlow.includes(intent);
+}
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -128,5 +220,21 @@ export const nlRouterApi = {
    */
   async assist(req: NlAssistRequest): Promise<NlAssistResponse> {
     return api.post<NlAssistResponse>('/api/nl/assist', req);
+  },
+
+  /**
+   * CONV-1.2: multi-intent対応ルーティング
+   * 
+   * calendar系以外も対応:
+   * - invite/remind/notify → pendingフローへ
+   * - list/contacts/group → 即実行
+   * - chat.general → 雑談フォールバック
+   * 
+   * @param req - リクエスト
+   * @returns NlMultiRouteResponse
+   * @throws Error - API エラー時
+   */
+  async multi(req: NlMultiRouteRequest): Promise<NlMultiRouteResponse> {
+    return api.post<NlMultiRouteResponse>('/api/nl/multi', req);
   },
 };
