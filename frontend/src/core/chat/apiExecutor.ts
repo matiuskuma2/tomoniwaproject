@@ -64,7 +64,6 @@ import {
   // Phase 1-1: Invite executors
   executeInvitePrepareEmails as executeInvitePrepareEmailsFromExecutors,
   executeInvitePrepareList as executeInvitePrepareListFromExecutors,
-  buildPrepareMessage,
   // Phase 1-2: Pending executors
   executePendingDecision as executePendingDecisionFromExecutors,
   // Phase 1-3a: AutoPropose executors
@@ -78,6 +77,8 @@ import {
   // Phase 1-3a: Shared helpers
   getStatusWithCache,
 } from './executors';
+// Phase 1-3b: buildPrepareMessage を shared から直接 import
+import { buildPrepareMessage } from './executors/shared/prepareMessage';
 // P3-PREF: 好み設定 executor (PREF-SET-1: AI確認フロー追加)
 import {
   executePreferenceSet,

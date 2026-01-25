@@ -86,13 +86,13 @@ export {
 } from './batch';
 
 // Invite executors (Phase 1-1: apiExecutor.ts から分離)
+// Phase 1-3b: buildPrepareMessage は shared/prepareMessage.ts に移動（内部共有のみ、exportしない）
 export {
   executeInvitePrepareEmails,
   executeInvitePrepareList,
   // Helper functions
   parseInviteLines,
   savePhonesToContacts,
-  buildPrepareMessage,
   // Types
   type ParsedInvitee,
 } from './invite';
