@@ -18,22 +18,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # Phase 2.5a: Guardrail - prevent /api/threads/i/* reintroduction
-      # Note: threads.ts is excluded (Phase 2.5b will delete /i/* routes from it)
+      # Phase 2.5: Guardrail - prevent /api/threads/i/* reintroduction
+      # Public invites must use /i/* routes (served by invite.ts)
       - name: "Guardrail: forbid /api/threads/i/* routes"
         run: |
           echo "Checking for forbidden path '/api/threads/i/'..."
-          # Exclude: threads.ts (legacy, to be deleted in 2.5b), workflow files (contain the pattern)
           FOUND=$(grep -RIn "/api/threads/i/" apps/ packages/ frontend/ \
             --include="*.ts" --include="*.tsx" --include="*.js" \
-            --exclude="threads.ts" 2>/dev/null || true)
+            2>/dev/null || true)
           if [ -n "$FOUND" ]; then
             echo "$FOUND"
             echo "❌ Found forbidden path '/api/threads/i/' in repo."
             echo "   Public invites must use '/i/*' routes (served by invite.ts)."
             exit 1
           fi
-          echo "✅ Guardrail passed: no /api/threads/i/* references found (excluding legacy threads.ts)"
+          echo "✅ Guardrail passed: no /api/threads/i/* references found"
       
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
