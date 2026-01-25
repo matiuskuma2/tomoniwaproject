@@ -89,10 +89,10 @@ app.get('/health', (c) => {
     timestamp: Math.floor(Date.now() / 1000),
     environment: c.env.ENVIRONMENT || 'unknown',
     // Phase 0'-1: version.ts から commit/build_time を取得
-    commit: VERSION.commit,
+    commit: VERSION.commit,         // 互換（このキーを参照する可能性がある）
+    commit_sha: VERSION.commit,     // 明確（計画書・運用で推奨）
     build_time: VERSION.build_time,
-    // 既存互換: version フィールドも維持（将来廃止検討）
-    version: VERSION.commit,
+    version: VERSION.commit,        // 互換維持（将来廃止検討）
   });
 });
 

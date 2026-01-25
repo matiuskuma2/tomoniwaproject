@@ -92,5 +92,6 @@ secrets/
 core.*
 vgcore.*
 
-# Auto-generated version file (Phase 0'-1)
-apps/api/src/version.ts
+# Temporary credential files (never commit)
+.dev.vars.temp
+.wrangler-auth.env
