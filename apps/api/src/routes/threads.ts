@@ -4,6 +4,22 @@
  * POST /threads - Create thread with AI-generated candidates
  * GET /i/:token - View invite (for stranger selection page)
  * POST /i/:token/accept - Accept invite
+ * 
+ * ============================================================
+ * Phase 2 リファクタリング計画
+ * ============================================================
+ * 
+ * このファイルは Phase 2 で分割予定（1870行 → 各200-500行）
+ * 
+ * 分割先:
+ * - routes/threads/list.ts: GET /, GET /:id
+ * - routes/threads/create.ts: POST /
+ * - routes/threads/proposals.ts: POST /:id/proposals/prepare, POST /:id/slots
+ * - routes/threads/invites.ts: POST /:id/invites/batch, POST /:id/invites/prepare
+ * - routes/threads/actions.ts: POST /:id/remind, POST /prepare-send, GET /:id/reschedule/info
+ * 
+ * Note: /i/:token 系は既に routes/invite.ts に分離済み
+ * threads.ts 内の /i/* は Phase 2.5 で削除検討（重複の可能性）
  */
 
 import { Hono } from 'hono';
