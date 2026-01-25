@@ -22,6 +22,8 @@ import type { Env } from '../../../../../packages/shared/src/types/env';
 import listRoutes from './list';
 // Phase 2-3: create.ts (POST /)
 import createRoutes from './create';
+// Phase 2-4: proposals.ts (POST /:id/proposals/prepare, POST /:id/slots)
+import proposalsRoutes from './proposals';
 
 // 共通の Variables 型定義（threads.ts と同一）
 export type Variables = {
@@ -44,8 +46,8 @@ app.route('/', listRoutes);
 // PR 2-3: create.ts (POST /) ✅
 app.route('/', createRoutes);
 
-// PR 2-4: proposals.ts をマウント予定
-// app.route('/', proposalsRoutes);
+// PR 2-4: proposals.ts (POST /:id/proposals/prepare, POST /:id/slots) ✅
+app.route('/', proposalsRoutes);
 
 // PR 2-5: invites.ts をマウント予定
 // app.route('/', invitesRoutes);
