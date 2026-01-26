@@ -72,6 +72,8 @@ export interface Logger {
 
 export interface LoggerOptions {
   module?: string;
+  handler?: string;
+  requestId?: string;
 }
 
 /**
@@ -86,12 +88,16 @@ export function createLogger(
 ): Logger {
   const configured = resolveLogLevel(env);
   const module = opts?.module;
+  const handler = opts?.handler;
+  const requestId = opts?.requestId;
 
   const prefix = (level: string) => {
     const timestamp = new Date().toISOString();
-    return module 
-      ? `[${timestamp}] [${level}] [${module}]`
-      : `[${timestamp}] [${level}]`;
+    const parts = [timestamp, level];
+    if (module) parts.push(module);
+    if (handler) parts.push(handler);
+    if (requestId) parts.push(requestId);
+    return parts.map(p => `[${p}]`).join(' ');
   };
 
   return {
