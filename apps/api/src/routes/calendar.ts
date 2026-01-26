@@ -15,6 +15,7 @@ import type { ParticipantInfo } from '../services/freebusyBatch';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { createThreadFailuresRepository } from '../repositories/threadFailuresRepository';
 import { getTenant } from '../utils/workspaceContext';
+import { createLogger } from '../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -117,6 +118,7 @@ function getNextWeekBounds(timezone: string = 'Asia/Tokyo'): { timeMin: string; 
  */
 app.get('/today', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Calendar', handler: 'today' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -124,7 +126,7 @@ app.get('/today', async (c) => {
   }
 
   try {
-    console.log('[Calendar] GET /today - userId:', userId);
+    log.debug('GET /today', { userId });
 
     // Get access token
     const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
@@ -164,7 +166,7 @@ app.get('/today', async (c) => {
       events,
     });
   } catch (error) {
-    console.error('[Calendar] Error fetching today:', error);
+    log.error('Error fetching today', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -176,6 +178,7 @@ app.get('/today', async (c) => {
  */
 app.get('/week', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Calendar', handler: 'week' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -183,7 +186,7 @@ app.get('/week', async (c) => {
   }
 
   try {
-    console.log('[Calendar] GET /week - userId:', userId);
+    log.debug('GET /week', { userId });
 
     // Get access token
     const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
@@ -223,7 +226,7 @@ app.get('/week', async (c) => {
       events,
     });
   } catch (error) {
-    console.error('[Calendar] Error fetching week:', error);
+    log.error('Error fetching week', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -238,6 +241,7 @@ app.get('/week', async (c) => {
  */
 app.get('/freebusy', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Calendar', handler: 'freebusy' });
   const userId = c.get('userId');
   const range = c.req.query('range') || 'today'; // today | week | next_week
   const prefer = c.req.query('prefer'); // morning | afternoon | evening | business
@@ -249,7 +253,7 @@ app.get('/freebusy', async (c) => {
   }
 
   try {
-    console.log('[Calendar] GET /freebusy - userId:', userId, 'range:', range, 'prefer:', prefer);
+    log.debug('GET /freebusy', { userId, range, prefer });
 
     // Get access token
     const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
@@ -310,7 +314,7 @@ app.get('/freebusy', async (c) => {
       warning: null,
     });
   } catch (error) {
-    console.error('[Calendar] Error fetching freebusy:', error);
+    log.error('Error fetching freebusy', { error: error instanceof Error ? error.message : String(error) });
     
     // Check if it's a permission error
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -347,6 +351,7 @@ app.get('/freebusy', async (c) => {
  */
 app.post('/freebusy/batch', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Calendar', handler: 'freebusy/batch' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -366,7 +371,7 @@ app.post('/freebusy/batch', async (c) => {
     const prefer = body.prefer;
     const meetingLength = body.meeting_length || 60;
 
-    console.log('[Calendar] POST /freebusy/batch - userId:', userId, 'range:', range, 'prefer:', prefer);
+    log.debug('POST /freebusy/batch', { userId, range, prefer });
 
     // 1. 参加者リストを取得
     let participants: ParticipantInfo[];
@@ -437,10 +442,10 @@ app.post('/freebusy/batch', async (c) => {
         
         // 更新後のサマリーを取得
         failureSummary = await failuresRepo.getFailureSummaryByThread(body.threadId);
-        console.log('[Calendar] FAIL-1: No common slots found, failure recorded for thread:', body.threadId);
+        log.debug('FAIL-1: No common slots found, failure recorded', { threadId: body.threadId });
       } catch (failError) {
         // 失敗記録のエラーはログのみ（メイン処理を止めない）
-        console.error('[Calendar] FAIL-1: Error recording failure:', failError);
+        log.error('FAIL-1: Error recording failure', { error: failError instanceof Error ? failError.message : String(failError) });
       }
     }
 
@@ -461,7 +466,7 @@ app.post('/freebusy/batch', async (c) => {
       failure_summary: failureSummary,
     });
   } catch (error) {
-    console.error('[Calendar] Error in freebusy/batch:', error);
+    log.error('Error in freebusy/batch', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error',
