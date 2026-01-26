@@ -129,6 +129,9 @@ app.get('/health', (c) => {
     version: VERSION.commit,        // 互換維持（将来廃止検討）
     // A-3a: 運用情報追加（障害切り分け・デプロイ確認用）
     routes_version: 'threads_split_v2',  // Phase2完了: threads/* 分割済み
+    // A-3b: router_fingerprint - ルート構成変更の差分検知
+    // threads/index.ts の import 一覧から生成 (actions,create,invites,list,proposals)
+    router_fingerprint: VERSION.router_fingerprint,
     log_level: c.env.LOG_LEVEL || 'info',
     cors_origins: c.env.CORS_ORIGINS || '*',
   });
