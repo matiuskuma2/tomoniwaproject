@@ -322,7 +322,8 @@ app.notFound((c) => {
 // Error Handler
 // ============================================================
 app.onError((err, c) => {
-  console.error('Error:', err);
+  const log = createLogger(c.env, { module: 'App', handler: 'onError' });
+  log.error('Unhandled error', { error: err.message, stack: err.stack });
   
   return c.json(
     {

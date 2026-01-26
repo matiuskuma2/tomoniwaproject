@@ -18,6 +18,7 @@ import type { Env } from '../../../../../packages/shared/src/types/env';
 import type { EmailJob } from '../../services/emailQueue';
 import { THREAD_STATUS } from '../../../../../packages/shared/src/types/thread';
 import { getTenant } from '../../utils/workspaceContext';
+import { createLogger } from '../../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -53,6 +54,7 @@ app.post(
   }),
   async (c) => {
     const { env } = c;
+    const log = createLogger(env, { module: 'Threads', handler: 'create' });
     const userId = await getUserIdFromContext(c as any);
 
     // P0-1: Get tenant context
@@ -81,7 +83,7 @@ app.post(
         VALUES (?, ?, ?, ?, ?, ?, 'one_on_one', ?, ?, ?)
       `).bind(threadId, workspaceId, ownerUserId, title, description || null, THREAD_STATUS.DRAFT, organizerTimeZone, now, now).run();
 
-      console.log('[Threads] Created thread in scheduling_threads:', threadId);
+      log.debug('Created thread', { threadId });
 
       // Step 1.5: Create default attendance rule (ALL type)
       const defaultRule = {
@@ -101,7 +103,7 @@ app.post(
         VALUES (?, ?)
       `).bind(threadId, JSON.stringify(defaultRule)).run();
 
-      console.log('[Threads] Created default attendance rule');
+      log.debug('Created default attendance rule');
 
       // Step 1.6: Create default scheduling slots (3 slots: tomorrow, day after, 3 days from now)
       const slotBaseTime = new Date();
@@ -137,7 +139,7 @@ app.post(
         ).run();
       }
 
-      console.log('[Threads] Created 3 default scheduling slots');
+      log.debug('Created 3 default scheduling slots');
 
       let candidates: any[] = [];
       let invites: any[] = [];
@@ -148,7 +150,7 @@ app.post(
       // ============================
       if (target_list_id) {
         // Step 2A: Bulk invite from list
-        console.log('[Threads] Bulk invite mode: target_list_id =', target_list_id);
+        log.debug('Bulk invite mode', { targetListId: target_list_id });
 
         const listsRepo = new ListsRepository(env.DB);
         const contactsRepo = new ContactsRepository(env.DB);
@@ -174,14 +176,14 @@ app.post(
           return c.json({ error: 'List is empty. Add contacts first.' }, 400);
         }
 
-        console.log(`[Threads] Bulk inviting ${members.length} contacts from list`);
+        log.debug("Bulk inviting contacts", { memberCount: members.length });
 
         // 最重要ポイント 3: email が無い contact は除外
         const validMembers = members.filter((m) => m.contact_email);
         skippedCount = members.length - validMembers.length;
 
         if (skippedCount > 0) {
-          console.warn(`[Threads] Skipped ${skippedCount} contacts without email`);
+          log.warn("Skipped contacts without email", { skippedCount });
         }
 
         // Step 3A: Create invites in batch (P0-1: Transaction for performance)
@@ -196,7 +198,7 @@ app.post(
           }))
         );
 
-        console.log('[Threads] Batch invite result:', batchResult);
+        log.debug('Batch invite result', { batchResult });
 
         // P0-3: Fetch only inserted invites (accurate tracking)
         if (batchResult.insertedIds.length > 0) {
@@ -218,7 +220,7 @@ app.post(
         }));
       } else {
         // Step 2B: Generate candidates with AI (original flow)
-        console.log('[Threads] AI candidate generation mode');
+        log.debug('AI candidate generation mode');
 
         const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
         
@@ -232,7 +234,7 @@ app.post(
         const candidateGen = new CandidateGeneratorService(aiRouter, userId);
         candidates = await candidateGen.generateCandidates(title, description);
 
-        console.log('[Threads] Generated candidates:', candidates.length);
+        log.debug('Generated candidates', { count: candidates.length });
 
         // Step 3B: Create invites for each candidate
         const threadsRepo = new ThreadsRepository(env.DB);
@@ -248,7 +250,7 @@ app.post(
           )
         );
 
-        console.log('[Threads] Created invites:', invites.length);
+        log.debug('Created invites', { count: invites.length });
       }
 
       // Step 4: Send invite emails via queue (共通)
@@ -272,7 +274,7 @@ app.post(
         };
 
         await env.EMAIL_QUEUE.send(emailJob);
-        console.log('[Threads] Queued email for:', candidate.email);
+        log.debug('Queued email', { email: candidate.email });
       }
 
       return c.json({
@@ -298,7 +300,7 @@ app.post(
         ...(target_list_id ? { skipped_count: skippedCount } : {}),
       });
     } catch (error) {
-      console.error('[Threads] Error creating thread:', error);
+      log.error('Error creating thread', error);
       return c.json(
         {
           error: 'Failed to create thread',

@@ -28,6 +28,7 @@ import {
 import {
   checkIsAppUserBatch,
 } from '../../repositories/inviteDeliveriesRepository';
+import { createLogger } from '../../utils/logger';
 import {
   normalizeAndValidateEmails,
   normalizeEmail,
@@ -53,6 +54,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/:id/invites/batch', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads', handler: 'invites/batch' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -101,14 +103,14 @@ app.post('/:id/invites/batch', async (c) => {
       return c.json({ error: 'List is empty. Add contacts first.' }, 400);
     }
 
-    console.log(`[Threads] Adding ${members.length} bulk invites to thread ${threadId}`);
+    log.debug("Adding bulk invites", { memberCount: members.length, threadId });
 
     // Step 4: Filter valid members (must have email)
     const validMembers = members.filter((m) => m.contact_email);
     const skippedCount = members.length - validMembers.length;
 
     if (skippedCount > 0) {
-      console.warn(`[Threads] Skipped ${skippedCount} contacts without email`);
+      log.warn("Skipped contacts without email", { skippedCount });
     }
 
     // Step 5: Create invites in batch (P0-1: Transaction for performance)
@@ -122,7 +124,7 @@ app.post('/:id/invites/batch', async (c) => {
       }))
     );
 
-    console.log('[Threads] Batch invite result:', batchResult);
+    log.debug('Batch invite result', { batchResult });
 
     // Step 6: Fetch inserted invites for email queue
     let invites: any[] = [];
@@ -156,7 +158,7 @@ app.post('/:id/invites/batch', async (c) => {
       };
 
       await env.EMAIL_QUEUE.send(emailJob);
-      console.log('[Threads] Queued email for:', member.contact_email);
+      log.debug('Queued email', { email: member.contact_email });
     }
 
     return c.json({
@@ -171,7 +173,7 @@ app.post('/:id/invites/batch', async (c) => {
     });
 
   } catch (error) {
-    console.error('[Threads] Error adding bulk invites:', error);
+    log.error('Error adding bulk invites', error);
     return c.json(
       {
         error: 'Failed to add bulk invites',
@@ -189,9 +191,10 @@ app.post('/:id/invites/batch', async (c) => {
 app.post('/:id/invites/prepare', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads', handler: 'invites/prepare', requestId });
   const threadId = c.req.param('id');
   
-  console.log('[invites/prepare] Starting request:', requestId, 'threadId:', threadId);
+  log.debug('Starting request', { threadId });
   
   try {
     // Get authentication context (may throw)
@@ -204,9 +207,9 @@ app.post('/:id/invites/prepare', async (c) => {
       const tenant = getTenant(c);
       workspaceId = tenant.workspaceId;
       ownerUserId = tenant.ownerUserId;
-      console.log('[invites/prepare] Auth context:', { userId, workspaceId, ownerUserId });
+      log.debug('Auth context', { userId, workspaceId, ownerUserId });
     } catch (authError) {
-      console.error('[invites/prepare] Auth error:', authError);
+      log.error('Auth error', authError);
       return c.json({ 
         error: 'Unauthorized', 
         message: authError instanceof Error ? authError.message : 'Authentication failed',
@@ -395,7 +398,7 @@ app.post('/:id/invites/prepare', async (c) => {
     });
 
   } catch (error) {
-    console.error('[Threads] invites/prepare error:', error);
+    log.error('invites/prepare error', error);
     return c.json({
       error: 'internal_error',
       details: error instanceof Error ? error.message : 'Unknown error',

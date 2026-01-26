@@ -31,6 +31,7 @@ import {
   normalizeAndValidateEmails,
   normalizeEmail,
 } from '../../utils/emailNormalizer';
+import { createLogger } from '../../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -62,6 +63,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/:id/remind', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads', handler: 'remind' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -159,7 +161,7 @@ ${inviteUrl}
     });
 
   } catch (error) {
-    console.error('[Threads] Error sending reminder:', error);
+    log.error('Error sending reminder', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to send reminder',
@@ -177,8 +179,9 @@ ${inviteUrl}
 app.post('/prepare-send', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads', handler: 'prepare-send', requestId });
   
-  console.log('[prepare-send] Starting request:', requestId);
+  log.debug('Starting request');
   
   try {
     // Get authentication context (may throw)
@@ -191,9 +194,9 @@ app.post('/prepare-send', async (c) => {
       const tenant = getTenant(c);
       workspaceId = tenant.workspaceId;
       ownerUserId = tenant.ownerUserId;
-      console.log('[prepare-send] Auth context:', { userId, workspaceId, ownerUserId });
+      log.debug('Auth context', { userId, workspaceId, ownerUserId });
     } catch (authError) {
-      console.error('[prepare-send] Auth error:', authError);
+      log.error('Auth error', authError);
       return c.json({ 
         error: 'Unauthorized', 
         message: authError instanceof Error ? authError.message : 'Authentication failed',
@@ -202,7 +205,7 @@ app.post('/prepare-send', async (c) => {
     }
     
     const body = await c.req.json().catch(() => ({} as any));
-    console.log('[prepare-send] Request body:', JSON.stringify(body));
+    log.debug('Request body', { body });
     
     const sourceType = body.source_type as 'emails' | 'list';
     const title = body.title || '日程調整';
@@ -366,10 +369,10 @@ app.post('/prepare-send', async (c) => {
     });
 
   } catch (error) {
-    console.error('[Threads] prepare-send error:', error);
+    log.error('prepare-send error', { error: error instanceof Error ? error.message : String(error) });
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const errorStack = error instanceof Error ? error.stack : undefined;
-    console.error('[Threads] prepare-send stack:', errorStack);
+    log.debug('prepare-send stack', { stack: errorStack });
     return c.json({
       error: 'internal_error',
       message: `サーバーエラー: ${errorMessage}`,  // message フィールドを追加
@@ -388,8 +391,9 @@ app.get('/:id/reschedule/info', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
   const threadId = c.req.param('id');
+  const log = createLogger(env, { module: 'Threads/actions', handler: 'reschedule/info', requestId });
   
-  console.log('[reschedule/info] Starting request:', requestId, 'threadId:', threadId);
+  log.debug('Starting request', { threadId });
   
   try {
     // Get authentication context
@@ -495,7 +499,7 @@ app.get('/:id/reschedule/info', async (c) => {
     });
     
   } catch (error) {
-    console.error('[reschedule/info] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'internal_error',
       details: error instanceof Error ? error.message : 'Unknown error',
