@@ -127,6 +127,10 @@ app.get('/health', (c) => {
     commit_sha: VERSION.commit,     // 明確（計画書・運用で推奨）
     build_time: VERSION.build_time,
     version: VERSION.commit,        // 互換維持（将来廃止検討）
+    // A-3a: 運用情報追加（障害切り分け・デプロイ確認用）
+    routes_version: 'threads_split_v2',  // Phase2完了: threads/* 分割済み
+    log_level: c.env.LOG_LEVEL || 'info',
+    cors_origins: c.env.CORS_ORIGINS || '*',
   });
 });
 
