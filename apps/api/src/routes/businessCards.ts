@@ -12,6 +12,7 @@ import { BusinessCardsRepository } from '../repositories/businessCardsRepository
 import { ContactsRepository } from '../repositories/contactsRepository';
 import { ListsRepository } from '../repositories/listsRepository';
 import { getUserIdFromContext } from '../middleware/auth';
+import { createLogger } from '../utils/logger';
 
 const DEFAULT_WORKSPACE = 'ws-default';
 const BUSINESS_CARD_LIST_NAME = '名刺登録';
@@ -45,6 +46,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'BusinessCards', handler: 'upload' });
   const userId = await getUserIdFromContext(c as any);
 
   try {
@@ -102,7 +104,7 @@ app.post('/', async (c) => {
       },
     });
 
-    console.log('[BusinessCards] Uploaded to R2:', r2ObjectKey);
+    log.debug('Uploaded to R2', { r2ObjectKey });
 
     // Create or get contact
     const contactsRepo = new ContactsRepository(env.DB);
@@ -142,7 +144,7 @@ app.post('/', async (c) => {
       }
     }
 
-    console.log('[BusinessCards] Contact created/found:', contact.id);
+    log.debug('Contact created/found', { contactId: contact.id });
 
     // Create business_cards record
     const bcRepo = new BusinessCardsRepository(env.DB);
@@ -157,7 +159,7 @@ app.post('/', async (c) => {
       occurred_at: occurredAt,
     });
 
-    console.log('[BusinessCards] Business card created:', businessCard.id);
+    log.debug('Business card created', { businessCardId: businessCard.id });
 
     // Create touchpoint
     await bcRepo.createTouchpoint({
@@ -173,7 +175,7 @@ app.post('/', async (c) => {
       }),
     });
 
-    console.log('[BusinessCards] Touchpoint created');
+    log.debug('Touchpoint created');
 
     // Get or create "名刺登録" list
     const listsRepo = new ListsRepository(env.DB);
@@ -189,16 +191,16 @@ app.post('/', async (c) => {
         name: BUSINESS_CARD_LIST_NAME,
         description: '名刺登録で自動追加されたコンタクト',
       });
-      console.log('[BusinessCards] Created "名刺登録" list:', list.id);
+      log.debug('Created 名刺登録 list', { listId: list.id });
     }
 
     // Add to list (ignore if already exists)
     try {
       await listsRepo.addMember(list.id, contact.id, DEFAULT_WORKSPACE);
-      console.log('[BusinessCards] Added to "名刺登録" list');
+      log.debug('Added to 名刺登録 list');
     } catch (error) {
       if (error instanceof Error && error.message.includes('already a member')) {
-        console.log('[BusinessCards] Contact already in list');
+        log.debug('Contact already in list');
       } else {
         throw error;
       }
@@ -231,7 +233,7 @@ app.post('/', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[BusinessCards] Upload error:', error);
+    log.error('Upload error', error);
     return c.json(
       {
         error: 'Failed to upload business card',
@@ -249,6 +251,7 @@ app.post('/', async (c) => {
  */
 app.get('/:id/image', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'BusinessCards', handler: 'getImage' });
   const userId = await getUserIdFromContext(c as any);
   const id = c.req.param('id');
 
@@ -273,7 +276,7 @@ app.get('/:id/image', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[BusinessCards] Get image error:', error);
+    log.error('Get image error', error);
     return c.json({ error: 'Failed to get image' }, 500);
   }
 });
@@ -285,6 +288,7 @@ app.get('/:id/image', async (c) => {
  */
 app.get('/', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'BusinessCards', handler: 'list' });
   const userId = await getUserIdFromContext(c as any);
 
   try {
@@ -305,7 +309,7 @@ app.get('/', async (c) => {
       offset,
     });
   } catch (error) {
-    console.error('[BusinessCards] List error:', error);
+    log.error('List error', error);
     return c.json({ error: 'Failed to list business cards' }, 500);
   }
 });
