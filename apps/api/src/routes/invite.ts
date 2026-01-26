@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { ThreadsRepository } from '../repositories/threadsRepository';
 import { InboxRepository } from '../repositories/inboxRepository';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { createLogger } from '../utils/logger';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -125,6 +126,7 @@ function errorPage(type: 'not-found' | 'expired' | 'already-responded', details?
  */
 app.get('/:token', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Invite', handler: 'get' });
   const token = c.req.param('token');
 
   try {
@@ -320,7 +322,7 @@ app.get('/:token', async (c) => {
                 setLoading('declineBtn', false);
               }
             } catch (error) {
-              console.error('Network error:', error);
+              log.error('Network error', { error: error instanceof Error ? error.message : String(error) });
               showError('ネットワークエラーが発生しました。接続を確認してください。');
               setLoading('acceptBtn', false);
               setLoading('declineBtn', false);
@@ -363,7 +365,7 @@ app.get('/:token', async (c) => {
                 setLoading('declineBtn', false);
               }
             } catch (error) {
-              console.error('Network error:', error);
+              log.error('Network error', { error: error instanceof Error ? error.message : String(error) });
               showError('ネットワークエラーが発生しました。接続を確認してください。');
               setLoading('acceptBtn', false);
               setLoading('declineBtn', false);
@@ -382,7 +384,7 @@ app.get('/:token', async (c) => {
       </html>
     `);
   } catch (error) {
-    console.error('[Invite] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.html(errorPage('not-found'), 500);
   }
 });
@@ -395,6 +397,7 @@ app.get('/:token', async (c) => {
  */
 app.post('/:token/respond', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Invite', handler: 'respond' });
   const token = c.req.param('token');
 
   try {
@@ -480,7 +483,7 @@ app.post('/:token/respond', async (c) => {
       message: status === 'selected' ? 'Slot selected' : 'Invitation declined'
     });
   } catch (error) {
-    console.error('[Invite] Respond error:', error);
+    log.error('Respond error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
