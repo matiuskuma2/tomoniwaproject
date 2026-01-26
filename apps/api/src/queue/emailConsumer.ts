@@ -10,6 +10,7 @@
  */
 
 import type { EmailJob } from '../services/emailQueue';
+import { createLogger, type Logger } from '../utils/logger';
 import {
   composeInviteEmailModel,
   composeAdditionalSlotsEmailModel,
@@ -38,6 +39,8 @@ interface Env {
   DB: D1Database;
   RESEND_API_KEY: string;
   ANALYTICS?: AnalyticsEngineDataset;
+  ENVIRONMENT?: string;
+  LOG_LEVEL?: string;
 }
 
 /**
@@ -61,12 +64,13 @@ export default {
     batch: MessageBatch<EmailJob>,
     env: Env
   ): Promise<void> {
-    console.log(`[EmailConsumer] Processing ${batch.messages.length} messages`);
+    const log = createLogger(env, { module: 'EmailConsumer', handler: 'queue' });
+    log.info('Processing batch', { messageCount: batch.messages.length });
 
     // Process messages serially with throttling (Resend limit: 2 req/sec)
     for (const message of batch.messages) {
       try {
-        await processEmailJobWithRetry(message.body, env, 3);
+        await processEmailJobWithRetry(message.body, env, 3, log);
         message.ack(); // Acknowledge successful processing
         
         // Throttle: Wait 650ms between emails to respect Resend's 2 req/sec limit
@@ -74,7 +78,7 @@ export default {
           await sleep(650);
         }
       } catch (error) {
-        console.error('[EmailConsumer] Error processing message:', error);
+        log.error('Error processing message', { jobId: message.body.job_id, error });
         message.retry(); // Retry on failure (will go to DLQ after max_retries)
       }
     }
@@ -94,20 +98,21 @@ function sleep(ms: number): Promise<void> {
 async function processEmailJobWithRetry(
   job: EmailJob,
   env: Env,
-  maxRetries: number
+  maxRetries: number,
+  log: Logger
 ): Promise<void> {
   let lastError: Error | null = null;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      await processEmailJob(job, env);
+      await processEmailJob(job, env, log);
       return; // Success
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       
       // Check if it's a 429 rate limit error
       if (lastError.message.includes('429') || lastError.message.includes('rate_limit')) {
-        console.warn(`[EmailConsumer] Rate limit hit (attempt ${attempt}/${maxRetries}), waiting 1s...`);
+        log.warn('Rate limit hit, retrying', { jobId: job.job_id, attempt, maxRetries });
         
         if (attempt < maxRetries) {
           await sleep(1000); // Wait 1 second before retry
@@ -127,13 +132,13 @@ async function processEmailJobWithRetry(
 /**
  * Process individual email job
  */
-async function processEmailJob(job: EmailJob, env: Env): Promise<void> {
-  console.log(`[EmailConsumer] Processing job ${job.job_id} (type: ${job.type})`);
+async function processEmailJob(job: EmailJob, env: Env, log: Logger): Promise<void> {
+  log.debug('Processing job', { jobId: job.job_id, type: job.type });
 
   // Check idempotency - has this job been processed?
   const alreadyProcessed = await checkIfProcessed(job, env.DB);
   if (alreadyProcessed) {
-    console.log(`[EmailConsumer] Job ${job.job_id} already processed, skipping`);
+    log.debug('Job already processed, skipping', { jobId: job.job_id });
     return;
   }
 
@@ -148,10 +153,11 @@ async function processEmailJob(job: EmailJob, env: Env): Promise<void> {
       html: emailContent.html,
       text: emailContent.text,
     },
-    env.RESEND_API_KEY
+    env.RESEND_API_KEY,
+    log
   );
 
-  console.log(`[EmailConsumer] Email sent via Resend: ${resendId}`);
+  log.debug('Email sent via Resend', { jobId: job.job_id, resendId });
 
   // Update delivery status in database
   await updateDeliveryStatus(job, resendId, env.DB);
@@ -505,14 +511,12 @@ async function sendViaResend(
     html: string;
     text: string;
   },
-  apiKey: string
+  apiKey: string,
+  log: Logger
 ): Promise<string> {
   // Mock mode for testing (if API key not configured)
   if (!apiKey || apiKey === 'your_resend_api_key_here') {
-    console.log('[EmailConsumer] MOCK MODE - Email would be sent:');
-    console.log(`  To: ${email.to}`);
-    console.log(`  Subject: ${email.subject}`);
-    console.log(`  Text: ${email.text.substring(0, 100)}...`);
+    log.warn('MOCK MODE - Email would be sent', { to: email.to, subject: email.subject });
     return `mock-${crypto.randomUUID()}`;
   }
 
@@ -536,7 +540,7 @@ async function sendViaResend(
     const errorMsg = `Resend API error (${response.status}): ${errorText}`;
     
     // Log detailed error for debugging
-    console.error('[EmailConsumer] Resend API failed:', {
+    log.error('Resend API failed', {
       status: response.status,
       error: errorText,
       to: email.to,
@@ -547,6 +551,6 @@ async function sendViaResend(
   }
 
   const result: ResendResponse = await response.json();
-  console.log(`[EmailConsumer] Email sent successfully via Resend: ${result.id}`);
+  log.debug('Email sent successfully via Resend', { resendId: result.id });
   return result.id;
 }
