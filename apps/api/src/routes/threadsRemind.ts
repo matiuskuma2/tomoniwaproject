@@ -11,6 +11,7 @@ import { INBOX_TYPE, INBOX_PRIORITY } from '../../../../packages/shared/src/type
 import { checkBillingGate } from '../utils/billingGate';
 import { getTenant } from '../utils/workspaceContext';
 import { sendReminderNotification } from '../services/notificationService';
+import { createLogger } from '../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -32,6 +33,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/:id/remind', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsRemind', handler: 'remind' });
   
   try {
     // ====== (0) Authorization ======
@@ -223,9 +225,9 @@ app.post('/:id/remind', async (c) => {
           status: 'sent'
         });
         
-        console.log('[Remind] Sent to:', invite.email);
+        log.debug('Sent reminder', { email: invite.email });
       } catch (error) {
-        console.error('[Remind] Failed to send to:', invite.email, error);
+        log.error('Failed to send reminder', { email: invite.email, error: error instanceof Error ? error.message : String(error) });
         warnings.push({
           invitee_key: invite.invitee_key,
           email: invite.email,
@@ -280,7 +282,7 @@ app.post('/:id/remind', async (c) => {
         INBOX_PRIORITY.NORMAL
       ).run();
     } catch (error) {
-      console.error('[Remind] Failed to create inbox notification:', error);
+      log.error('Failed to create inbox notification', { error: error instanceof Error ? error.message : String(error) });
       warnings.push({
         type: 'inbox_notification_failed',
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -303,7 +305,7 @@ app.post('/:id/remind', async (c) => {
           reminderType: 'pending', // デフォルト
         });
       } catch (slackError) {
-        console.error('[ThreadsRemind] Slack notification error (ignored):', slackError);
+        log.warn('Slack notification error (ignored)', { error: slackError instanceof Error ? slackError.message : String(slackError) });
       }
     }
 
@@ -319,7 +321,7 @@ app.post('/:id/remind', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsRemind] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to send reminders',
       details: error instanceof Error ? error.message : 'Unknown error'

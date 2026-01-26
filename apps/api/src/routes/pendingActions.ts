@@ -31,6 +31,7 @@ import {
   sendInviteSms,
   canSendSms,
 } from '../services/notificationService';
+import { createLogger } from '../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -46,6 +47,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.post('/:token/confirm', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
+  const log = createLogger(env, { module: 'PendingActions', handler: 'confirm', requestId });
   const userId = await getUserIdFromContext(c as any);
   
   if (!userId) {
@@ -163,7 +165,7 @@ app.post('/:token/confirm', async (c) => {
     });
 
   } catch (error) {
-    console.error('[PendingActions] confirm error:', error);
+    log.error('confirm error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'internal_error',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -179,6 +181,7 @@ app.post('/:token/confirm', async (c) => {
 app.post('/:token/execute', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
+  const log = createLogger(env, { module: 'PendingActions', handler: 'execute', requestId });
   const userId = await getUserIdFromContext(c as any);
 
   if (!userId) {
@@ -319,7 +322,7 @@ app.post('/:token/execute', async (c) => {
         ).run();
       }
 
-      console.log('[Execute] Created new thread:', threadId);
+      log.debug('Created new thread', { threadId });
     } else {
       // 既存スレッドのタイトル取得
       const existingThread = await env.DB.prepare(`
@@ -366,7 +369,7 @@ app.post('/:token/execute', async (c) => {
     }));
 
     const batchResult = await threadsRepo.createInvitesBatch(inviteData);
-    console.log('[Execute] Invite batch result:', batchResult);
+    log.debug('Invite batch result', { batchResult });
 
     // ====== 作成した invite を取得 ======
     let invites: Array<{ id: string; token: string; email: string }> = [];
@@ -418,7 +421,7 @@ app.post('/:token/execute', async (c) => {
       for (const row of phoneRows.results || []) {
         emailPhoneMap.set(row.email, row.phone);
       }
-      console.log(`[Execute] Found ${emailPhoneMap.size} phone numbers for SMS`);
+      log.debug(`Found phone numbers for SMS`, { count: emailPhoneMap.size });
     }
 
     for (const invite of invites) {
@@ -459,7 +462,7 @@ app.post('/:token/execute', async (c) => {
             smsSentCount++;
           }
         } catch (smsError) {
-          console.error('[Execute] SMS send error (ignored):', smsError);
+          log.warn('SMS send error (ignored)', { error: smsError instanceof Error ? smsError.message : String(smsError) });
         }
       }
 
@@ -515,7 +518,7 @@ app.post('/:token/execute', async (c) => {
         SET status = ?, updated_at = ?
         WHERE id = ? AND workspace_id = ? AND status = ?
       `).bind(THREAD_STATUS.SENT, updatedAt, threadId, workspaceId, THREAD_STATUS.DRAFT).run();
-      console.log(`[Execute] Thread ${threadId} status updated to 'sent'`);
+      log.debug(`Thread status updated to sent`, { threadId });
     }
 
     // ====== P2-E1: Slack通知（並走・失敗しても本処理は落とさない） ======
@@ -527,7 +530,7 @@ app.post('/:token/execute', async (c) => {
         recipientCount: batchResult.insertedIds.length,
       });
     } catch (slackError) {
-      console.error('[PendingActions] Slack notification error (ignored):', slackError);
+      log.warn('Slack notification error (ignored)', { error: slackError instanceof Error ? slackError.message : String(slackError) });
     }
 
     // ====== レスポンス ======
@@ -549,7 +552,7 @@ app.post('/:token/execute', async (c) => {
     });
 
   } catch (error) {
-    console.error('[PendingActions] execute error:', error);
+    log.error('execute error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'internal_error',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -586,6 +589,7 @@ async function executeAddSlots(
   workspaceId: string,
   ownerUserId: string
 ) {
+  const log = createLogger(env, { module: 'PendingActions', handler: 'executeAddSlots', requestId });
   const threadId = pa.thread_id;
   
   if (!threadId) {
@@ -673,7 +677,7 @@ async function executeAddSlots(
     slotIds.push(slotId);
   }
 
-  console.log(`[AddSlots] Added ${slotIds.length} slots (v${nextVersion}) to thread ${threadId}`);
+  log.debug(`Added slots`, { count: slotIds.length, version: nextVersion, threadId });
 
   // ====== (4) スレッド更新 ======
   await env.DB.prepare(`
@@ -684,7 +688,7 @@ async function executeAddSlots(
     WHERE id = ?
   `).bind(nextVersion, threadId).run();
 
-  console.log(`[AddSlots] Updated thread ${threadId}: proposal_version=${nextVersion}, additional_propose_count=${thread.additional_propose_count + 1}`);
+  log.debug(`Updated thread`, { threadId, proposalVersion: nextVersion, additionalProposeCount: thread.additional_propose_count + 1 });
 
   // ====== (5) 再通知対象を取得（declined 除外） ======
   const invites = await env.DB.prepare(`
@@ -709,7 +713,7 @@ async function executeAddSlots(
   }>();
 
   const recipients = invites.results || [];
-  console.log(`[AddSlots] Notify targets: ${recipients.length} (declined excluded)`);
+  log.debug(`Notify targets`, { count: recipients.length });
 
   // ====== (6) 通知送信（Email + Inbox） ======
   const inboxRepo = new InboxRepository(env.DB);
@@ -791,7 +795,7 @@ async function executeAddSlots(
       notifyCount: recipients.length,
     });
   } catch (slackError) {
-    console.error('[PendingActions] Slack notification error (ignored):', slackError);
+    log.warn('Slack notification error (ignored)', { error: slackError instanceof Error ? slackError.message : String(slackError) });
   }
 
   // ====== (8) レスポンス ======

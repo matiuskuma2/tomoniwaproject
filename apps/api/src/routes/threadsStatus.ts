@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { AttendanceEngine } from '../services/attendanceEngine';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { getTenant } from '../utils/workspaceContext';
+import { createLogger } from '../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -27,6 +28,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.get('/:id/status', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsStatus', handler: 'status' });
   
   try {
     // ====== (0) Authorization ======
@@ -304,7 +306,7 @@ app.get('/:id/status', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsStatus] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to get thread status',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -337,6 +339,7 @@ import {
  */
 app.get('/:id/summary', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsStatus', handler: 'summary' });
   
   try {
     const userId = c.get('userId');
@@ -380,7 +383,7 @@ app.get('/:id/summary', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsSummary] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to get thread summary',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -402,6 +405,7 @@ app.get('/:id/summary', async (c) => {
  */
 app.get('/:id/failures', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsStatus', handler: 'failures' });
   
   try {
     const userId = c.get('userId');
@@ -438,7 +442,7 @@ app.get('/:id/failures', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsFailures] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to get thread failures',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -455,6 +459,7 @@ app.get('/:id/failures', async (c) => {
  */
 app.post('/:id/failures/report', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsStatus', handler: 'failures/report' });
   
   try {
     const userId = c.get('userId');
@@ -514,7 +519,7 @@ app.post('/:id/failures/report', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsFailures] Report Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to report failure',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -530,6 +535,7 @@ app.post('/:id/failures/report', async (c) => {
  */
 app.delete('/:id/failures', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsStatus', handler: 'failures/reset' });
   
   try {
     const userId = c.get('userId');
@@ -560,7 +566,7 @@ app.delete('/:id/failures', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsFailures] Reset Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to reset failures',
       details: error instanceof Error ? error.message : 'Unknown error'

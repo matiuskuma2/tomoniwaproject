@@ -13,6 +13,7 @@ import { MEETING_PROVIDER } from '../../../../packages/shared/src/types/meeting'
 import { GoogleCalendarService } from '../services/googleCalendar';
 import { checkBillingGate } from '../utils/billingGate';
 import { getTenant } from '../utils/workspaceContext';
+import { createLogger } from '../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -34,6 +35,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/:id/finalize', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'ThreadsFinalize', handler: 'finalize' });
   
   try {
     // ====== (0) Authorization ======
@@ -163,7 +165,7 @@ app.post('/:id/finalize', async (c) => {
     let calendarEventId: string | null = null;
     
     try {
-      console.log('[Finalize] Attempting to create Google Meet...');
+      log.debug('Attempting to create Google Meet');
       
       // Get organizer's access token (with auto-refresh)
       const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, userId, env);
@@ -190,26 +192,26 @@ app.post('/:id/finalize', async (c) => {
           meetingUrl = event.hangoutLink;
           meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
           calendarEventId = event.id;
-          console.log('[Finalize] Google Meet created:', meetingUrl);
+          log.debug('Google Meet created', { meetingUrl });
         } else {
-          console.warn('[Finalize] Google Meet creation returned no hangoutLink');
+          log.warn('Google Meet creation returned no hangoutLink');
         }
       } else {
-        console.warn('[Finalize] No Google account access token found for organizer');
+        log.warn('No Google account access token found for organizer');
         // ====== Mock Meet URL for OAuth review ======
         // Generate a mock Meet URL until Calendar API is approved
         const mockMeetCode = `${threadId.substring(0, 3)}-${threadId.substring(4, 8)}-${threadId.substring(9, 12)}`;
         meetingUrl = `https://meet.google.com/${mockMeetCode}`;
         meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
-        console.log('[Finalize] Generated mock Meet URL (pending Calendar API approval):', meetingUrl);
+        log.debug('Generated mock Meet URL', { meetingUrl });
       }
     } catch (meetError) {
-      console.error('[Finalize] Failed to create Google Meet (non-fatal):', meetError);
+      log.warn('Failed to create Google Meet (non-fatal)', { error: meetError instanceof Error ? meetError.message : String(meetError) });
       // ====== Fallback: Mock Meet URL ======
       const mockMeetCode = `${threadId.substring(0, 3)}-${threadId.substring(4, 8)}-${threadId.substring(9, 12)}`;
       meetingUrl = `https://meet.google.com/${mockMeetCode}`;
       meetingProvider = MEETING_PROVIDER.GOOGLE_MEET;
-      console.log('[Finalize] Generated fallback mock Meet URL:', meetingUrl);
+      log.debug('Generated fallback mock Meet URL', { meetingUrl });
     }
     
     try {
@@ -265,10 +267,10 @@ app.post('/:id/finalize', async (c) => {
         }
       }
       
-      console.log('[Finalize] Successfully finalized thread:', threadId);
+      log.debug('Successfully finalized thread', { threadId });
       
     } catch (error) {
-      console.error('[Finalize] Transaction failed:', error);
+      log.error('Transaction failed', { error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
     
@@ -301,7 +303,7 @@ app.post('/:id/finalize', async (c) => {
         INBOX_PRIORITY.HIGH
       ).run();
     } catch (error) {
-      console.error('[Finalize] Failed to create inbox notification:', error);
+      log.error('Failed to create inbox notification', { error: error instanceof Error ? error.message : String(error) });
       warnings.push({
         type: 'inbox_notification_failed',
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -344,9 +346,9 @@ app.post('/:id/finalize', async (c) => {
           };
           
           await env.EMAIL_QUEUE.send(emailJob);
-          console.log('[Finalize] Sent email to:', invite.email);
+          log.debug('Sent email', { email: invite.email });
         } catch (error) {
-          console.error('[Finalize] Failed to send email to:', invite.email, error);
+          log.error('Failed to send email', { email: invite.email, error: error instanceof Error ? error.message : String(error) });
           warnings.push({
             type: 'email_failed',
             invitee_key: invite.invitee_key,
@@ -383,7 +385,7 @@ app.post('/:id/finalize', async (c) => {
     });
     
   } catch (error) {
-    console.error('[ThreadsFinalize] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'Failed to finalize thread',
       details: error instanceof Error ? error.message : 'Unknown error'
