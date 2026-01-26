@@ -23,6 +23,7 @@ import {
   composeAdditionalSlotsEmailModel,
   modelToPreview,
 } from '../../utils/emailModel';
+import { createLogger } from '../../utils/logger';
 
 type Variables = {
   userId?: string;
@@ -50,6 +51,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.post('/:id/proposals/prepare', async (c) => {
   const requestId = crypto.randomUUID();
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads/proposals', handler: 'proposals/prepare', requestId });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -254,7 +256,7 @@ app.post('/:id/proposals/prepare', async (c) => {
     });
 
   } catch (error) {
-    console.error('[Threads] proposals/prepare error:', error);
+    log.error('proposals/prepare error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({
       error: 'internal_error',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -273,6 +275,7 @@ app.post('/:id/proposals/prepare', async (c) => {
  */
 app.post('/:id/slots', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads/proposals', handler: 'slots' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -327,7 +330,7 @@ app.post('/:id/slots', async (c) => {
       slotIds.push(slotId);
     }
 
-    console.log(`[Threads] Added ${slotIds.length} slots to thread ${threadId}`);
+    log.debug('Added slots', { count: slotIds.length, threadId });
 
     return c.json({
       success: true,
@@ -335,7 +338,7 @@ app.post('/:id/slots', async (c) => {
       slot_ids: slotIds,
     });
   } catch (error) {
-    console.error('[Threads] Error adding slots:', error);
+    log.error('Error adding slots', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       { error: 'Failed to add slots', details: error instanceof Error ? error.message : 'Unknown error' },
       500

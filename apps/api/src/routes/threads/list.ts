@@ -14,6 +14,7 @@ import type { Env } from '../../../../../packages/shared/src/types/env';
 import { THREAD_STATUS, isValidThreadStatus } from '../../../../../packages/shared/src/types/thread';
 import { getTenant } from '../../utils/workspaceContext';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { createLogger } from '../../utils/logger';
 import type { Variables } from './index';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -28,6 +29,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.get('/', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads/list', handler: 'list' });
   const userId = await getUserIdFromContext(c as any);
 
   // P0-1: Get tenant context
@@ -123,7 +125,7 @@ app.get('/', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Threads] List error:', error);
+    log.error('List error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -135,6 +137,7 @@ app.get('/', async (c) => {
  */
 app.get('/:id', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Threads/list', handler: 'detail' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -177,7 +180,7 @@ app.get('/:id', async (c) => {
       invites,
     });
   } catch (error) {
-    console.error('[Threads] Get details error:', error);
+    log.error('Get details error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

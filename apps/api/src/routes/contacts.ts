@@ -20,6 +20,7 @@ import {
   type CreateContactInput,
   type UpdateContactInput,
 } from '../repositories/contactsRepository';
+import { createLogger } from '../utils/logger';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -29,6 +30,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
  */
 app.post('/', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'create' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -106,7 +108,7 @@ app.post('/', async (c) => {
       },
     }, 201);
   } catch (error) {
-    console.error('[Contacts] Error creating contact:', error);
+    log.error('Error creating contact', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to create contact',
@@ -123,6 +125,7 @@ app.post('/', async (c) => {
  */
 app.get('/', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'search' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -162,7 +165,7 @@ app.get('/', async (c) => {
       offset: query.offset ? parseInt(query.offset, 10) : 0,
     });
   } catch (error) {
-    console.error('[Contacts] Error searching contacts:', error);
+    log.error('Error searching contacts', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to search contacts',
@@ -179,6 +182,7 @@ app.get('/', async (c) => {
  */
 app.get('/:id', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'get' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -207,7 +211,7 @@ app.get('/:id', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Contacts] Error getting contact:', error);
+    log.error('Error getting contact', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to get contact',
@@ -224,6 +228,7 @@ app.get('/:id', async (c) => {
  */
 app.patch('/:id', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'update' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -249,7 +254,7 @@ app.patch('/:id', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Contacts] Error updating contact:', error);
+    log.error('Error updating contact', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to update contact',
@@ -268,6 +273,7 @@ app.patch('/:id', async (c) => {
  */
 app.post('/upsert', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'upsert' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -305,7 +311,7 @@ app.post('/upsert', async (c) => {
       body.display_name
     );
 
-    console.log(`[Contacts] Upserted phone for ${body.email} in workspace ${workspaceId}`);
+    log.debug('Upserted phone', { email: body.email, workspaceId });
 
     return c.json({
       success: true,
@@ -317,7 +323,7 @@ app.post('/upsert', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Contacts] Error upserting contact:', error);
+    log.error('Error upserting contact', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to upsert contact',
@@ -334,6 +340,7 @@ app.post('/upsert', async (c) => {
  */
 app.delete('/:id', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Contacts', handler: 'delete' });
   const userId = c.get('userId');
 
   if (!userId) {
@@ -351,7 +358,7 @@ app.delete('/:id', async (c) => {
 
     return c.json({ success: true });
   } catch (error) {
-    console.error('[Contacts] Error deleting contact:', error);
+    log.error('Error deleting contact', { error: error instanceof Error ? error.message : String(error) });
     return c.json(
       {
         error: 'Failed to delete contact',
