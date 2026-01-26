@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { SessionRepository } from '../repositories/sessionRepository';
+import { createLogger } from '../utils/logger';
 
 type Bindings = {
   DB: D1Database;
@@ -13,6 +14,8 @@ type Bindings = {
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;
   GOOGLE_ALLOWED_DOMAINS?: string;
+  ENVIRONMENT?: string;
+  LOG_LEVEL?: string;
 };
 
 const auth = new Hono<{ Bindings: Bindings }>();
@@ -293,7 +296,8 @@ auth.get('/google/callback', async (c) => {
     return c.redirect('/');
     // return c.json({ success: true, user_id: userId, session_token: sessionToken });
   } catch (error) {
-    console.error('OAuth callback error:', error);
+    const log = createLogger(env, { module: 'Auth', handler: 'callback' });
+    log.error('OAuth callback error', error);
     return c.json({ error: 'Internal server error during OAuth' }, 500);
   }
 });
@@ -351,26 +355,27 @@ auth.post('/logout', async (c) => {
 // ============================================================
 auth.post('/token', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'Auth', handler: 'token' });
   
   // Extract session token from Cookie only (not Bearer)
   let sessionToken: string | null = null;
   const cookieHeader = c.req.header('Cookie');
   
-  console.log('[auth/token] Cookie header:', cookieHeader ? `present (${cookieHeader.length} chars)` : 'missing');
+  log.debug('Cookie header check', { present: !!cookieHeader, length: cookieHeader?.length });
   
   if (cookieHeader) {
     const parts = cookieHeader.split(';').map(s => s.trim());
     for (const part of parts) {
       if (part.startsWith('session=')) {
         sessionToken = decodeURIComponent(part.slice(8));
-        console.log('[auth/token] Session token found:', sessionToken ? `${sessionToken.slice(0, 10)}...` : 'null');
+        log.debug('Session token found', { tokenPrefix: sessionToken?.slice(0, 10) });
         break;
       }
     }
   }
   
   if (!sessionToken) {
-    console.log('[auth/token] No session token in cookie');
+    log.debug('No session token in cookie');
     return c.json({ error: 'No active session. Please login first.' }, 401);
   }
 
@@ -378,7 +383,7 @@ auth.post('/token', async (c) => {
   const sessionRepo = new SessionRepository(env.DB);
   const session = await sessionRepo.findByTokenHash(tokenHash);
 
-  console.log('[auth/token] Session lookup result:', session ? `found (user: ${session.user_id})` : 'not found');
+  log.debug('Session lookup result', { found: !!session, userId: session?.user_id });
 
   if (!session) {
     return c.json({ error: 'Invalid or expired session' }, 401);
@@ -485,7 +490,8 @@ auth.post('/logout', async (c) => {
 
     return c.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    console.error('[Auth] Logout error:', error);
+    const log = createLogger(env, { module: 'Auth', handler: 'logoutSession' });
+    log.error('Logout error', error);
     return c.json({ error: 'Logout failed' }, 500);
   }
 });
