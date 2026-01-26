@@ -8,6 +8,7 @@ import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import type { Env } from '../../../packages/shared/src/types/env';
 import { createLogger } from './utils/logger';
+import { parseCorsOrigins, getCorsOrigin } from './utils/cors';
 
 // Routes
 import adminSystemRoutes from './routes/adminSystem';
@@ -86,16 +87,32 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
-// CORS - adjust origins in production via wrangler.jsonc
-app.use('/api/*', cors({
-  origin: (origin) => {
-    // TODO: Read from system_settings or env vars
-    return origin;
-  },
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+// CORS - restrict to allowed origins only (security for 1000+ connections)
+// Configure via CORS_ORIGINS in wrangler.jsonc:
+//   - Exact: "https://app.tomoniwao.jp"
+//   - Suffix: ".pages.dev" (allows *.pages.dev previews)
+//   - Multiple: "https://app.tomoniwao.jp,.pages.dev"
+app.use('/api/*', async (c, next) => {
+  const env = c.env as Env;
+  const allowList = parseCorsOrigins(env.CORS_ORIGINS);
+  const requestOrigin = c.req.header('Origin');
+  
+  // Determine allowed origin (null if not allowed)
+  const allowedOrigin = getCorsOrigin(requestOrigin, allowList);
+  
+  // If origin not allowed, skip CORS headers (browser will block the request)
+  if (!allowedOrigin) {
+    await next();
+    return;
+  }
+  
+  return cors({
+    origin: allowedOrigin,
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })(c, next);
+});
 
 // ============================================================
 // Health Check (Phase 0'-1: commit/build_time 可視化)

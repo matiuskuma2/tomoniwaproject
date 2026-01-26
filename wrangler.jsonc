@@ -86,7 +86,7 @@
   "vars": {
     "ENVIRONMENT": "production",  // Production mode: Requires Bearer token authentication
     "LOG_LEVEL": "warn",  // Production: warn/error only (perf optimization for 1000+ connections)
-    "CORS_ORIGINS": "*",
+    "CORS_ORIGINS": "https://app.tomoniwao.jp,.pages.dev",  // Production: restrict to app domain + Pages previews
     "AI_FALLBACK_ENABLED": "false"  // Default: Gemini-only (cost control for free tier)
   },
 
