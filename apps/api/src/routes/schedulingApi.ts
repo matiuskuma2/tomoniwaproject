@@ -14,6 +14,7 @@ import { InboxRepository } from '../repositories/inboxRepository';
 import { evaluateRule, finalizeThread } from '../services/attendanceEngine';
 import { getUserIdFromContext } from '../middleware/auth';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { createLogger } from '../utils/logger';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -24,6 +25,7 @@ const app = new Hono<{ Bindings: Env }>();
  */
 app.post('/i/:token/respond', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'respond' });
   const token = c.req.param('token');
 
   try {
@@ -81,7 +83,7 @@ app.post('/i/:token/respond', async (c) => {
         VALUES (?, ?, ?, 'selected', datetime('now'))
       `).bind(thread.id, invite.invitee_key, selected_slot_id).run();
 
-      console.log(`[Scheduling API] Selection recorded: invitee=${invite.invitee_key}, slot=${selected_slot_id}`);
+      log.debug('Selection recorded', { inviteeKey: invite.invitee_key, slotId: selected_slot_id });
     } else if (status === 'declined') {
       // Record decline (no slot selected)
       await env.DB.prepare(`
@@ -90,7 +92,7 @@ app.post('/i/:token/respond', async (c) => {
         VALUES (?, ?, NULL, 'declined', datetime('now'))
       `).bind(thread.id, invite.invitee_key).run();
 
-      console.log(`[Scheduling API] Decline recorded: invitee=${invite.invitee_key}`);
+      log.debug('Decline recorded', { inviteeKey: invite.invitee_key });
     }
 
     // Update invite status (backward compatibility)
@@ -125,7 +127,7 @@ app.post('/i/:token/respond', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Scheduling API] Error in /i/:token/respond:', error);
+    log.error('Error in /i/:token/respond', error);
     return c.json({
       error: 'Failed to process response',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -141,6 +143,7 @@ app.post('/i/:token/respond', async (c) => {
  */
 app.get('/:id/status', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'status' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -235,7 +238,7 @@ app.get('/:id/status', async (c) => {
       }),
     });
   } catch (error) {
-    console.error('[Scheduling API] Error in /status:', error);
+    log.error('Error in /status', { threadId, error });
     return c.json({
       error: 'Failed to get thread status',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -252,6 +255,7 @@ app.get('/:id/status', async (c) => {
  */
 app.post('/:id/remind', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'remind' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -335,9 +339,9 @@ app.post('/:id/remind', async (c) => {
         }
 
         remindedCount++;
-        console.log(`[Scheduling API] Reminder sent to: ${invite.email}`);
+        log.debug('Reminder sent', { email: invite.email });
       } catch (err) {
-        console.error(`[Scheduling API] Failed to send reminder to ${invite.email}:`, err);
+        log.error('Failed to send reminder', { email: invite.email, error: err });
       }
     }
 
@@ -347,7 +351,7 @@ app.post('/:id/remind', async (c) => {
       reminded_count: remindedCount,
     });
   } catch (error) {
-    console.error('[Scheduling API] Error in /remind:', error);
+    log.error('Error in /remind', { threadId, error });
     return c.json({
       error: 'Failed to send reminders',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -364,6 +368,7 @@ app.post('/:id/remind', async (c) => {
  */
 app.post('/:id/finalize', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'finalize' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -454,7 +459,7 @@ app.post('/:id/finalize', async (c) => {
       }
     }
 
-    console.log(`[Scheduling API] Thread ${threadId} finalized manually by user ${userId}`);
+    log.info('Thread finalized manually', { threadId, userId });
 
     return c.json({
       success: true,
@@ -468,7 +473,7 @@ app.post('/:id/finalize', async (c) => {
       },
     });
   } catch (error) {
-    console.error('[Scheduling API] Error in /finalize:', error);
+    log.error('Error in /finalize', { threadId, error });
     return c.json({
       error: 'Failed to finalize thread',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -485,6 +490,7 @@ app.post('/:id/finalize', async (c) => {
  */
 app.put('/:id/rule', async (c) => {
   const { env } = c;
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'rule' });
   const userId = await getUserIdFromContext(c as any);
   const threadId = c.req.param('id');
 
@@ -530,7 +536,7 @@ app.put('/:id/rule', async (c) => {
       WHERE thread_id = ?
     `).bind(JSON.stringify(rule_json), threadId).run();
 
-    console.log(`[Scheduling API] Updated attendance rule for thread ${threadId}`);
+    log.info('Updated attendance rule', { threadId });
 
     return c.json({
       success: true,
@@ -538,7 +544,7 @@ app.put('/:id/rule', async (c) => {
       rule: rule_json,
     });
   } catch (error) {
-    console.error('[Scheduling API] Error in /rule:', error);
+    log.error('Error in /rule', { threadId, error });
     return c.json({
       error: 'Failed to update attendance rule',
       details: error instanceof Error ? error.message : 'Unknown error',
@@ -550,6 +556,7 @@ app.put('/:id/rule', async (c) => {
  * Helper: Check and auto-finalize if conditions met
  */
 async function checkAndAutoFinalize(env: Env, threadId: string): Promise<void> {
+  const log = createLogger(env, { module: 'SchedulingAPI', handler: 'autoFinalize' });
   try {
     // Get attendance rule
     const rule = await env.DB.prepare(`
@@ -608,10 +615,10 @@ async function checkAndAutoFinalize(env: Env, threadId: string): Promise<void> {
         UPDATE scheduling_threads SET status = 'confirmed' WHERE id = ?
       `).bind(threadId).run();
 
-      console.log(`[Scheduling API] Auto-finalized thread ${threadId} with slot ${evalResult.recommendation.slot_id}`);
+      log.info('Auto-finalized thread', { threadId, slotId: evalResult.recommendation.slot_id });
     }
   } catch (error) {
-    console.error('[Scheduling API] Error in checkAndAutoFinalize:', error);
+    log.error('Error in checkAndAutoFinalize', { threadId, error });
   }
 }
 
