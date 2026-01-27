@@ -50,7 +50,7 @@ const RELATIVE_DATE_PATTERNS: Array<{ pattern: RegExp; resolver: () => Date }> =
 ];
 
 // 絶対日付パターン（M/D, M月D日）
-const ABSOLUTE_DATE_PATTERN = /(\d{1,2})[\/月](\d{1,2})日?/;
+const ABSOLUTE_DATE_PATTERN = /(\d{1,2})[/月](\d{1,2})日?/;
 
 // 時刻パターン
 const TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?/;
