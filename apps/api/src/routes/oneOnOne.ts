@@ -263,7 +263,7 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
     if (mode === 'email') {
       messageForChat = `了解です。${invitee.name}さんにメールで確認を送りますね。\n（固定候補：${slotLabel}）\n返事が来たらお知らせします。`;
     } else {
-      messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n\n📅 固定候補：${slotLabel}\n\n次のURLを${invitee.name}さんに送ってください：\n${shareUrl}`;
+      messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n\n📅 固定候補：${slotLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから「承諾」か「別日希望」を選んでください。\n${shareUrl}\n---`;
     }
 
     const response: OneOnOneFixedPrepareResponse = {
