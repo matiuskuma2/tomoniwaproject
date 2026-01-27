@@ -368,13 +368,14 @@ test('候補3つで招待リンク発行', async ({ page }) => {
 
 ## 5. DoD（Definition of Done）
 
-- [ ] `classifier/oneOnOne.ts` に複数候補検出ロジック追加
-- [ ] `executors/oneOnOne.ts` に `executeOneOnOneCandidates()` 追加
-- [ ] `apiExecutor.ts` で `schedule.1on1.candidates3` を呼び分け
-- [ ] TypeScript コンパイルエラーなし
-- [ ] 単体テスト追加（classifier）
+- [x] `classifier/oneOnOne.ts` に複数候補検出ロジック追加 ✅ (2026-01-27)
+- [x] `executors/oneOnOne.ts` に `executeOneOnOneCandidates()` 追加 ✅ (2026-01-27)
+- [x] `apiExecutor.ts` で `schedule.1on1.candidates3` を呼び分け ✅ (2026-01-27)
+- [x] `classifier/types.ts` に `schedule.1on1.candidates3` を IntentType に追加 ✅ (2026-01-27)
+- [x] TypeScript コンパイルエラーなし ✅ (2026-01-27)
+- [x] 単体テスト追加（classifier）✅ 13パターン回帰テスト (2026-01-27)
 - [ ] 手動テスト: チャット入力→API→レスポンス確認
-- [ ] PR作成・CIパス・マージ
+- [x] main ブランチにマージ ✅ (2026-01-27)
 
 ---
 
@@ -401,10 +402,10 @@ test('候補3つで招待リンク発行', async ({ page }) => {
 
 ## 8. 次のステップ
 
-1. ✅ 計画書レビュー
-2. ⏳ classifier 実装
-3. ⏳ executor 実装
-4. ⏳ 単体テスト
-5. ⏳ 手動テスト
-6. ⏳ PR作成・マージ
+1. ✅ 計画書レビュー (2026-01-27)
+2. ✅ classifier 実装 (2026-01-27)
+3. ✅ executor 実装 (2026-01-27)
+4. ✅ 単体テスト (2026-01-27)
+5. ⏳ 手動テスト（フロントエンドデプロイ後）
+6. ✅ main マージ (2026-01-27)
 7. ⏳ PR-B1-E2E 着手
