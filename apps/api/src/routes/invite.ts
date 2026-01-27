@@ -813,6 +813,82 @@ app.post('/:token/respond', async (c) => {
           proposal_version_at_response, responded_at, created_at
         ) VALUES (?, ?, ?, ?, ?, 'selected', ?, datetime('now'), datetime('now'))
       `).bind(selectionId, invite.thread_id, invite.id, invite.invitee_key, selected_slot_id, currentProposalVersion).run();
+      
+      // ============================================================
+      // v1.2: 前日リマインダー予約
+      // ============================================================
+      try {
+        // 選択されたスロットの情報を取得
+        const slotInfo = await env.DB.prepare(`
+          SELECT start_at, end_at, timezone FROM scheduling_slots WHERE slot_id = ?
+        `).bind(selected_slot_id).first<{ start_at: string; end_at: string; timezone: string | null }>();
+        
+        if (slotInfo) {
+          // 前日 09:00 JST を計算
+          const slotDate = new Date(slotInfo.start_at);
+          const remindDate = new Date(slotDate);
+          remindDate.setDate(remindDate.getDate() - 1);  // 前日
+          remindDate.setUTCHours(0, 0, 0, 0);  // JST 09:00 = UTC 00:00
+          
+          const now = new Date();
+          // リマインド日時が未来の場合のみ予約
+          if (remindDate > now) {
+            const reminderId = `rem-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+            const dedupeKey = `${invite.thread_id}:${invite.id}:${remindDate.toISOString()}`;
+            
+            // スレッド情報取得（metadata用）
+            const threadInfo = await env.DB.prepare(`
+              SELECT title, organizer_user_id FROM scheduling_threads WHERE id = ?
+            `).bind(invite.thread_id).first<{ title: string | null; organizer_user_id: string }>();
+            
+            // オーガナイザー名取得
+            let organizerName = 'ユーザー';
+            if (threadInfo?.organizer_user_id) {
+              const organizer = await env.DB.prepare(`
+                SELECT display_name, email FROM users WHERE id = ?
+              `).bind(threadInfo.organizer_user_id).first<{ display_name: string | null; email: string }>();
+              organizerName = organizer?.display_name || organizer?.email?.split('@')[0] || 'ユーザー';
+            }
+            
+            const metadata = JSON.stringify({
+              title: threadInfo?.title || '打ち合わせ',
+              slot_start_at: slotInfo.start_at,
+              slot_end_at: slotInfo.end_at,
+              organizer_name: organizerName,
+            });
+            
+            // scheduled_reminders に INSERT (dedupe_key のユニーク制約で二重作成を防止)
+            await env.DB.prepare(`
+              INSERT OR IGNORE INTO scheduled_reminders (
+                id, thread_id, invite_id, token, to_email, to_name,
+                remind_at, remind_type, status, dedupe_key, metadata, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, 'day_before', 'scheduled', ?, ?, datetime('now'), datetime('now'))
+            `).bind(
+              reminderId,
+              invite.thread_id,
+              invite.id,
+              token,
+              invite.email,
+              invite.candidate_name,
+              remindDate.toISOString(),
+              dedupeKey,
+              metadata
+            ).run();
+            
+            log.debug('Scheduled day-before reminder', { 
+              inviteId: invite.id, 
+              remindAt: remindDate.toISOString(),
+              slotStartAt: slotInfo.start_at
+            });
+          }
+        }
+      } catch (reminderError) {
+        // リマインダー予約失敗は承諾処理自体を失敗させない（warn ログのみ）
+        log.warn('Failed to schedule reminder', { 
+          inviteId: invite.id, 
+          error: reminderError instanceof Error ? reminderError.message : String(reminderError)
+        });
+      }
     }
 
     // Phase2: Record decline with proposal_version_at_response
