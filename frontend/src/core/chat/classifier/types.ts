@@ -71,6 +71,8 @@ export type IntentType =
   | 'schedule.fail.report'     // CONV-1.2: 失敗報告
   // CONV-1.2: 雑談
   | 'chat.general'             // CONV-1.2: 雑談
+  // v1.0: 1対1予定調整（固定日時）
+  | 'schedule.1on1.fixed'      // v1.0: 1対1固定日時で招待リンク発行
   | 'unknown';
 
 export interface IntentResult {

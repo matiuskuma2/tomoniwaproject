@@ -120,6 +120,12 @@ export {
   formatProposalLabel,
 } from './autoPropose';
 
+// OneOnOne executors (v1.0: 1対1予定調整)
+export {
+  executeOneOnOneFixed,
+  formatDateTimeJP,
+} from './oneOnOne';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

@@ -26,6 +26,7 @@ import { classifyPropose } from './propose';
 import { classifyRemind } from './remind';
 import { classifyThread } from './thread';
 import { classifyPreference } from './preference';
+import { classifyOneOnOne } from './oneOnOne';
 
 /**
  * 分類器チェーン（固定順序）
@@ -37,9 +38,10 @@ const classifierChain: ClassifierFn[] = [
   classifyLists,            // 3. Beta A リスト5コマンド
   classifyCalendar,         // 4. P1 カレンダー読み取り
   classifyPreference,       // 5. P3-PREF 好み設定
-  classifyPropose,          // 6. 候補提案系
-  classifyRemind,           // 7. リマインド系
-  classifyThread,           // 8. スレッド操作系
+  classifyOneOnOne,         // 6. v1.0: 1対1予定調整（固定日時）
+  classifyPropose,          // 7. 候補提案系
+  classifyRemind,           // 8. リマインド系
+  classifyThread,           // 9. スレッド操作系
 ];
 
 /**

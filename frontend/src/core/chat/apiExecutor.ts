@@ -76,6 +76,8 @@ import {
   executeProposeForSplitCancel as executeProposeForSplitCancelFromExecutors,
   // Phase 1-3a: Shared helpers
   getStatusWithCache,
+  // v1.0: 1対1予定調整
+  executeOneOnOneFixed as executeOneOnOneFixedFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -553,6 +555,10 @@ export async function executeIntent(
     
     case 'preference.clear':
       return executePreferenceClear();
+    
+    // v1.0: 1対1予定調整（固定日時スタート）
+    case 'schedule.1on1.fixed':
+      return executeOneOnOneFixedFromExecutors(intentResult);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）
