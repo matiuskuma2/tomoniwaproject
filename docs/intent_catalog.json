@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026-01-25",
+  "version": "2026-01-27",
   "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
 
   "principles": {
@@ -101,6 +101,61 @@
       },
       "executor": "thread.invites",
       "api": "GET /api/threads/:id/invites"
+    },
+
+    {
+      "intent": "schedule.1on1.fixed",
+      "category": "schedule.1on1",
+      "description": "1対1固定日時の招待リンク発行（メール未知でもOK）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "invitee": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "name": { "type": "string", "required": true, "description": "相手の名前" },
+            "email": { "type": "string", "format": "email", "optional": true, "description": "メールアドレス（未知でもOK）" }
+          }
+        },
+        "slot": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "start_at": { "type": "string", "format": "date-time", "required": true, "description": "開始日時（ISO8601）" },
+            "end_at": { "type": "string", "format": "date-time", "required": true, "description": "終了日時（ISO8601）" }
+          }
+        },
+        "title": { "type": "string", "optional": true, "default": "打ち合わせ", "description": "予定タイトル" },
+        "message_hint": { "type": "string", "optional": true, "description": "相手に伝えるメッセージ" },
+        "send_via": { "type": "string", "enum": ["share_link", "email"], "default": "share_link", "description": "送信手段" }
+      },
+      "clarify_rules": {
+        "start_at_missing": "いつの予定ですか？日時を教えてください。",
+        "invitee_name_missing": "誰との予定ですか？相手の名前を教えてください。",
+        "duration_default": 60,
+        "timezone_default": "Asia/Tokyo"
+      },
+      "outputs": {
+        "share_url": "招待リンク（https://app.tomoniwao.jp/i/:token）",
+        "message_for_chat": "AI秘書がユーザーに返す文章（コピペ用文言含む）",
+        "thread_id": "作成されたスレッドID",
+        "invite_token": "招待トークン",
+        "mode": "share_link または email"
+      },
+      "executor": "frontend:executors/oneOnOne.ts::executeOneOnOneFixed",
+      "api": "POST /api/one-on-one/fixed/prepare",
+      "examples": [
+        "Aさんと来週木曜17時から1時間打ち合わせしたい",
+        "田中さんと明日の14時から30分ミーティング",
+        "佐藤さんと1/30の10時から予定調整お願い"
+      ],
+      "ui_flow": {
+        "invite_page": "/i/:token - 固定1枠UI（「この日時でOKですか？」）",
+        "thank_you_page": "/i/:token/thank-you - 承諾後（Googleカレンダー追加 + 成長導線）"
+      },
+      "notes": "v1.0 AI秘書の最小構成。メールアドレス未知でもURL発行で完結する。"
     },
 
     {
@@ -690,6 +745,7 @@
     "calendar.read": "カレンダー参照（安全）",
     "calendar.read.multi": "複数参加者のカレンダー参照",
     "thread.read": "スレッド状態参照",
+    "schedule.1on1": "1対1予定調整（AI秘書v1）",
     "invite.prepare": "招待準備（確認必要）",
     "pending.decide": "送信決定",
     "schedule.propose": "候補提案",
