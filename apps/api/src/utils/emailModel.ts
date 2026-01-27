@@ -31,7 +31,7 @@ export interface EmailBlock {
   items?: string[];
 }
 
-export type EmailTemplateType = 'invite' | 'additional_slots' | 'reminder';
+export type EmailTemplateType = 'invite' | 'additional_slots' | 'reminder' | 'one_on_one';
 
 export interface EmailModel {
   template_type: EmailTemplateType;
@@ -234,6 +234,104 @@ export function composeReminderEmailModel(params: {
   };
 }
 
+/**
+ * v1.1: 1対1固定日時招待メールのモデル生成
+ * 「この日時でOKですか？」体験を提供
+ */
+export function composeOneOnOneEmailModel(params: {
+  organizerName: string;
+  inviteeName: string;
+  title: string;
+  slot: {
+    start_at: string;
+    end_at: string;
+  };
+  messageHint?: string;
+  token?: string;
+  recipientTimezone?: string;
+}): EmailModel {
+  const { organizerName, inviteeName, title, slot, messageHint, token, recipientTimezone } = params;
+  const ctaUrl = token ? `${APP_BASE_URL}/i/${token}` : undefined;
+  
+  // 日時フォーマット
+  const startDate = new Date(slot.start_at);
+  const endDate = new Date(slot.end_at);
+  const timezone = recipientTimezone || 'Asia/Tokyo';
+  
+  const dateFormatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: timezone,
+    month: 'numeric',
+    day: 'numeric',
+    weekday: 'short',
+  });
+  const timeFormatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  
+  const dateStr = dateFormatter.format(startDate);
+  const startTimeStr = timeFormatter.format(startDate);
+  const endTimeStr = timeFormatter.format(endDate);
+  const slotLabel = `${dateStr} ${startTimeStr}〜${endTimeStr}`;
+  
+  const blocks: EmailBlock[] = [
+    {
+      type: 'intro',
+      text: `${organizerName} さんから「${title}」の日程確認が届きました。`,
+      variables_used: ['organizer_name', 'title'],
+    },
+    {
+      type: 'slots',
+      text: '📅 提案日時',
+      items: [slotLabel],
+      variables_used: ['slot_start_at', 'slot_end_at'],
+    },
+  ];
+  
+  // メッセージヒントがあれば追加
+  if (messageHint) {
+    blocks.push({
+      type: 'custom_message',
+      text: messageHint,
+      variables_used: ['message_hint'],
+    });
+  }
+  
+  blocks.push(
+    {
+      type: 'notes',
+      text: 'この日時で問題なければ「承諾する」を、別の日程をご希望の場合は「別の日程を希望する」をお選びください。',
+    },
+    {
+      type: 'cta',
+      text: '日程を確認する',
+      url: ctaUrl || '（送信時に生成されます）',
+      variables_used: ['invite_url'],
+    },
+    {
+      type: 'deadline',
+      text: LINK_EXPIRES_HOURS,
+      expires_at: LINK_EXPIRES_HOURS,
+    },
+    {
+      type: 'footer',
+      text: `このメールは Tomoniwao（トモニワオ）から送信されています。ご不明な点がございましたら、${organizerName} さんに直接お問い合わせください。`,
+      variables_used: ['organizer_name'],
+    }
+  );
+  
+  return {
+    template_type: 'one_on_one',
+    subject: `【日程確認】${organizerName}さんから「${title}」のご依頼`,
+    blocks,
+    link_expires_at: LINK_EXPIRES_HOURS,
+    recipient_timezone: timezone,
+    cta_url: ctaUrl,
+    inviter_name: organizerName,
+  };
+}
+
 // ============================================================
 // HTML/CSS Constants
 // ============================================================
@@ -271,12 +369,18 @@ const HEADER_STYLES: Record<EmailTemplateType, { bg: string; emoji: string; titl
     emoji: '⏰',
     title: '日程回答のお願い',
   },
+  one_on_one: {
+    bg: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+    emoji: '📆',
+    title: '日程確認のお願い',
+  },
 };
 
 const BUTTON_STYLES: Record<EmailTemplateType, string> = {
   invite: 'background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white !important; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);',
   additional_slots: 'background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white !important; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);',
   reminder: 'background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white !important; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);',
+  one_on_one: 'background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white !important; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);',
 };
 
 // ============================================================

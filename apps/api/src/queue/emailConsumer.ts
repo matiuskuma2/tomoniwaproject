@@ -15,6 +15,7 @@ import {
   composeInviteEmailModel,
   composeAdditionalSlotsEmailModel,
   composeReminderEmailModel,
+  composeOneOnOneEmailModel,
   renderEmailHtml,
   renderEmailText,
   APP_BASE_URL,
@@ -252,6 +253,8 @@ function generateEmailContent(job: EmailJob): { html: string; text: string } {
       return generateAdditionalSlotsEmail(job as any);
     case 'reminder':
       return generateReminderEmail(job as any);
+    case 'one_on_one':
+      return generateOneOnOneEmail(job as any);
     default:
       throw new Error(`Unknown email type: ${(job as any).type}`);
   }
@@ -493,6 +496,42 @@ function generateReminderEmail(job: EmailJob & {
     expiresAt: expiresFormatted,
     token,
     recipientTimezone: timezone,
+  });
+  
+  return {
+    html: renderEmailHtml(model),
+    text: renderEmailText(model),
+  };
+}
+
+/**
+ * v1.1: 1対1固定日時招待メール
+ * 「この日時でOKですか？」体験を提供
+ */
+function generateOneOnOneEmail(job: EmailJob & {
+  type: 'one_on_one';
+  data: {
+    token: string;
+    organizer_name: string;
+    invitee_name: string;
+    title: string;
+    slot: {
+      start_at: string;
+      end_at: string;
+    };
+    message_hint?: string;
+  };
+}): { html: string; text: string } {
+  const { token, organizer_name, invitee_name, title, slot, message_hint } = job.data;
+  
+  // v1.1: 共通モデルから生成
+  const model = composeOneOnOneEmailModel({
+    organizerName: organizer_name,
+    inviteeName: invitee_name,
+    title,
+    slot,
+    messageHint: message_hint,
+    token,
   });
   
   return {
