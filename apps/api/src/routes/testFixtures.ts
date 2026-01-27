@@ -229,6 +229,152 @@ app.delete('/one-on-one/:token', async (c) => {
 });
 
 /**
+ * Create 1-on-1 Candidates Schedule Fixture (Phase B-1)
+ * 
+ * E2Eテスト用に候補3つのスケジュールを作成
+ * 
+ * @route POST /test/fixtures/one-on-one-candidates
+ * @body {
+ *   invitee_name?: string,
+ *   invitee_email?: string,
+ *   title?: string,
+ *   slot_count?: number,      // デフォルト: 3
+ *   start_offset_hours?: number,
+ *   duration_minutes?: number
+ * }
+ */
+app.post('/one-on-one-candidates', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'one-on-one-candidates' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      invitee_name = 'テスト太郎',
+      invitee_email = 'test@example.com',
+      title = 'E2E候補3つテスト',
+      slot_count = 3,
+      start_offset_hours = 24,
+      duration_minutes = 60
+    } = body as {
+      invitee_name?: string;
+      invitee_email?: string;
+      title?: string;
+      slot_count?: number;
+      start_offset_hours?: number;
+      duration_minutes?: number;
+    };
+
+    const now = new Date();
+    const nowISO = now.toISOString();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7日後
+    
+    // IDs生成
+    const threadId = uuidv4();
+    const inviteId = uuidv4();
+    const token = `e2e-multi-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const inviteeKey = `ik-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const testUserId = 'e2e-test-user-' + Math.random().toString(36).substring(7);
+
+    // 1. scheduling_threads 作成 (slot_policy = 'fixed_multi')
+    await env.DB.prepare(`
+      INSERT INTO scheduling_threads (
+        id, organizer_user_id, title, description, status, mode, 
+        slot_policy, proposal_version, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'sent', 'one_on_one', 'fixed_multi', 1, ?, ?)
+    `).bind(
+      threadId,
+      testUserId,
+      title,
+      `E2Eテスト用fixture - 候補${slot_count}件`,
+      nowISO,
+      nowISO
+    ).run();
+
+    // 2. scheduling_slots 作成（複数枠）
+    const createdSlots: Array<{ slot_id: string; start_at: string; end_at: string }> = [];
+    for (let i = 0; i < Math.min(slot_count, 5); i++) {
+      const slotId = `slot-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}`;
+      // 各スロットは24時間ずつずらす
+      const startAt = new Date(now.getTime() + (start_offset_hours + i * 24) * 60 * 60 * 1000);
+      const endAt = new Date(startAt.getTime() + duration_minutes * 60 * 1000);
+      
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (
+          slot_id, thread_id, start_at, end_at, timezone, label, proposal_version, created_at
+        ) VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, 1, ?)
+      `).bind(
+        slotId,
+        threadId,
+        startAt.toISOString(),
+        endAt.toISOString(),
+        title,
+        nowISO
+      ).run();
+      
+      createdSlots.push({ 
+        slot_id: slotId, 
+        start_at: startAt.toISOString(), 
+        end_at: endAt.toISOString() 
+      });
+    }
+
+    // 3. thread_invites 作成
+    await env.DB.prepare(`
+      INSERT INTO thread_invites (
+        id, thread_id, token, email, candidate_name, candidate_reason,
+        invitee_key, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).bind(
+      inviteId,
+      threadId,
+      token,
+      invitee_email,
+      invitee_name,
+      'E2E候補3つテスト用の招待です',
+      inviteeKey,
+      expiresAt.toISOString(),
+      nowISO
+    ).run();
+
+    log.debug('E2E candidates fixture created', { threadId, slot_count: createdSlots.length, inviteId, token });
+
+    // レスポンス
+    const baseUrl = env.ENVIRONMENT === 'development' 
+      ? 'http://localhost:3000' 
+      : 'https://app.tomoniwao.jp';
+
+    return c.json({
+      success: true,
+      token,
+      thread_id: threadId,
+      invite_id: inviteId,
+      share_url: `${baseUrl}/i/${token}`,
+      slots: createdSlots,
+      invitee: {
+        name: invitee_name,
+        email: invitee_email
+      }
+    }, 201);
+
+  } catch (error) {
+    log.error('Failed to create E2E candidates fixture', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * Health check for test fixtures
  * 
  * @route GET /test/fixtures/health
@@ -240,7 +386,12 @@ app.get('/health', (c) => {
     status: 'ok',
     module: 'test-fixtures',
     environment: env.ENVIRONMENT || 'unknown',
-    available: env.ENVIRONMENT !== 'production'
+    available: env.ENVIRONMENT !== 'production',
+    endpoints: [
+      'POST /one-on-one',
+      'POST /one-on-one-candidates',
+      'DELETE /one-on-one/:token'
+    ]
   });
 });
 
