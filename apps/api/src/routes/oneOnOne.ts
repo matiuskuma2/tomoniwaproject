@@ -1,12 +1,17 @@
 /**
- * 1対1 予定調整 API（固定日時スタート）
+ * 1対1 予定調整 API
  * 
  * Phase v1.0: 最小構成で「お願い→終わったよ」体験を実現
  * - ユーザーが固定日時を指定
  * - AIが招待リンク or メール送信
  * - 相手が承諾/別日希望を返答
  * 
- * @route POST /api/one-on-one/fixed/prepare
+ * Phase B-1: 候補3つ提示
+ * - 複数の候補枠を提示
+ * - 相手が選択して承諾
+ * 
+ * @route POST /api/one-on-one/fixed/prepare      - 固定1枠（v1.0）
+ * @route POST /api/one-on-one/candidates/prepare - 候補3つ（B-1）
  */
 
 import { Hono } from 'hono';
@@ -51,6 +56,48 @@ interface OneOnOneFixedPrepareResponse {
   message_for_chat: string;
   mode: 'email' | 'share_link';
   email_queued?: boolean;  // v1.1: メール送信キュー投入済みフラグ
+  request_id: string;
+}
+
+// ============================================================
+// Types - 候補3つAPI（B-1）
+// ============================================================
+
+interface CandidateSlot {
+  start_at: string;  // ISO8601
+  end_at: string;    // ISO8601
+}
+
+interface OneOnOneCandidatesPrepareRequest {
+  /** 相手の情報 */
+  invitee: {
+    name: string;
+    email?: string;          // 任意: メールアドレスが分かる場合
+    contact_id?: string;     // 任意: contacts テーブルの ID
+  };
+  /** 候補枠（1〜5件） */
+  slots: CandidateSlot[];
+  /** 予定タイトル（省略時: 打ち合わせ） */
+  title?: string;
+  /** 相手へのメッセージ（任意） */
+  message_hint?: string;
+  /** 送信手段: email | share_link（省略時は自動判定） */
+  send_via?: 'email' | 'share_link';
+}
+
+interface OneOnOneCandidatesPrepareResponse {
+  success: boolean;
+  thread_id: string;
+  invite_token: string;
+  share_url: string;
+  slots: Array<{
+    slot_id: string;
+    start_at: string;
+    end_at: string;
+  }>;
+  message_for_chat: string;
+  mode: 'email' | 'share_link';
+  email_queued?: boolean;
   request_id: string;
 }
 
@@ -339,6 +386,272 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
 });
 
 // ============================================================
+// POST /api/one-on-one/candidates/prepare
+// 候補3つの招待を準備（リンク発行 or メール送信）
+// Phase B-1: 複数候補を提示して相手に選んでもらう
+// ============================================================
+app.post('/candidates/prepare', requireAuth, async (c) => {
+  const requestId = crypto.randomUUID();
+  const { env } = c;
+  const log = createLogger(env, { module: 'OneOnOne', handler: 'candidates/prepare', requestId });
+
+  try {
+    // 認証チェック（requireAuth で保証されているが念のため）
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
+    }
+
+    // テナントコンテキスト取得
+    const { workspaceId, ownerUserId } = getTenant(c);
+    
+    // リクエストボディ
+    const body = await c.req.json<OneOnOneCandidatesPrepareRequest>();
+    const { invitee, slots, title = '打ち合わせ', message_hint, send_via } = body;
+
+    // バリデーション: invitee.name
+    if (!invitee?.name) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'invitee.name is required',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // バリデーション: slots（1〜5件）
+    if (!slots || !Array.isArray(slots) || slots.length === 0) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'slots is required and must be a non-empty array',
+        request_id: requestId 
+      }, 400);
+    }
+    if (slots.length > 5) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'slots must have at most 5 items',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // 各スロットの検証
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      if (!slot.start_at || !slot.end_at) {
+        return c.json({ 
+          error: 'validation_error', 
+          details: `slots[${i}].start_at and slots[${i}].end_at are required`,
+          request_id: requestId 
+        }, 400);
+      }
+      const startAt = new Date(slot.start_at);
+      const endAt = new Date(slot.end_at);
+      if (isNaN(startAt.getTime()) || isNaN(endAt.getTime())) {
+        return c.json({ 
+          error: 'validation_error', 
+          details: `slots[${i}] has invalid date format`,
+          request_id: requestId 
+        }, 400);
+      }
+      if (endAt <= startAt) {
+        return c.json({ 
+          error: 'validation_error', 
+          details: `slots[${i}].end_at must be after slots[${i}].start_at`,
+          request_id: requestId 
+        }, 400);
+      }
+    }
+
+    // v1.1: send_via=email 指定時はメールアドレス必須
+    if (send_via === 'email' && !invitee.email) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'invitee.email is required when send_via is "email". Use send_via="share_link" if email is unknown.',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // モード判定
+    const mode: 'email' | 'share_link' = 
+      send_via === 'email' && invitee.email ? 'email' : 
+      send_via === 'share_link' ? 'share_link' :
+      invitee.email ? 'email' : 'share_link';
+
+    log.debug('Creating 1-on-1 candidates schedule', { 
+      inviteeName: invitee.name,
+      hasEmail: !!invitee.email,
+      mode,
+      slotCount: slots.length
+    });
+
+    // ============================================================
+    // DB操作: scheduling_thread + scheduling_slots + thread_invites
+    // ============================================================
+    const threadId = uuidv4();
+    const inviteId = uuidv4();
+    const token = generateToken();
+    const inviteeKey = await generateInviteeKey(invitee.email);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(); // 72時間後
+
+    // v1: メール未知の場合は placeholder を使用
+    const inviteeEmail = invitee.email || `guest-${token.substring(0, 8)}@placeholder.local`;
+
+    // 1. scheduling_threads 作成（draft で開始、slot_policy = 'fixed_multi'）
+    await env.DB.prepare(`
+      INSERT INTO scheduling_threads (
+        id, workspace_id, organizer_user_id, title, description, status, mode, 
+        slot_policy, proposal_version, additional_propose_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'draft', 'one_on_one', 'fixed_multi', 1, 0, ?, ?)
+    `).bind(
+      threadId,
+      workspaceId,
+      ownerUserId,
+      title,
+      message_hint || null,
+      now,
+      now
+    ).run();
+
+    // 2. scheduling_slots 作成（複数枠）
+    const createdSlots: Array<{ slot_id: string; start_at: string; end_at: string }> = [];
+    for (const slot of slots) {
+      const slotId = uuidv4();
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (
+          slot_id, thread_id, start_at, end_at, timezone, label, proposal_version, created_at
+        ) VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, 1, ?)
+      `).bind(
+        slotId,
+        threadId,
+        slot.start_at,
+        slot.end_at,
+        title,
+        now
+      ).run();
+      createdSlots.push({ slot_id: slotId, start_at: slot.start_at, end_at: slot.end_at });
+    }
+
+    // 3. thread_invites 作成
+    await env.DB.prepare(`
+      INSERT INTO thread_invites (
+        id, thread_id, token, email, candidate_name, candidate_reason, 
+        invitee_key, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).bind(
+      inviteId,
+      threadId,
+      token,
+      inviteeEmail,
+      invitee.name,
+      message_hint || null,
+      inviteeKey,
+      expiresAt,
+      now
+    ).run();
+
+    // 4. スレッド status を sent に更新（招待発行済み）
+    await env.DB.prepare(`
+      UPDATE scheduling_threads SET status = 'sent', updated_at = ? WHERE id = ?
+    `).bind(now, threadId).run();
+
+    log.debug('1-on-1 candidates schedule created', { 
+      threadId, 
+      slotCount: createdSlots.length, 
+      inviteId, 
+      token, 
+      mode 
+    });
+
+    // ============================================================
+    // メール送信（mode === 'email' の場合）
+    // ============================================================
+    let emailQueued = false;
+    if (mode === 'email' && invitee.email) {
+      try {
+        // オーガナイザー名を取得
+        const organizer = await env.DB.prepare(
+          `SELECT display_name, email FROM users WHERE id = ?`
+        ).bind(ownerUserId).first<{ display_name: string | null; email: string }>();
+        
+        const organizerName = organizer?.display_name || organizer?.email?.split('@')[0] || 'ユーザー';
+        
+        // B-1: 複数候補用メール送信
+        // 現時点では最初のスロットを代表として使用（将来的に候補リストを含むメールに拡張可能）
+        const emailQueue = new EmailQueueService(env.EMAIL_QUEUE, undefined);
+        await emailQueue.sendOneOnOneEmail({
+          to: invitee.email,
+          token,
+          organizerName,
+          inviteeName: invitee.name,
+          title,
+          slot: {
+            start_at: createdSlots[0].start_at,
+            end_at: createdSlots[0].end_at,
+          },
+          messageHint: message_hint,
+        });
+        
+        emailQueued = true;
+        log.debug('Email queued successfully', { email: invitee.email, threadId, token });
+      } catch (emailError) {
+        log.warn('Failed to queue email, falling back to share_link', { 
+          email: invitee.email, 
+          threadId,
+          error: emailError instanceof Error ? emailError.message : String(emailError)
+        });
+      }
+    }
+
+    // ============================================================
+    // レスポンス生成
+    // ============================================================
+    const baseUrl = 'https://app.tomoniwao.jp';
+    const shareUrl = `${baseUrl}/i/${token}`;
+
+    // スロットラベル生成（複数候補用）
+    const slotsLabel = createdSlots.map((slot, i) => {
+      const label = `${formatDateTimeJP(slot.start_at)}〜${new Date(slot.end_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+      return `  ${i + 1}. ${label}`;
+    }).join('\n');
+
+    // チャット用メッセージ
+    let messageForChat: string;
+    if (mode === 'email' && emailQueued) {
+      messageForChat = `了解です。${invitee.name}さん（${invitee.email}）にメールで確認を送りました📧\n\n📅 候補日時（${createdSlots.length}件）：\n${slotsLabel}\n\n返事が来たらお知らせします。`;
+    } else if (mode === 'email' && !emailQueued) {
+      messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n（メール送信に失敗したため、手動で共有してください）\n\n📅 候補日時（${createdSlots.length}件）：\n${slotsLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから都合の良い日時を選んでください。\n${shareUrl}\n---`;
+    } else {
+      messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n\n📅 候補日時（${createdSlots.length}件）：\n${slotsLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから都合の良い日時を選んでください。\n${shareUrl}\n---`;
+    }
+
+    const response: OneOnOneCandidatesPrepareResponse = {
+      success: true,
+      thread_id: threadId,
+      invite_token: token,
+      share_url: shareUrl,
+      slots: createdSlots,
+      message_for_chat: messageForChat,
+      mode,
+      email_queued: emailQueued || undefined,
+      request_id: requestId
+    };
+
+    return c.json(response, 201);
+
+  } catch (error) {
+    log.error('Failed to prepare 1-on-1 candidates schedule', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error',
+      request_id: requestId 
+    }, 500);
+  }
+});
+
+// ============================================================
 // GET /api/one-on-one/health
 // ヘルスチェック（疎通確認用）
 // ============================================================
@@ -346,7 +659,11 @@ app.get('/health', (c) => {
   return c.json({ 
     status: 'ok', 
     module: 'one-on-one',
-    version: '1.0',
+    version: '1.1',  // B-1 追加に伴いバージョンアップ
+    endpoints: [
+      'POST /fixed/prepare',
+      'POST /candidates/prepare'
+    ],
     timestamp: Math.floor(Date.now() / 1000) 
   });
 });
