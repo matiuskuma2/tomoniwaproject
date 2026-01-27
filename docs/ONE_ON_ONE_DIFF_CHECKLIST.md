@@ -156,13 +156,15 @@ interface CandidatesPrepareResponse {
 | 候補選択 | ✅ 既存流用 | ラジオボタンで選択 |
 | 承諾/辞退 | ✅ 既存流用 | `selectSlot()` / `declineInvite()` |
 
-### B-1-Intent ✅ SSOT追加済み
+### B-1-Intent ✅ 完全実装済み
 
 | 項目 | ファイル | 状態 |
 |------|---------|------|
 | SSOT | [`docs/intent_catalog.json`](../docs/intent_catalog.json) | ✅ `schedule.1on1.candidates3` 追加済み |
-| Classifier | `frontend/src/core/chat/classifier/oneOnOne.ts` | ⚠️ 要実装（PR-B1-FE） |
-| Executor | `frontend/src/core/chat/executors/oneOnOne.ts` | ⚠️ 要実装（PR-B1-FE） |
+| Classifier | [`frontend/src/core/chat/classifier/oneOnOne.ts`](../frontend/src/core/chat/classifier/oneOnOne.ts) | ✅ 複数候補検出ロジック実装済み（PR-B1-FE） |
+| Executor | [`frontend/src/core/chat/executors/oneOnOne.ts`](../frontend/src/core/chat/executors/oneOnOne.ts) | ✅ `executeOneOnOneCandidates()` 実装済み |
+| apiExecutor | [`frontend/src/core/chat/apiExecutor.ts`](../frontend/src/core/chat/apiExecutor.ts) | ✅ `schedule.1on1.candidates3` 分岐追加済み |
+| Tests | [`frontend/src/core/chat/classifier/__tests__/oneOnOne.regression.test.ts`](../frontend/src/core/chat/classifier/__tests__/oneOnOne.regression.test.ts) | ✅ 13パターン回帰テスト |
 
 #### Intent定義（案）
 
