@@ -24,6 +24,9 @@ export interface Env {
   CORS_ORIGINS: string;
   AI_FALLBACK_ENABLED?: string;
   
+  // v1.2: Reminder Controls
+  REMIND_DRY_RUN?: string;  // 'true' = dry-run mode (no actual email sending)
+  
   // Secrets (set via wrangler secret put)
   JWT_SECRET?: string;
   ENCRYPTION_KEY?: string;

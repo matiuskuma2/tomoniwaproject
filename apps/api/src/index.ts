@@ -137,6 +137,8 @@ app.get('/health', (c) => {
     router_fingerprint: VERSION.router_fingerprint,
     log_level: c.env.LOG_LEVEL || 'info',
     cors_origins: c.env.CORS_ORIGINS || '*',
+    // v1.2: Reminder dry-run switch visibility
+    remind_dry_run: c.env.REMIND_DRY_RUN === 'true',
   });
 });
 

@@ -139,13 +139,22 @@ export async function processReminders(
         }
         
         if (dryRun) {
-          // dry-run モード: ログのみ（warn で出力して観測可能に）
-          log.warn('[DRY-RUN] Would queue reminder', {
+          // dry-run モード: キュー投入せずログのみ（warn で出力して観測可能に）
+          // ただし status を 'queued' に更新して再処理を防止
+          log.warn('[DRY-RUN] Would queue reminder (marking as queued to prevent re-processing)', {
             id: reminder.id,
             to: reminder.to_email,
             title: metadata.title,
             slotStartAt: metadata.slot_start_at,
           });
+          
+          // dry-run でも queued に更新（再処理防止）
+          await env.DB.prepare(`
+            UPDATE scheduled_reminders 
+            SET status = 'dry_run_queued', updated_at = datetime('now')
+            WHERE id = ?
+          `).bind(reminder.id).run();
+          
           result.queued++;
           continue;
         }
