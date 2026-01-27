@@ -191,6 +191,40 @@ interface CandidatesPrepareResponse {
 }
 ```
 
+### B-1-E2E ✅ 完全実装済み
+
+> **PR #45**: `test(e2e): PR-B1-E2E - candidates3 E2E tests` でマージ済み（2026-01-27）
+
+| 項目 | ファイル | 状態 |
+|------|---------|------|
+| Authenticated Tests | [`frontend/e2e/one-on-one.candidates3.spec.ts`](../frontend/e2e/one-on-one.candidates3.spec.ts) | ✅ 4テストケース |
+| Smoke Tests | [`frontend/e2e/one-on-one.smoke.spec.ts`](../frontend/e2e/one-on-one.smoke.spec.ts) | ✅ candidates3 fixture 403チェック追加 |
+| Fixture | [`apps/api/src/routes/testFixtures.ts`](../apps/api/src/routes/testFixtures.ts) | ✅ `POST /test/fixtures/one-on-one-candidates` |
+
+#### E2Eテストカバレッジ
+
+| テスト | 説明 |
+|--------|------|
+| 候補3つの招待ページ表示 | multiSlotUI で3枠が表示される |
+| 候補選択→承諾→thank-you | フルフロー |
+| デフォルト選択確認 | 先頭候補がデフォルトで選択 |
+| 辞退ダイアログ | 辞退ボタンで確認ダイアログ |
+
+#### Fixture API
+
+```bash
+# 候補3つの fixture 作成（dev/staging only）
+POST /test/fixtures/one-on-one-candidates
+{
+  "invitee_name": "テスト太郎",
+  "invitee_email": "test@example.com",
+  "title": "E2E Test Meeting",
+  "slot_count": 3,
+  "start_offset_hours": 48,
+  "duration_minutes": 60
+}
+```
+
 ---
 
 ## Phase B-2: 主催者freebusyから候補生成
