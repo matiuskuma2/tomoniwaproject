@@ -159,6 +159,68 @@
     },
 
     {
+      "intent": "schedule.1on1.candidates3",
+      "category": "schedule.1on1",
+      "description": "1対1候補3つの招待リンク発行（メール未知でもOK）- Phase B-1",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "invitee": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "name": { "type": "string", "required": true, "description": "相手の名前" },
+            "email": { "type": "string", "format": "email", "optional": true, "description": "メールアドレス（未知でもOK）" }
+          }
+        },
+        "slots": {
+          "type": "array",
+          "required": true,
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "properties": {
+              "start_at": { "type": "string", "format": "date-time", "required": true },
+              "end_at": { "type": "string", "format": "date-time", "required": true }
+            }
+          },
+          "description": "候補枠（1〜5件）"
+        },
+        "title": { "type": "string", "optional": true, "default": "打ち合わせ", "description": "予定タイトル" },
+        "message_hint": { "type": "string", "optional": true, "description": "相手に伝えるメッセージ" },
+        "send_via": { "type": "string", "enum": ["share_link", "email"], "default": "share_link", "description": "送信手段" }
+      },
+      "clarify_rules": {
+        "slots_missing": "いつの候補がありますか？複数の候補日時を教えてください。",
+        "invitee_name_missing": "誰との予定ですか？相手の名前を教えてください。",
+        "duration_default": 60,
+        "timezone_default": "Asia/Tokyo"
+      },
+      "outputs": {
+        "share_url": "招待リンク（https://app.tomoniwao.jp/i/:token）",
+        "message_for_chat": "AI秘書がユーザーに返す文章（候補リスト含む）",
+        "thread_id": "作成されたスレッドID",
+        "invite_token": "招待トークン",
+        "slots": "作成された候補枠（slot_id, start_at, end_at）",
+        "mode": "share_link または email"
+      },
+      "executor": "frontend:executors/oneOnOne.ts::executeOneOnOneCandidates",
+      "api": "POST /api/one-on-one/candidates/prepare",
+      "examples": [
+        "Aさんと来週の火曜14時、水曜10時、木曜15時のどれかで打ち合わせしたい",
+        "田中さんに3つ候補を出して日程調整したい",
+        "佐藤さんと打ち合わせ、1/30 10時、1/31 14時、2/1 16時のどれかで"
+      ],
+      "ui_flow": {
+        "invite_page": "/i/:token - 複数候補UI（multiSlotUI）",
+        "thank_you_page": "/i/:token/thank-you - 承諾後（Googleカレンダー追加 + 成長導線）"
+      },
+      "notes": "Phase B-1: 候補3つ提示。slot_policy='fixed_multi'でDB登録。"
+    },
+
+    {
       "intent": "invite.prepare.emails",
       "category": "invite.prepare",
       "description": "メールアドレス貼り付けから招待準備",
