@@ -7,7 +7,7 @@
 
 export interface EmailJobBase {
   job_id: string;
-  type: 'otp' | 'invite' | 'broadcast' | 'thread_message' | 'reminder' | 'finalized' | 'additional_slots';
+  type: 'otp' | 'invite' | 'broadcast' | 'thread_message' | 'reminder' | 'finalized' | 'additional_slots' | 'one_on_one';
   to: string;
   subject: string;
   created_at: number;
@@ -91,7 +91,23 @@ export interface AdditionalSlotsEmailJob extends EmailJobBase {
   };
 }
 
-export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob | ReminderEmailJob | FinalizedEmailJob | AdditionalSlotsEmailJob;
+// v1.1: 1対1固定日時招待メール
+export interface OneOnOneEmailJob extends EmailJobBase {
+  type: 'one_on_one';
+  data: {
+    token: string;
+    organizer_name: string;
+    invitee_name: string;
+    title: string;
+    slot: {
+      start_at: string;
+      end_at: string;
+    };
+    message_hint?: string;
+  };
+}
+
+export type EmailJob = OTPEmailJob | InviteEmailJob | BroadcastEmailJob | ThreadMessageEmailJob | ReminderEmailJob | FinalizedEmailJob | AdditionalSlotsEmailJob | OneOnOneEmailJob;
 
 export class EmailQueueService {
   constructor(
@@ -254,6 +270,54 @@ export class EmailQueueService {
     }
 
     console.log(`[EmailQueue] Queued thread message email to ${options.to} (${jobId})`);
+    return jobId;
+  }
+
+  /**
+   * v1.1: 1対1固定日時の招待メール送信
+   * 「【日程確認】◯◯さんから打ち合わせのご依頼」
+   */
+  async sendOneOnOneEmail(options: {
+    to: string;
+    token: string;
+    organizerName: string;
+    inviteeName: string;
+    title: string;
+    slot: {
+      start_at: string;
+      end_at: string;
+    };
+    messageHint?: string;
+  }): Promise<string> {
+    const jobId = crypto.randomUUID();
+    const job: OneOnOneEmailJob = {
+      job_id: jobId,
+      type: 'one_on_one',
+      to: options.to,
+      subject: `【日程確認】${options.organizerName}さんから「${options.title}」のご依頼`,
+      created_at: Date.now(),
+      data: {
+        token: options.token,
+        organizer_name: options.organizerName,
+        invitee_name: options.inviteeName,
+        title: options.title,
+        slot: options.slot,
+        message_hint: options.messageHint,
+      },
+    };
+
+    await this.queue.send(job);
+
+    // Track analytics
+    if (this.analytics) {
+      this.analytics.writeDataPoint({
+        blobs: ['email_queued', 'one_on_one', options.token],
+        doubles: [Date.now()],
+        indexes: ['email_queue'],
+      });
+    }
+
+    console.log(`[EmailQueue] Queued 1-on-1 invite email to ${options.to} (${jobId})`);
     return jobId;
   }
 

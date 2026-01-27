@@ -15,6 +15,7 @@ import type { Env } from '../../../../packages/shared/src/types/env';
 import { createLogger } from '../utils/logger';
 import { requireAuth, type Variables } from '../middleware/auth';
 import { getTenant } from '../utils/workspaceContext';
+import { EmailQueueService } from '../services/emailQueue';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -49,6 +50,7 @@ interface OneOnOneFixedPrepareResponse {
   share_url: string;
   message_for_chat: string;
   mode: 'email' | 'share_link';
+  email_queued?: boolean;  // v1.1: メール送信キュー投入済みフラグ
   request_id: string;
 }
 
@@ -157,6 +159,15 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
       }, 400);
     }
 
+    // v1.1: send_via=email 指定時はメールアドレス必須
+    if (send_via === 'email' && !invitee.email) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'invitee.email is required when send_via is "email". Use send_via="share_link" if email is unknown.',
+        request_id: requestId 
+      }, 400);
+    }
+
     // モード判定
     const mode: 'email' | 'share_link' = 
       send_via === 'email' && invitee.email ? 'email' : 
@@ -244,10 +255,43 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
     // ============================================================
     // メール送信（mode === 'email' の場合）
     // ============================================================
+    let emailQueued = false;
     if (mode === 'email' && invitee.email) {
-      // v1: メール送信はキューに追加（非同期）
-      // TODO: emailQueue に投入する実装
-      log.debug('Email will be sent via queue', { email: invitee.email, threadId });
+      try {
+        // v1.1: オーガナイザー名を取得
+        const organizer = await env.DB.prepare(
+          `SELECT display_name, email FROM users WHERE id = ?`
+        ).bind(ownerUserId).first<{ display_name: string | null; email: string }>();
+        
+        const organizerName = organizer?.display_name || organizer?.email?.split('@')[0] || 'ユーザー';
+        
+        // v1.1: メール送信をキューに追加（非同期）
+        // ANALYTICS は optional なので undefined を渡す
+        const emailQueue = new EmailQueueService(env.EMAIL_QUEUE, undefined);
+        await emailQueue.sendOneOnOneEmail({
+          to: invitee.email,
+          token,
+          organizerName,
+          inviteeName: invitee.name,
+          title,
+          slot: {
+            start_at: slot.start_at,
+            end_at: slot.end_at,
+          },
+          messageHint: message_hint,
+        });
+        
+        emailQueued = true;
+        log.debug('Email queued successfully', { email: invitee.email, threadId, token });
+      } catch (emailError) {
+        // メール送信失敗はログに記録するが、API レスポンスは成功として返す
+        // （share_url は発行済みなので、ユーザーは手動共有できる）
+        log.warn('Failed to queue email, falling back to share_link', { 
+          email: invitee.email, 
+          threadId,
+          error: emailError instanceof Error ? emailError.message : String(emailError)
+        });
+      }
     }
 
     // ============================================================
@@ -260,8 +304,11 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
 
     // チャット用メッセージ
     let messageForChat: string;
-    if (mode === 'email') {
-      messageForChat = `了解です。${invitee.name}さんにメールで確認を送りますね。\n（固定候補：${slotLabel}）\n返事が来たらお知らせします。`;
+    if (mode === 'email' && emailQueued) {
+      messageForChat = `了解です。${invitee.name}さん（${invitee.email}）にメールで確認を送りました📧\n\n📅 固定候補：${slotLabel}\n\n返事が来たらお知らせします。`;
+    } else if (mode === 'email' && !emailQueued) {
+      // メール送信失敗時は share_link と同じメッセージ
+      messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n（メール送信に失敗したため、手動で共有してください）\n\n📅 固定候補：${slotLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから「承諾」か「別日希望」を選んでください。\n${shareUrl}\n---`;
     } else {
       messageForChat = `了解です。${invitee.name}さんに共有するリンクを発行しました。\n\n📅 固定候補：${slotLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから「承諾」か「別日希望」を選んでください。\n${shareUrl}\n---`;
     }
@@ -273,6 +320,7 @@ app.post('/fixed/prepare', requireAuth, async (c) => {
       share_url: shareUrl,
       message_for_chat: messageForChat,
       mode,
+      email_queued: emailQueued || undefined,
       request_id: requestId
     };
 
