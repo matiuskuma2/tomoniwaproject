@@ -1,7 +1,7 @@
 # 1対1（R0: 他人・カレンダー非共有）差分チェックシート
 
-> **Version**: 2026-01-27  
-> **Status**: 実装前計画（Phase B-1〜B-4）  
+> **Version**: 2026-01-27（B-1完了）  
+> **Status**: Phase B-1 完了、B-2〜B-4 未実装  
 > **対象**: R0（他人）のみ。R1/R2は別フェーズ。
 
 ---
@@ -70,17 +70,17 @@
 
 | Phase | 機能 | 概要 | 状態 |
 |-------|------|------|------|
-| **B-1** | 候補3つ提示 | 固定複数候補を作って相手に選ばせる | ❌ 未実装 |
+| **B-1** | 候補3つ提示 | 固定複数候補を作って相手に選ばせる | ✅ **完了** (2026-01-27) |
 | **B-2** | 主催者freebusyから候補生成 | 主催者の空きだけから3候補を作る | ❌ 未実装 |
 | **B-3** | 別日希望→再提案 | 最大2回の再提案、条件入力 | ⚠️ 部分実装 |
 | **B-4** | TimeRex型（Open Slots） | 空き枠カレンダーを提示して選ばせる | ❌ 未実装 |
 
 ---
 
-## Phase B-1: 候補3つ提示（固定複数候補）
+## Phase B-1: 候補3つ提示（固定複数候補） ✅ 完了
 
 > 「来週木〜日 午後で3つ候補送って」= 候補3枠を作って相手に選ばせる  
-> **UIは既に `multiSlotUI()` があるので、ボトルネックは APIとIntent**
+> **2026-01-27 完了**: DB, API, Intent, テストフィクスチャ全て実装・デプロイ済み
 
 ### B-1-DB（差分）
 
@@ -93,17 +93,17 @@
 | `proposal_version` | [`db/migrations/0067_add_proposal_version_to_threads.sql`](../db/migrations/0067_add_proposal_version_to_threads.sql) | 世代管理 |
 | `additional_propose_count` | 同上 | 追加候補の実行回数 |
 
-#### 追加が必要
+#### ✅ 追加済み（0082マイグレーション）
 
-| カラム | テーブル | 型 | 用途 |
-|--------|---------|---|------|
-| `slot_policy` | `scheduling_threads` | `TEXT` | `fixed_single` / `fixed_multi` / `freebusy_multi` / `open_slots` |
-| `constraints_json` | `scheduling_threads` | `TEXT` | `{"prefer":"afternoon","days":["thu","fri"],"duration":60}` |
+| カラム | テーブル | 型 | 用途 | 状態 |
+|--------|---------|---|------|------|
+| `slot_policy` | `scheduling_threads` | `TEXT` | `fixed_single` / `fixed_multi` / `freebusy_multi` / `open_slots` | ✅ |
+| `constraints_json` | `scheduling_threads` | `TEXT` | `{"prefer":"afternoon","days":["thu","fri"],"duration":60}` | ✅ |
 
-#### 推奨マイグレーション
+#### マイグレーション（適用済み）
 
 ```sql
--- db/migrations/0082_add_slot_policy_constraints_to_threads.sql
+-- db/migrations/0082_add_slot_policy_constraints_to_threads.sql ✅
 ALTER TABLE scheduling_threads 
   ADD COLUMN slot_policy TEXT DEFAULT 'fixed_single'
   CHECK(slot_policy IN ('fixed_single', 'fixed_multi', 'freebusy_multi', 'open_slots'));
@@ -115,13 +115,13 @@ CREATE INDEX IF NOT EXISTS idx_scheduling_threads_slot_policy
   ON scheduling_threads(slot_policy);
 ```
 
-### B-1-API（差分）
+### B-1-API ✅ 実装済み
 
-| 項目 | 詳細 |
-|------|------|
-| **新API** | `POST /api/one-on-one/candidates/prepare` |
-| **処理** | 3候補を生成 → `scheduling_slots` に3本INSERT → `thread_invites` 1本作成 → `share_url` を返す |
-| **参考** | [`apps/api/src/routes/oneOnOne.ts`](../apps/api/src/routes/oneOnOne.ts) の `fixed/prepare` |
+| 項目 | 詳細 | 状態 |
+|------|------|------|
+| **API** | `POST /api/one-on-one/candidates/prepare` | ✅ 本番デプロイ済み |
+| **処理** | 1〜5候補を受け取り → `scheduling_slots` に複数INSERT → `thread_invites` 1本作成 → `share_url` を返す | ✅ |
+| **実装** | [`apps/api/src/routes/oneOnOne.ts`](../apps/api/src/routes/oneOnOne.ts) | ✅ |
 
 #### Request/Response（案）
 
@@ -156,13 +156,13 @@ interface CandidatesPrepareResponse {
 | 候補選択 | ✅ 既存流用 | ラジオボタンで選択 |
 | 承諾/辞退 | ✅ 既存流用 | `selectSlot()` / `declineInvite()` |
 
-### B-1-Intent（差分）
+### B-1-Intent ✅ SSOT追加済み
 
-| 項目 | ファイル | 追加内容 |
-|------|---------|---------|
-| SSOT | [`docs/intent_catalog.json`](../docs/intent_catalog.json) | `schedule.1on1.candidates3` 追加 |
-| Classifier | `frontend/src/core/chat/classifier/oneOnOne.ts` | 分岐追加 |
-| Executor | `frontend/src/core/chat/executors/oneOnOne.ts` | API呼び分け追加 |
+| 項目 | ファイル | 状態 |
+|------|---------|------|
+| SSOT | [`docs/intent_catalog.json`](../docs/intent_catalog.json) | ✅ `schedule.1on1.candidates3` 追加済み |
+| Classifier | `frontend/src/core/chat/classifier/oneOnOne.ts` | ⚠️ 要実装（PR-B1-FE） |
+| Executor | `frontend/src/core/chat/executors/oneOnOne.ts` | ⚠️ 要実装（PR-B1-FE） |
 
 #### Intent定義（案）
 
