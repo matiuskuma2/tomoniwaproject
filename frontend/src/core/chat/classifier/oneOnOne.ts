@@ -1,15 +1,19 @@
 /**
  * classifier/oneOnOne.ts
  * v1.0: 1対1予定調整（固定日時スタート）の Intent 分類
+ * v1.1: Phase B-1 候補3つ提示対応
  * 
  * ユーザー発話例:
- * - 「Aさんと来週木曜17時から1時間、予定調整お願い」
- * - 「田中さんと打ち合わせしたい、明日14時から」
- * - 「tanaka@example.com と 1/30 10:00 で打ち合わせ」
+ * - 「Aさんと来週木曜17時から1時間、予定調整お願い」→ fixed
+ * - 「田中さんと打ち合わせしたい、明日14時から」→ fixed
+ * - 「田中さんと来週月曜10時か火曜14時で打ち合わせ」→ candidates3
+ * - 「佐藤さんに3つ候補出して日程調整」→ candidates3
+ * - 「Aさんと1/28、1/29、1/30で予定調整」→ candidates3
  * 
  * 抽出するパラメータ:
  * - person: { name, email? } - 相手の情報
- * - start_at: ISO8601 - 開始日時
+ * - start_at: ISO8601 - 開始日時（fixed用）
+ * - slots: Array<{start_at, end_at}> - 候補日時（candidates3用）
  * - duration_minutes: number - 所要時間（デフォルト60分）
  * - title: string - 予定タイトル（省略時: 打ち合わせ）
  */
@@ -60,6 +64,41 @@ const DURATION_PATTERNS = [
   { pattern: /(\d+)時間/, multiplier: 60 },
   { pattern: /(\d+)分/, multiplier: 1 },
 ];
+
+// ============================================================
+// Phase B-1: 複数候補検出パターン
+// ============================================================
+
+// 複数候補を示すキーワード（candidates3 にルーティング）
+const MULTIPLE_SLOT_KEYWORDS = [
+  '候補',
+  'いくつか',
+  '3つ',
+  '三つ',
+  '複数',
+  'どれか',
+  'どちらか',
+];
+
+// 「〜か〜」パターン（選択肢を示す）
+const ALTERNATIVE_PATTERN = /([^、,。]+?)か([^、,。]+)/;
+
+// 複数の絶対日付を検出するためのグローバルマッチパターン
+const MULTIPLE_ABSOLUTE_DATE_PATTERN = /(\d{1,2})[/月](\d{1,2})日?/g;
+
+// 複数の相対日付（曜日）を検出
+const WEEKDAY_PATTERNS = [
+  { pattern: /月曜|月(?=[、か]|$)/, day: 1 },
+  { pattern: /火曜|火(?=[、か]|$)/, day: 2 },
+  { pattern: /水曜|水(?=[、か]|$)/, day: 3 },
+  { pattern: /木曜|木(?=[、か]|$)/, day: 4 },
+  { pattern: /金曜|金(?=[、か]|$)/, day: 5 },
+  { pattern: /土曜|土(?=[、か]|$)/, day: 6 },
+  { pattern: /日曜|日(?=[、か]|$)/, day: 0 },
+];
+
+// 複数時刻を検出するパターン
+const MULTIPLE_TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?/g;
 
 // トリガーワード（これがないと1対1として認識しない）
 const TRIGGER_WORDS = [
@@ -192,12 +231,136 @@ function hasTriggerWord(input: string): boolean {
   return TRIGGER_WORDS.some(word => input.includes(word));
 }
 
+/**
+ * 複数候補キーワードが含まれているか
+ */
+function hasMultipleSlotKeyword(input: string): boolean {
+  return MULTIPLE_SLOT_KEYWORDS.some(word => input.includes(word));
+}
+
+/**
+ * 「〜か〜」パターンで日時の選択肢があるか
+ */
+function hasAlternativePattern(input: string): boolean {
+  return ALTERNATIVE_PATTERN.test(input);
+}
+
+/**
+ * 複数の日時トークンを検出（Phase B-1）
+ * 日時トークンが2つ以上あれば candidates3 候補
+ */
+function extractMultipleSlots(input: string, durationMinutes: number): Array<{start_at: string; end_at: string}> | null {
+  const slots: Array<{start_at: string; end_at: string}> = [];
+  const now = new Date();
+  const year = now.getFullYear();
+  
+  // 1. 複数の絶対日付を検出（1/28, 1/29, 1/30 など）
+  const absoluteDates: Date[] = [];
+  let absoluteMatch;
+  const absoluteRegex = new RegExp(MULTIPLE_ABSOLUTE_DATE_PATTERN.source, 'g');
+  while ((absoluteMatch = absoluteRegex.exec(input)) !== null) {
+    const month = parseInt(absoluteMatch[1], 10) - 1;
+    const day = parseInt(absoluteMatch[2], 10);
+    const date = new Date(year, month, day);
+    if (date < now) {
+      date.setFullYear(year + 1);
+    }
+    absoluteDates.push(date);
+  }
+  
+  // 2. 複数の曜日を検出（月曜か火曜、木と金 など）
+  const weekdayDates: Date[] = [];
+  const isNextWeek = input.includes('来週');
+  for (const { pattern, day } of WEEKDAY_PATTERNS) {
+    if (pattern.test(input)) {
+      const date = isNextWeek ? getNextWeekday(day) : getThisWeekday(day);
+      weekdayDates.push(date);
+    }
+  }
+  
+  // 3. 時刻を複数抽出
+  const times: Array<{hours: number; minutes: number}> = [];
+  let timeMatch;
+  const timeRegex = new RegExp(MULTIPLE_TIME_PATTERN.source, 'g');
+  while ((timeMatch = timeRegex.exec(input)) !== null) {
+    const hours = parseInt(timeMatch[1], 10);
+    const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      times.push({ hours, minutes });
+    }
+  }
+  
+  // 時刻が0個なら単一日時として処理するためnullを返す
+  if (times.length === 0) {
+    return null;
+  }
+  
+  // 4. 日付と時刻を組み合わせてスロットを生成
+  const allDates = [...absoluteDates, ...weekdayDates];
+  
+  // パターン A: 複数日付 × 1時刻（例: 1/28, 1/29, 1/30 の 14時）
+  if (allDates.length >= 2 && times.length === 1) {
+    const time = times[0];
+    for (const date of allDates) {
+      const startAt = new Date(date);
+      startAt.setHours(time.hours, time.minutes, 0, 0);
+      const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+      slots.push({
+        start_at: startAt.toISOString(),
+        end_at: endAt.toISOString(),
+      });
+    }
+    return slots.length >= 2 ? slots : null;
+  }
+  
+  // パターン B: 1日付 × 複数時刻（例: 来週木曜 10時か14時か16時）
+  if (allDates.length === 1 && times.length >= 2) {
+    const date = allDates[0];
+    for (const time of times) {
+      const startAt = new Date(date);
+      startAt.setHours(time.hours, time.minutes, 0, 0);
+      const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+      slots.push({
+        start_at: startAt.toISOString(),
+        end_at: endAt.toISOString(),
+      });
+    }
+    return slots.length >= 2 ? slots : null;
+  }
+  
+  // パターン C: 複数日付 × 複数時刻（1:1対応: 月曜10時か火曜14時）
+  if (allDates.length >= 2 && times.length >= 2 && allDates.length === times.length) {
+    for (let i = 0; i < allDates.length; i++) {
+      const startAt = new Date(allDates[i]);
+      startAt.setHours(times[i].hours, times[i].minutes, 0, 0);
+      const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+      slots.push({
+        start_at: startAt.toISOString(),
+        end_at: endAt.toISOString(),
+      });
+    }
+    return slots.length >= 2 ? slots : null;
+  }
+  
+  // パターン D: 複数日付のみ（時刻なし→デフォルト時刻が必要）
+  // この場合は clarification が必要なので null を返す
+  
+  return null;
+}
+
 // ============================================================
 // Main Classifier
 // ============================================================
 
 /**
- * 1対1固定日時の Intent 分類
+ * 1対1の Intent 分類（fixed / candidates3 分岐）
+ * 
+ * Phase B-1: 候補3つ判定ロジック
+ * - 「候補」「3つ」「いくつか」などのキーワード
+ * - 「〜か〜」パターンで複数日時
+ * - 複数の日時トークン（2つ以上）
+ * 
+ * 重要: 日時トークンが2つ以上ある場合のみ candidates3 化
  */
 export const classifyOneOnOne: ClassifierFn = (
   input: string,
@@ -220,6 +383,69 @@ export const classifyOneOnOne: ClassifierFn = (
   if (!person) {
     return null;
   }
+
+  // 所要時間を抽出（早めに抽出して複数スロット生成に使う）
+  const durationMinutes = extractDuration(input);
+
+  // タイトルを推測
+  let title = '打ち合わせ';
+  if (input.includes('ミーティング')) title = 'ミーティング';
+  if (input.includes('会議')) title = '会議';
+  if (input.includes('面談')) title = '面談';
+  if (input.includes('相談')) title = '相談';
+
+  // ============================================================
+  // Phase B-1: 候補3つ（candidates3）判定
+  // ============================================================
+  
+  // 複数候補キーワードがあるか、選択肢パターンがあるか
+  const hasMultiKeyword = hasMultipleSlotKeyword(input);
+  const hasAltPattern = hasAlternativePattern(input);
+  
+  // 複数日時スロットを抽出
+  const multipleSlots = extractMultipleSlots(input, durationMinutes);
+  
+  // candidates3 の条件:
+  // 1. 複数スロットが抽出できた（2つ以上の具体的な日時）
+  // 2. または、複数候補キーワードがあり、かつ選択肢パターンがある
+  const isCandidates3 = multipleSlots !== null && multipleSlots.length >= 2;
+  
+  if (isCandidates3 && multipleSlots) {
+    // candidates3 として返す
+    return {
+      intent: 'schedule.1on1.candidates3',
+      confidence: 0.9,
+      params: {
+        person,
+        slots: multipleSlots.slice(0, 5), // 最大5候補
+        duration_minutes: durationMinutes,
+        title,
+        rawInput: input,
+      },
+    };
+  }
+  
+  // 複数候補キーワードはあるが、具体的な日時が足りない場合
+  if (hasMultiKeyword || hasAltPattern) {
+    // 日時の clarification を要求
+    return {
+      intent: 'schedule.1on1.candidates3',
+      confidence: 0.7,
+      params: {
+        person,
+        title,
+        rawInput: input,
+      },
+      needsClarification: {
+        field: 'slots',
+        message: `${person.name || person.email}さんとの予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
+      },
+    };
+  }
+
+  // ============================================================
+  // 固定日時（fixed）判定
+  // ============================================================
 
   // 日付を抽出
   const date = extractDate(input);
@@ -258,22 +484,12 @@ export const classifyOneOnOne: ClassifierFn = (
     };
   }
 
-  // 所要時間を抽出
-  const durationMinutes = extractDuration(input);
-
   // 開始日時を組み立て
   const startAt = new Date(date);
   startAt.setHours(time.hours, time.minutes, 0, 0);
 
   // 終了日時を計算
   const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
-
-  // タイトルを推測
-  let title = '打ち合わせ';
-  if (input.includes('ミーティング')) title = 'ミーティング';
-  if (input.includes('会議')) title = '会議';
-  if (input.includes('面談')) title = '面談';
-  if (input.includes('相談')) title = '相談';
 
   return {
     intent: 'schedule.1on1.fixed',

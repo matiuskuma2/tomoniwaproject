@@ -78,6 +78,8 @@ import {
   getStatusWithCache,
   // v1.0: 1対1予定調整
   executeOneOnOneFixed as executeOneOnOneFixedFromExecutors,
+  // v1.1: Phase B-1 候補3つ
+  executeOneOnOneCandidates as executeOneOnOneCandidatesFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -559,6 +561,10 @@ export async function executeIntent(
     // v1.0: 1対1予定調整（固定日時スタート）
     case 'schedule.1on1.fixed':
       return executeOneOnOneFixedFromExecutors(intentResult);
+    
+    // v1.1: Phase B-1 候補3つ提示
+    case 'schedule.1on1.candidates3':
+      return executeOneOnOneCandidatesFromExecutors(intentResult);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）
