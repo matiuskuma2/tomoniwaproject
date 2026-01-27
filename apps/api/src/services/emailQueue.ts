@@ -61,6 +61,7 @@ export interface ReminderEmailJob extends EmailJobBase {
     custom_message?: string | null;
     expires_at: string;
     recipient_timezone?: string;  // P3-TZ2: 受信者のタイムゾーン（期限表示用）
+    scheduled_reminder_id?: string;  // PR-REMIND-4: 送信完了時に scheduled_reminders を更新するためのID
   };
 }
 

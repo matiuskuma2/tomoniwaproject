@@ -89,10 +89,18 @@ export async function processReminders(
       return result;
     }
     
-    log.info('Processing reminders', { 
-      count: reminders.results.length, 
-      dryRun 
-    });
+    // dry-run 時は warn で出力（LOG_LEVEL=warn でも観測可能にする）
+    if (dryRun) {
+      log.warn('[DRY-RUN] Processing reminders', { 
+        count: reminders.results.length, 
+        dryRun 
+      });
+    } else {
+      log.info('Processing reminders', { 
+        count: reminders.results.length, 
+        dryRun 
+      });
+    }
     
     result.processed = reminders.results.length;
     
@@ -131,8 +139,8 @@ export async function processReminders(
         }
         
         if (dryRun) {
-          // dry-run モード: ログのみ
-          log.info('[DRY-RUN] Would queue reminder', {
+          // dry-run モード: ログのみ（warn で出力して観測可能に）
+          log.warn('[DRY-RUN] Would queue reminder', {
             id: reminder.id,
             to: reminder.to_email,
             title: metadata.title,
@@ -164,6 +172,7 @@ export async function processReminders(
             inviter_name: metadata.organizer_name || 'ユーザー',
             custom_message: `明日の予定をお知らせします。`,
             expires_at: expiresAt,
+            scheduled_reminder_id: reminder.id,  // PR-REMIND-4: 送信完了時に更新するためのID
           },
         };
         

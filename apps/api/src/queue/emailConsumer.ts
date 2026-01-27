@@ -234,6 +234,31 @@ async function updateDeliveryStatus(
       .bind(resendId, job.data.delivery_id)
       .run();
   }
+
+  // PR-REMIND-4: reminder 送信完了時に scheduled_reminders を更新
+  if (job.type === 'reminder' && job.data.scheduled_reminder_id) {
+    try {
+      // metadata に resend_id を追記しつつ status を sent に更新
+      await db
+        .prepare(
+          `UPDATE scheduled_reminders 
+           SET status = 'sent',
+               sent_at = datetime('now'),
+               updated_at = datetime('now'),
+               metadata = json_set(COALESCE(metadata, '{}'), '$.resend_id', ?)
+           WHERE id = ?
+             AND status IN ('queued', 'scheduled')`
+        )
+        .bind(resendId, job.data.scheduled_reminder_id)
+        .run();
+    } catch (error) {
+      // DB更新失敗はメール送信成功には影響させない（ログのみ）
+      console.warn('[emailConsumer] Failed to update scheduled_reminders', {
+        scheduled_reminder_id: job.data.scheduled_reminder_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 /**
