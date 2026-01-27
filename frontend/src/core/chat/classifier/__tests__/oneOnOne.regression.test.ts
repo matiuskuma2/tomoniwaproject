@@ -10,7 +10,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { classifyOneOnOne } from '../oneOnOne';
-import type { IntentContext } from '../types';
 
 // ========== helpers ==========
 function normalizedInput(input: string): string {
