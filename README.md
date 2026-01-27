@@ -307,4 +307,204 @@ npx wrangler pages deploy dist --project-name webapp
 ## 📝 ライセンス
 
 Private
+
+---
+
+## 🆕 v1.0 AI秘書（1対1予定調整）
+
+### 概要
+「人にお願いする感覚で予定調整が完了する」最小構成のAI秘書体験。
+
+**ユーザー体験**
+```
+ユーザー: 「Aさんと来週木曜17時から1時間、予定調整お願い」
+AI: 「了解です。Aさんに共有するリンクを発行しました。このURLをAさんに送ってください: https://app.tomoniwao.jp/i/xxx」
+相手: /i/:token で承諾/辞退
+AI: 「Aさんとの予定が確定しました！」
+```
+
+### 新規API
+```
+POST /api/one-on-one/fixed/prepare
+Authorization: Bearer <token>
+
+{
+  "invitee": { "name": "Aさん", "email": "a@example.com" },
+  "slot": { "start_at": "2026-01-29T17:00:00+09:00", "end_at": "2026-01-29T18:00:00+09:00" },
+  "title": "打ち合わせ"
+}
+```
+
+### 関連ファイル
+- `apps/api/src/routes/oneOnOne.ts` - 1対1 API
+- `apps/api/src/routes/invite.ts` - 招待ページ (/i/:token)
+
+---
+
+## 🔧 障害時の一次切り分けフロー（新規参画者向け）
+
+### 0) まず結論：どこが怪しい？
+
+| 症状 | 疑うべき箇所 |
+|------|-------------|
+| フロントが開かない / 画面が壊れる | Frontend（Pages）|
+| APIが401/500/タイムアウト | Workers(API) |
+| 招待URLが開けない / 回答できない | `/i/:token`（invite.ts）|
+| メールが届かない / カレンダー連携が変 | Resend / Google API |
+| AI応答が止まる / 意図判定が変 | OpenAI / nlRouter |
+
+---
+
+### 1) デプロイ状態の確認（最優先）
+
+**Workers（API）**
+```bash
+curl -s https://webapp.snsrilarc.workers.dev/health | jq .
+```
+
+見るべきキー：
+- `commit_sha` / `build_time`：**いま動いてるコミット**
+- `routes_version`：想定のルータ構成か（例 `threads_split_v2`）
+- `log_level`：本番 `warn` になっているか
+- `cors_origins`：想定どおりか
+
+**Frontend（Pages）**
+```bash
+curl -s https://app.tomoniwao.jp/version.json | jq .
+```
+- `commit` が想定コミットか確認
+
+**判定**
+- WorkersとFrontendのcommitがズレてる → **デプロイの同期ズレ**（まず合わせる）
+- どちらも最新 → 次へ
+
+---
+
+### 2) CORSが原因か判定（フロントからAPI叩けない時）
+
+```bash
+# ✅ 正規Origin
+curl -sI -H "Origin: https://app.tomoniwao.jp" \
+  https://webapp.snsrilarc.workers.dev/api/health | grep -i access-control
+
+# ✅ Pages preview
+curl -sI -H "Origin: https://preview.pages.dev" \
+  https://webapp.snsrilarc.workers.dev/api/health | grep -i access-control
+
+# ❌ 不正Origin（ヘッダーなしが正）
+curl -sI -H "Origin: https://evil.com" \
+  https://webapp.snsrilarc.workers.dev/api/health | grep -i access-control || echo "OK: no CORS"
+```
+
+**判定**
+- 正規OriginでもCORSヘッダーが出ない → `CORS_ORIGINS` 設定 or middlewareの問題
+- 正規OriginはOK / evil.comはヘッダーなし → **CORSは正常**、次へ
+
+---
+
+### 3) 認証境界の確認（401の時）
+
+- `/api/*` は基本 **認証必須**
+- 401が出るなら：
+  - Bearer token / cookie が付いているか
+  - ルートが意図通り `requireAuth` 配下か
+
+**よくあるパターン**
+- 「ブラウザでは動くがcurlで401」→ curlに認証を付けてない（正常）
+- 「フロントから401」→ セッション切れ / cookie問題 / CORSでcookie送れてない（credentials + allow-origin確認）
+
+---
+
+### 4) 招待フローの切り分け（/i/:token が怪しい時）
+
+- 公開招待は **/i/:token（invite.ts）** が正
+- まずURLのtokenが生きてるかを確認（画面が出るか）
+- 「承諾/辞退を押しても進まない」場合：
+  - invite.ts 内の fetch が叩いてるAPIが落ちてる可能性
+  - まず Workers の /health で commit/build_time を確認
+
+---
+
+### 5) 依存サービス（外部）切り分け
+
+- メール不達：Resend（EMAIL_QUEUE / consumer）側
+- カレンダー：Google API / OAuth
+- AI：OpenAI / nlRouter, chat
+
+ここまでで原因が特定できない時は、**再現手順＋commit_sha＋発生時刻**を揃えてチームに渡す。
+
+---
+
+## 🔴 CIが落ちた時の典型原因（最短で復旧するチェックリスト）
+
+### A) Code Guardrails が落ちた
+
+**症状**: `Guardrail: forbid /api/threads/i/* routes` がFAIL
+
+**原因**: どこかに `/api/threads/i/` が復活（文字列含む）
+
+**対応**
+```bash
+grep -RIn "/api/threads/i/" apps/ packages/ frontend/ --include="*.ts" --include="*.tsx" --include="*.js"
+```
+- 公開招待は必ず `/i/:token` に寄せる（invite.ts）
+
+---
+
+### B) TypeScript Check が落ちた
+
+**典型原因**
+- Env型に存在しないキー参照（例：`env.APP_URL` など）
+- import後未使用
+- 型定義が古い（LoggerOptionsなど）
+
+**対応**
+- 該当ファイルのエラー行に飛ぶ → **Env型 / import / interface** を確認
+- 新しいenvキーを使うなら `packages/shared/src/types/env.ts` を更新
+
+---
+
+### C) lint-and-build が落ちた
+
+**典型原因**
+- ビルド時生成ファイルの混入（version.tsの値差分）
+- nodeバージョン差・ESM差
+- 依存更新でビルド差異
+
+**対応**
+- `apps/api/src/version.ts` は値が変わりやすいので、PR差分に混入してないか確認
+- ローカルで `npm run build` が通るか確認
+
+---
+
+### D) Unit Tests / E2E Smoke が落ちた
+
+**Unitの典型原因**
+- executor分割で import/export がズレた
+- 共有関数移動でパスが変わった
+
+**E2Eの典型原因**
+- CORSが厳しくなって preview origin が弾かれてる
+- `/health` のJSON変更で期待値が壊れた
+- 招待周りのUIが変わってセレクタが壊れた
+
+**対応**
+- 失敗したテスト名→対象機能を即特定
+- /healthの変更は **互換維持**を再確認
+- CORSは DoD コマンドで即チェック（上の3パターン）
+
+---
+
+### E) migrate-local が落ちた
+
+**典型原因**
+- migration順序不整合 / 既存テーブルとの衝突
+- SQLの方言（D1/SQLite互換）
+
+**対応**
+- 直近migrationを見て、**IF NOT EXISTS** / 外部キー / index を確認
+- ローカルD1で当てて再現する
+
+---
+
 # E2E Test Trigger
