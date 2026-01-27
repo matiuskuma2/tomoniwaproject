@@ -54,6 +54,7 @@ import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
 
 // Scheduled Tasks
 import { pruneAuditLogs } from './scheduled/pruneAuditLogs';
+import { processReminders } from './scheduled/processReminders';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -373,10 +374,23 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     );
   }
   
-  // Hourly budget check (0 * * * *)
+  // Hourly tasks (0 * * * *)
   if (cron === '0 * * * *') {
-    log.info('Running hourly budget check...');
-    // TODO: Implement budget check logic
+    log.info('Running hourly tasks...');
+    
+    // v1.2: 前日リマインダー処理
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const result = await processReminders(env);
+          log.info('Reminder processing completed', result);
+        } catch (error) {
+          log.error('Reminder processing failed', { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
+      })()
+    );
   }
 }
 
