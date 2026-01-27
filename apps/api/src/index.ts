@@ -15,6 +15,7 @@ import adminSystemRoutes from './routes/adminSystem';
 import adminAiRoutes from './routes/adminAi';
 import adminDashboardRoutes from './routes/adminDashboard';
 import testRateLimitRoutes from './routes/testRateLimit';
+import testFixturesRoutes from './routes/testFixtures';
 import authRoutes from './routes/auth';
 import otpRoutes from './routes/otp';
 import workItemsRoutes from './routes/workItems';
@@ -172,6 +173,7 @@ app.use('/test/*', async (c, next) => {
 });
 
 app.route('/test/rate-limit', testRateLimitRoutes);
+app.route('/test/fixtures', testFixturesRoutes);
 
 // Authentication Routes (Public - no auth required)
 // Note: /auth/* routes are accessed via Routes (app.tomoniwao.jp/auth/*)
