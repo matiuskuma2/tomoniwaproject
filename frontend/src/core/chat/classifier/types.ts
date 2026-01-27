@@ -73,6 +73,8 @@ export type IntentType =
   | 'chat.general'             // CONV-1.2: 雑談
   // v1.0: 1対1予定調整（固定日時）
   | 'schedule.1on1.fixed'      // v1.0: 1対1固定日時で招待リンク発行
+  // v1.1: Phase B-1 候補3つ提示
+  | 'schedule.1on1.candidates3' // v1.1: Phase B-1 候補3つ提示で招待リンク発行
   | 'unknown';
 
 export interface IntentResult {

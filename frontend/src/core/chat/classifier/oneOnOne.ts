@@ -25,9 +25,10 @@ import type { PendingState } from '../pendingTypes';
 // Patterns for 1-on-1 scheduling
 // ============================================================
 
-// 相手の名前パターン（「○○さん」「○○と」）
+// 相手の名前パターン（「○○さん」「○○と」「○○に」）
 const PERSON_PATTERNS = [
   /(.+?)さんと/,
+  /(.+?)さんに/,  // 「佐藤さんに候補出して」
   /(.+?)と(?:の|打ち合わせ|予定|ミーティング|会議)/,
 ];
 
@@ -57,7 +58,8 @@ const RELATIVE_DATE_PATTERNS: Array<{ pattern: RegExp; resolver: () => Date }> =
 const ABSOLUTE_DATE_PATTERN = /(\d{1,2})[/月](\d{1,2})日?/;
 
 // 時刻パターン
-const TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?/;
+// 注意: 「1時間」のような所要時間表現を除外するため、後続が「時間」でないことを確認
+const TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?(?!間)/;
 
 // 所要時間パターン
 const DURATION_PATTERNS = [
@@ -80,8 +82,10 @@ const MULTIPLE_SLOT_KEYWORDS = [
   'どちらか',
 ];
 
-// 「〜か〜」パターン（選択肢を示す）
-const ALTERNATIVE_PATTERN = /([^、,。]+?)か([^、,。]+)/;
+// 「〜か〜」パターン（日時の選択肢を示す）
+// 「10時か14時」「月曜か火曜」「1/28か1/29」 などのパターン
+// 誤検出防止: 「打ち合わせしたいか」のようなパターンを除外
+const ALTERNATIVE_PATTERN = /(?:\d{1,2}[時:：]|\d{1,2}月|[月火水木金土日]曜?)か(?:\d{1,2}[時:：]|\d{1,2}月|[月火水木金土日]曜?)/;
 
 // 複数の絶対日付を検出するためのグローバルマッチパターン
 const MULTIPLE_ABSOLUTE_DATE_PATTERN = /(\d{1,2})[/月](\d{1,2})日?/g;
@@ -98,7 +102,8 @@ const WEEKDAY_PATTERNS = [
 ];
 
 // 複数時刻を検出するパターン
-const MULTIPLE_TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?/g;
+// 注意: 「1時間」のような所要時間表現を除外するため、後続が「時間」でないことを確認
+const MULTIPLE_TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?(?!間)/g;
 
 // トリガーワード（これがないと1対1として認識しない）
 const TRIGGER_WORDS = [
