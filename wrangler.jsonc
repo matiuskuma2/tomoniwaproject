@@ -87,8 +87,8 @@
     "ENVIRONMENT": "production",  // Production mode: Requires Bearer token authentication
     "LOG_LEVEL": "warn",  // Production: warn/error only (perf optimization for 1000+ connections)
     "CORS_ORIGINS": "https://app.tomoniwao.jp,.pages.dev",  // Production: restrict to app domain + Pages previews
-    "AI_FALLBACK_ENABLED": "false"  // Default: Gemini-only (cost control for free tier)
-    // REMIND_DRY_RUN removed - real email sending enabled
+    "AI_FALLBACK_ENABLED": "false",  // Default: Gemini-only (cost control for free tier)
+    "REMIND_DRY_RUN": "false"  // v1.2: Reminder dry-run switch (true=no actual email, false=real sending)
   },
 
   // ============================================================
