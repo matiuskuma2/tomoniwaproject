@@ -4,21 +4,35 @@
  * 
  * テスト対象:
  * - 本番 fixture API が 403 を返すことを確認（セキュリティ検証）
- * - 無効なトークンでエラーページが表示されることを確認
+ * - 無効なトークンで not-found レスポンスが返ることを確認
  * 
- * NOTE: 完全な 1-on-1 フローテストは authenticated プロジェクトで実行
+ * NOTE: 
+ * - /i/:token は Workers API が提供するため、本番 URL に対してテスト
+ * - 完全な 1-on-1 フローテストは authenticated プロジェクトで実行
  * @see one-on-one.spec.ts
  */
 
 import { test, expect } from '@playwright/test';
 
+const PROD_API_URL = 'https://webapp.snsrilarc.workers.dev';
+
 test.describe('1-on-1 Invite Basic Checks (Smoke)', () => {
-  test('無効なトークンでエラーページが表示される', async ({ page }) => {
-    // 存在しないトークンで not-found エラーを確認
-    await page.goto('/i/invalid-token-12345');
+  test('無効なトークンで not-found エラーを返す', async ({ request }) => {
+    // /i/:token は Workers API が提供するため、本番 URL に対してテスト
+    // 存在しないトークンで 404 または not-found ページを確認
+    const response = await request.get(`${PROD_API_URL}/i/invalid-token-12345`);
     
-    // エラーページが表示されることを確認
-    await expect(page.locator('text=/無効|期限/i').first()).toBeVisible({ timeout: 5000 });
+    // 404 が返るか、または HTML で「無効」を含むことを確認
+    const status = response.status();
+    
+    if (status === 404) {
+      console.log('[E2E] Invalid token returns 404 as expected');
+    } else {
+      // HTML レスポンスを確認
+      const html = await response.text();
+      expect(html.toLowerCase()).toMatch(/無効|invalid|not.?found|期限/i);
+      console.log('[E2E] Invalid token returns error page HTML');
+    }
   });
 });
 
@@ -26,9 +40,7 @@ test.describe('1-on-1 Invite Basic Checks (Smoke)', () => {
 test.describe('Production Safety Check', () => {
   test('本番環境では fixture API が 403 を返す', async ({ request }) => {
     // 本番 API に対してリクエスト
-    const prodApiUrl = 'https://webapp.snsrilarc.workers.dev';
-    
-    const response = await request.post(`${prodApiUrl}/test/fixtures/one-on-one`, {
+    const response = await request.post(`${PROD_API_URL}/test/fixtures/one-on-one`, {
       data: { invitee_name: 'Should Fail' }
     });
     
@@ -46,7 +58,7 @@ test.describe('Production Safety Check', () => {
       // クリーンアップ
       const data = await response.json();
       if (data.token) {
-        await request.delete(`${prodApiUrl}/test/fixtures/one-on-one/${data.token}`);
+        await request.delete(`${PROD_API_URL}/test/fixtures/one-on-one/${data.token}`);
       }
     }
   });
