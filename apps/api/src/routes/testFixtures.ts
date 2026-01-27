@@ -82,8 +82,16 @@ app.post('/one-on-one', async (c) => {
     const now = new Date();
     const nowISO = now.toISOString();
     
-    // 日時計算
-    const startAt = new Date(now.getTime() + start_offset_hours * 60 * 60 * 1000);
+    // ========================================
+    // フレーク防止: 「翌日」基準 + start_offset_hours
+    // CIの実行日時に関わらず常に「未来」になる
+    // ========================================
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0); // 翌日10:00基準
+    
+    // start_offset_hours は「翌日10:00」からのオフセットとして使用
+    const startAt = new Date(tomorrow.getTime() + start_offset_hours * 60 * 60 * 1000);
     const endAt = new Date(startAt.getTime() + duration_minutes * 60 * 1000);
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7日後
     
@@ -282,6 +290,17 @@ app.post('/one-on-one-candidates', async (c) => {
     const inviteeKey = `ik-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const testUserId = 'e2e-test-user-' + Math.random().toString(36).substring(7);
 
+    // ========================================
+    // フレーク防止: 「翌日00:00」基準 + 固定時刻
+    // CIの実行日時に関わらず常に「未来」になる
+    // ========================================
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0); // 翌日00:00に丸める
+    
+    // 固定時刻パターン（10:00, 14:00, 16:00, 11:00, 15:00）
+    const SLOT_HOURS = [10, 14, 16, 11, 15];
+
     // 1. scheduling_threads 作成 (slot_policy = 'fixed_multi')
     await env.DB.prepare(`
       INSERT INTO scheduling_threads (
@@ -298,11 +317,15 @@ app.post('/one-on-one-candidates', async (c) => {
     ).run();
 
     // 2. scheduling_slots 作成（複数枠）
+    // 各スロットは「翌日+i日」の固定時刻に配置
     const createdSlots: Array<{ slot_id: string; start_at: string; end_at: string }> = [];
     for (let i = 0; i < Math.min(slot_count, 5); i++) {
       const slotId = `slot-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}`;
-      // 各スロットは24時間ずつずらす
-      const startAt = new Date(now.getTime() + (start_offset_hours + i * 24) * 60 * 60 * 1000);
+      // 翌日 + i日 + 固定時刻
+      const slotDate = new Date(tomorrow);
+      slotDate.setDate(slotDate.getDate() + i);
+      slotDate.setHours(SLOT_HOURS[i % SLOT_HOURS.length], 0, 0, 0);
+      const startAt = slotDate;
       const endAt = new Date(startAt.getTime() + duration_minutes * 60 * 1000);
       
       await env.DB.prepare(`
