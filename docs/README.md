@@ -289,6 +289,7 @@ npx wrangler deploy
 - [API Reference](./API_REFERENCE.md) - All API endpoints with examples
 - [Migration History](./MIGRATION_HISTORY.md) - Database migration changelog
 - [Phase Implementation](./PHASE_IMPLEMENTATION.md) - Development phases & tickets
+- **[1対1 AI秘書 差分チェックシート](./ONE_ON_ONE_DIFF_CHECKLIST.md)** - R0(他人)向け Phase B-1〜B-4 実装前計画と対応表
 
 ---
 

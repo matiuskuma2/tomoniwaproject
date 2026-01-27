@@ -292,6 +292,7 @@ npx wrangler pages deploy dist --project-name webapp
 - `docs/architecture/FRONTEND_REFACTOR_PLAN.md` - フロントエンドリファクタリング計画
 - `docs/STATUS.md` - 実装状況
 - `docs/ADR/` - アーキテクチャ決定記録
+- **`docs/ONE_ON_ONE_DIFF_CHECKLIST.md`** - 1対1 AI秘書（R0: 他人）差分チェックシート（Phase B-1〜B-4 実装前計画）
 
 ---
 
