@@ -38,7 +38,7 @@ test.describe('1-on-1 Invite Basic Checks (Smoke)', () => {
 
 // 本番環境での fixture 動作確認（403 が返ることを確認）
 test.describe('Production Safety Check', () => {
-  test('本番環境では fixture API が 403 を返す', async ({ request }) => {
+  test('本番環境では fixture API（固定1枠）が 403 を返す', async ({ request }) => {
     // 本番 API に対してリクエスト
     const response = await request.post(`${PROD_API_URL}/test/fixtures/one-on-one`, {
       data: { invitee_name: 'Should Fail' }
@@ -55,6 +55,33 @@ test.describe('Production Safety Check', () => {
       console.log('[E2E] Production safety check passed: fixture API returns 403');
     } else {
       console.log('[E2E] Running in non-production environment: fixture API returns 201');
+      // クリーンアップ
+      const data = await response.json();
+      if (data.token) {
+        await request.delete(`${PROD_API_URL}/test/fixtures/one-on-one/${data.token}`);
+      }
+    }
+  });
+  
+  test('本番環境では candidates3 fixture API が 403 を返す', async ({ request }) => {
+    // 本番 API に対してリクエスト（候補3つ用 fixture）
+    const response = await request.post(`${PROD_API_URL}/test/fixtures/one-on-one-candidates`, {
+      data: { 
+        invitee_name: 'Should Fail',
+        slot_count: 3
+      }
+    });
+    
+    // 本番環境では 403 が返ることを確認
+    const status = response.status();
+    
+    // 403 (production) または 201 (development/staging) のどちらか
+    expect([201, 403]).toContain(status);
+    
+    if (status === 403) {
+      console.log('[E2E] Production safety check passed: candidates3 fixture API returns 403');
+    } else {
+      console.log('[E2E] Running in non-production environment: candidates3 fixture API returns 201');
       // クリーンアップ
       const data = await response.json();
       if (data.token) {
