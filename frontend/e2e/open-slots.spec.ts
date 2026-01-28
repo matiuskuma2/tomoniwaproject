@@ -131,7 +131,7 @@ test.describe('Open Slots フロー（B-4）', () => {
     console.log('[B4-E2E] Selection completed successfully');
   });
 
-  test('選択済みの枠は選択できない（競合防止）', async ({ page, request }) => {
+  test('選択済みの枠は選択できない（競合防止）', async ({ request }) => {
     // 1. Fixture 作成
     const fixtureRes = await request.post(`${apiBaseUrl}/test/fixtures/open-slots`, {
       data: {
