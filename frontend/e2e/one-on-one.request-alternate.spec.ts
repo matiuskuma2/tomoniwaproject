@@ -31,7 +31,7 @@ test.describe('1-on-1 別日希望フロー（B-3）', () => {
   let fixtureToken: string | null = null;
   let apiBaseUrl: string;
 
-  test.beforeAll(async ({ request }) => {
+  test.beforeAll(async () => {
     apiBaseUrl = getApiBaseUrl(process.env.E2E_BASE_URL);
     console.log('[B3-E2E] API Base URL:', apiBaseUrl);
   });
