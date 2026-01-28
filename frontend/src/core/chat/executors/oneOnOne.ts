@@ -3,6 +3,7 @@
  * v1.0: 1対1予定調整（固定日時スタート）の Executor
  * v1.1: Phase B-1 候補3つ提示対応
  * v1.2: Phase B-2 freebusy から候補生成
+ * v1.3: Phase B-4 Open Slots（TimeRex型公開枠）
  * 
  * ユーザーが「Aさんと来週木曜17時から1時間打ち合わせ」と言うと:
  * 1. classifyOneOnOne で Intent 判定
@@ -17,6 +18,11 @@
  * Phase B-2: 「田中さんと来週の空いてるところから候補出して」と言うと:
  * 1. classifyOneOnOne で 'schedule.1on1.freebusy' と判定
  * 2. executeOneOnOneFreebusy で /freebusy/prepare API 呼び出し
+ * 3. message_for_chat をそのままユーザーに返す
+ * 
+ * Phase B-4: 「田中さんに私の空いてる枠を共有して選んでもらって」と言うと:
+ * 1. classifyOneOnOne で 'schedule.1on1.open_slots' と判定
+ * 2. executeOneOnOneOpenSlots で /open-slots/prepare API 呼び出し
  * 3. message_for_chat をそのままユーザーに返す
  */
 
@@ -182,6 +188,84 @@ export type OneOnOneFreebusyResultData = {
 };
 
 // ============================================================
+// Types - Open Slots（Phase B-4）
+// ============================================================
+
+interface OneOnOneOpenSlotsPrepareRequest {
+  invitee: {
+    name: string;
+    email?: string;
+    contact_id?: string;
+  };
+  constraints?: {
+    time_min?: string;      // ISO8601
+    time_max?: string;      // ISO8601
+    prefer?: 'morning' | 'afternoon' | 'evening' | 'business' | 'any';
+    days?: string[];        // ['mon','tue','wed','thu','fri']
+    duration?: number;      // minutes
+    slot_interval?: number; // minutes (default: 30)
+  };
+  title?: string;
+  message_hint?: string;
+  send_via?: 'email' | 'share_link';
+  expires_in_days?: number; // default: 14
+}
+
+interface OneOnOneOpenSlotsPrepareResponse {
+  success: boolean;
+  token: string;
+  thread_id: string;
+  share_url: string;
+  slots_count: number;
+  slots: Array<{
+    slot_id: string;
+    start_at: string;
+    end_at: string;
+  }>;
+  time_range: {
+    time_min: string;
+    time_max: string;
+  };
+  constraints_used: {
+    time_min: string;
+    time_max: string;
+    prefer: string;
+    duration: number;
+    days: string[];
+    slot_interval: number;
+  };
+  message_for_chat: string;
+  expires_at: string;
+  request_id: string;
+}
+
+// ExecutionResultData 拡張 - open_slots
+export type OneOnOneOpenSlotsResultData = {
+  kind: '1on1.open_slots.prepared';
+  payload: {
+    threadId: string;
+    openSlotsToken: string;
+    shareUrl: string;
+    person: { name?: string; email?: string };
+    slotsCount: number;
+    slots: Array<{ slot_id: string; start_at: string; end_at: string }>;
+    timeRange: {
+      time_min: string;
+      time_max: string;
+    };
+    constraintsUsed: {
+      time_min: string;
+      time_max: string;
+      prefer: string;
+      duration: number;
+      days: string[];
+      slot_interval: number;
+    };
+    expiresAt: string;
+  };
+};
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -243,6 +327,30 @@ async function callOneOnOneFreebusyPrepareApi(
   token: string
 ): Promise<OneOnOneFreebusyPrepareResponse> {
   const response = await fetch(`${API_BASE_URL}/api/one-on-one/freebusy/prepare`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || error.details || `API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /api/one-on-one/open-slots/prepare を呼び出す（Phase B-4）
+ */
+async function callOneOnOneOpenSlotsPrepareApi(
+  request: OneOnOneOpenSlotsPrepareRequest,
+  token: string
+): Promise<OneOnOneOpenSlotsPrepareResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/one-on-one/open-slots/prepare`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -594,6 +702,124 @@ export async function executeOneOnOneFreebusy(
 
   } catch (error) {
     log.error('[OneOnOne] Freebusy API call failed', { error });
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // ユーザーフレンドリーなエラーメッセージ
+    if (errorMessage.includes('Unauthorized')) {
+      return {
+        success: false,
+        message: 'ログインが必要です。再度ログインしてください。',
+      };
+    }
+
+    if (errorMessage.includes('calendar_unavailable')) {
+      return {
+        success: false,
+        message: 'カレンダーに接続できませんでした。\nGoogle カレンダー連携を確認してください。',
+      };
+    }
+
+    if (errorMessage.includes('no_available_slots')) {
+      return {
+        success: false,
+        message: '指定期間に空きが見つかりませんでした。\n期間を広げるか、時間帯を変えてお試しください。',
+      };
+    }
+
+    return {
+      success: false,
+      message: `予定調整の準備中にエラーが発生しました: ${errorMessage}`,
+    };
+  }
+}
+
+// ============================================================
+// Executor - Open Slots（Phase B-4）
+// ============================================================
+
+/**
+ * 1対1 Open Slots（TimeRex型公開枠）の招待リンク発行
+ * 
+ * @param intentResult - classifyOneOnOne の結果（intent: 'schedule.1on1.open_slots'）
+ * @returns ExecutionResult
+ */
+export async function executeOneOnOneOpenSlots(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  // 認証トークンを取得
+  const token = getToken();
+  if (!token) {
+    return {
+      success: false,
+      message: 'ログインが必要です。再度ログインしてください。',
+    };
+  }
+
+  const { params } = intentResult;
+
+  log.debug('[OneOnOne] executeOneOnOneOpenSlots called', { params });
+
+  // clarification が必要な場合は早期リターン
+  if (intentResult.needsClarification) {
+    return {
+      success: true,
+      message: intentResult.needsClarification.message,
+    };
+  }
+
+  // 必須パラメータのバリデーション
+  if (!params.person) {
+    return {
+      success: false,
+      message: '相手の名前かメールアドレスを教えてください。',
+    };
+  }
+
+  try {
+    // API リクエストを組み立て
+    const request: OneOnOneOpenSlotsPrepareRequest = {
+      invitee: {
+        name: params.person.name || params.person.email || '相手',
+        email: params.person.email,
+      },
+      constraints: params.constraints,
+      title: params.title || '打ち合わせ',
+      message_hint: params.rawInput,
+      // メールアドレスがある場合は email モード、なければ share_link
+      send_via: params.person.email ? 'email' : 'share_link',
+      expires_in_days: params.expires_in_days || 14,
+    };
+
+    log.debug('[OneOnOne] Calling open-slots API', { request });
+
+    // API 呼び出し
+    const response = await callOneOnOneOpenSlotsPrepareApi(request, token);
+
+    log.debug('[OneOnOne] Open-slots API response', { response });
+
+    // 成功レスポンス
+    return {
+      success: true,
+      message: response.message_for_chat,
+      data: {
+        kind: '1on1.open_slots.prepared',
+        payload: {
+          threadId: response.thread_id,
+          openSlotsToken: response.token,
+          shareUrl: response.share_url,
+          person: params.person,
+          slotsCount: response.slots_count,
+          slots: response.slots,
+          timeRange: response.time_range,
+          constraintsUsed: response.constraints_used,
+          expiresAt: response.expires_at,
+        },
+      } as unknown as ExecutionResultData,
+    };
+
+  } catch (error) {
+    log.error('[OneOnOne] Open-slots API call failed', { error });
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
