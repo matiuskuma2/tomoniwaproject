@@ -3,7 +3,7 @@
  * Manage contact list with relationship badges
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { contactsApi } from '../core/api';
 import { 
   getRelationTypeLabel, 
@@ -12,7 +12,6 @@ import {
 } from '../core/api/relationships';
 import { 
   getRelationshipMap, 
-  getRelationTypeForUserSync,
   type RelationshipInfo 
 } from '../core/cache/relationshipsCache';
 import type { Contact } from '../core/models';
