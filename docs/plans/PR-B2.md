@@ -1,7 +1,7 @@
 # PR-B2: 主催者freebusy → 候補生成（R0: 他人）
 
 > **Version**: 2026-01-28  
-> **Status**: PR-B2-API ✅ (PR #47) / PR-B2-SSOT ✅ (PR #48) / PR-B2-FE ✅ (PR #49)  
+> **Status**: ✅ **完了** — PR-B2-API (#47) / PR-B2-SSOT (#48) / PR-B2-FE (#49) / PR-B2-E2E (#50)  
 > **依存**: PR-B1（✅ 完了）
 
 ---
@@ -305,9 +305,15 @@ test('freebusy候補3つで招待→選択→承諾→thank-you', async ({ page 
 ```
 
 **DoD**:
-- [ ] CI で常に安定して通る（日時は未来固定）
-- [ ] cleanup（fixture delete）あり
-- [ ] 候補が必ず3件表示される
+- [x] CI で常に安定して通る（日時は未来固定）
+- [x] cleanup（fixture delete）あり
+- [x] 候補が必ず3件表示される
+- [x] CI green (PR #50 merged)
+
+**実装済み**:
+- `POST /test/fixtures/freebusy-context` — busy_pattern: standard/all_busy/all_free
+- `DELETE /test/fixtures/freebusy-context/:token` — cleanup
+- `frontend/e2e/one-on-one.freebusy.spec.ts` — 7テストケース
 
 ---
 
@@ -324,9 +330,9 @@ test('freebusy候補3つで招待→選択→承諾→thank-you', async ({ page 
 
 ## 6. B-2 完了の定義（DoD）
 
-- [ ] `schedule.1on1.freebusy` が SSOT / FE / API 全て揃っている
-- [ ] 候補3つが作られ、相手が選べる（multiSlotUI）
-- [ ] E2E が CI で安定 pass（fixture で揺れ吸収）
+- [x] `schedule.1on1.freebusy` が SSOT / FE / API 全て揃っている
+- [x] 候補3つが作られ、相手が選べる（multiSlotUI）
+- [x] E2E が CI で安定 pass（fixture で揺れ吸収）
 - [ ] production で `LOG_LEVEL=warn` でも運用に必要なログは warn/error で追える
 - [ ] ドキュメント（`ONE_ON_ONE_DIFF_CHECKLIST.md`）更新
 
