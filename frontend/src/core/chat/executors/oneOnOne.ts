@@ -2,6 +2,7 @@
  * oneOnOne.ts
  * v1.0: 1対1予定調整（固定日時スタート）の Executor
  * v1.1: Phase B-1 候補3つ提示対応
+ * v1.2: Phase B-2 freebusy から候補生成
  * 
  * ユーザーが「Aさんと来週木曜17時から1時間打ち合わせ」と言うと:
  * 1. classifyOneOnOne で Intent 判定
@@ -11,6 +12,11 @@
  * Phase B-1: 「田中さんと来週月曜10時か火曜14時で打ち合わせ」と言うと:
  * 1. classifyOneOnOne で 'schedule.1on1.candidates3' と判定
  * 2. executeOneOnOneCandidates で /candidates/prepare API 呼び出し
+ * 3. message_for_chat をそのままユーザーに返す
+ * 
+ * Phase B-2: 「田中さんと来週の空いてるところから候補出して」と言うと:
+ * 1. classifyOneOnOne で 'schedule.1on1.freebusy' と判定
+ * 2. executeOneOnOneFreebusy で /freebusy/prepare API 呼び出し
  * 3. message_for_chat をそのままユーザーに返す
  */
 
@@ -110,6 +116,72 @@ export type OneOnOneCandidatesResultData = {
 };
 
 // ============================================================
+// Types - freebusy 候補生成（Phase B-2）
+// ============================================================
+
+interface OneOnOneFreebusyPrepareRequest {
+  invitee: {
+    name: string;
+    email?: string;
+    contact_id?: string;
+  };
+  constraints?: {
+    time_min?: string;      // ISO8601
+    time_max?: string;      // ISO8601
+    prefer?: 'morning' | 'afternoon' | 'evening' | 'business' | 'any';
+    days?: string[];        // ['mon','tue','wed','thu','fri']
+    duration?: number;      // minutes
+  };
+  candidate_count?: number; // default: 3
+  title?: string;
+  message_hint?: string;
+  send_via?: 'email' | 'share_link';
+}
+
+interface OneOnOneFreebusyPrepareResponse {
+  success: boolean;
+  thread_id: string;
+  invite_token: string;
+  share_url: string;
+  slots: Array<{
+    slot_id: string;
+    start_at: string;
+    end_at: string;
+  }>;
+  message_for_chat: string;
+  mode: 'email' | 'share_link';
+  email_queued?: boolean;
+  constraints_used: {
+    time_min: string;
+    time_max: string;
+    prefer: string;
+    duration: number;
+    days: string[];
+  };
+  request_id: string;
+}
+
+// ExecutionResultData 拡張 - freebusy
+export type OneOnOneFreebusyResultData = {
+  kind: '1on1.freebusy.prepared';
+  payload: {
+    threadId: string;
+    inviteToken: string;
+    shareUrl: string;
+    mode: 'email' | 'share_link';
+    person: { name?: string; email?: string };
+    slots: Array<{ slot_id: string; start_at: string; end_at: string }>;
+    constraintsUsed: {
+      time_min: string;
+      time_max: string;
+      prefer: string;
+      duration: number;
+      days: string[];
+    };
+  };
+};
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -147,6 +219,30 @@ async function callOneOnOneCandidatesPrepareApi(
   token: string
 ): Promise<OneOnOneCandidatesPrepareResponse> {
   const response = await fetch(`${API_BASE_URL}/api/one-on-one/candidates/prepare`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.error || error.details || `API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /api/one-on-one/freebusy/prepare を呼び出す（Phase B-2）
+ */
+async function callOneOnOneFreebusyPrepareApi(
+  request: OneOnOneFreebusyPrepareRequest,
+  token: string
+): Promise<OneOnOneFreebusyPrepareResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/one-on-one/freebusy/prepare`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -404,6 +500,122 @@ export async function executeOneOnOneCandidates(
       return {
         success: false,
         message: '候補日時の形式に問題があります。日時を確認してください。',
+      };
+    }
+
+    return {
+      success: false,
+      message: `予定調整の準備中にエラーが発生しました: ${errorMessage}`,
+    };
+  }
+}
+
+// ============================================================
+// Executor - freebusy から候補生成（Phase B-2）
+// ============================================================
+
+/**
+ * 1対1 freebusy から候補生成の招待リンク発行
+ * 
+ * @param intentResult - classifyOneOnOne の結果（intent: 'schedule.1on1.freebusy'）
+ * @returns ExecutionResult
+ */
+export async function executeOneOnOneFreebusy(
+  intentResult: IntentResult
+): Promise<ExecutionResult> {
+  // 認証トークンを取得
+  const token = getToken();
+  if (!token) {
+    return {
+      success: false,
+      message: 'ログインが必要です。再度ログインしてください。',
+    };
+  }
+
+  const { params } = intentResult;
+
+  log.debug('[OneOnOne] executeOneOnOneFreebusy called', { params });
+
+  // clarification が必要な場合は早期リターン
+  if (intentResult.needsClarification) {
+    return {
+      success: true,
+      message: intentResult.needsClarification.message,
+    };
+  }
+
+  // 必須パラメータのバリデーション
+  if (!params.person) {
+    return {
+      success: false,
+      message: '相手の名前かメールアドレスを教えてください。',
+    };
+  }
+
+  try {
+    // API リクエストを組み立て
+    const request: OneOnOneFreebusyPrepareRequest = {
+      invitee: {
+        name: params.person.name || params.person.email || '相手',
+        email: params.person.email,
+      },
+      constraints: params.constraints,
+      candidate_count: 3,
+      title: params.title || '打ち合わせ',
+      message_hint: params.rawInput,
+      // メールアドレスがある場合は email モード、なければ share_link
+      send_via: params.person.email ? 'email' : 'share_link',
+    };
+
+    log.debug('[OneOnOne] Calling freebusy API', { request });
+
+    // API 呼び出し
+    const response = await callOneOnOneFreebusyPrepareApi(request, token);
+
+    log.debug('[OneOnOne] Freebusy API response', { response });
+
+    // 成功レスポンス
+    return {
+      success: true,
+      message: response.message_for_chat,
+      data: {
+        kind: '1on1.freebusy.prepared',
+        payload: {
+          threadId: response.thread_id,
+          inviteToken: response.invite_token,
+          shareUrl: response.share_url,
+          mode: response.mode,
+          person: params.person,
+          slots: response.slots,
+          constraintsUsed: response.constraints_used,
+        },
+      } as unknown as ExecutionResultData,
+    };
+
+  } catch (error) {
+    log.error('[OneOnOne] Freebusy API call failed', { error });
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // ユーザーフレンドリーなエラーメッセージ
+    if (errorMessage.includes('Unauthorized')) {
+      return {
+        success: false,
+        message: 'ログインが必要です。再度ログインしてください。',
+      };
+    }
+
+    if (errorMessage.includes('calendar_unavailable')) {
+      return {
+        success: false,
+        message: 'カレンダーに接続できませんでした。\nGoogle カレンダー連携を確認してください。',
+      };
+    }
+
+    if (errorMessage.includes('no_available_slots')) {
+      return {
+        success: false,
+        message: '指定期間に空きが見つかりませんでした。\n期間を広げるか、時間帯を変えてお試しください。',
       };
     }
 
