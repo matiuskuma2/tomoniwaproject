@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026-01-28",
+  "version": "2026-01-28-b3",
   "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
 
   "principles": {
@@ -278,6 +278,66 @@
         "thank_you_page": "/i/:token/thank-you - 承諾後（Googleカレンダー追加 + 成長導線）"
       },
       "notes": "Phase B-2: 主催者freebusyから候補生成。slot_policy='freebusy_multi'でDB登録。相手のカレンダーは見ない（R0: 他人）。"
+    },
+
+    {
+      "intent": "schedule.1on1.request_alternate",
+      "category": "schedule.1on1",
+      "description": "別日提案をリクエスト（招待者が提示候補に都合が合わない場合）- Phase B-3",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "invite_token": {
+          "type": "string",
+          "required": true,
+          "description": "招待トークン"
+        },
+        "range": {
+          "type": "string",
+          "enum": ["next_week", "week_after", "any"],
+          "default": "next_week",
+          "description": "希望期間（来週/再来週/指定なし）"
+        },
+        "prefer": {
+          "type": "string",
+          "enum": ["morning", "afternoon", "evening", "any"],
+          "default": "afternoon",
+          "description": "希望時間帯"
+        },
+        "comment": {
+          "type": "string",
+          "optional": true,
+          "maxLength": 200,
+          "description": "補足コメント（任意）"
+        }
+      },
+      "clarify_rules": {
+        "max_repropose_exceeded": "再提案は最大2回までです。3回目以降はOpenSlotsをご利用ください。",
+        "invalid_token": "無効な招待トークンです。",
+        "already_responded": "この招待はすでに回答済みです。"
+      },
+      "outputs": {
+        "success": "処理成功フラグ",
+        "new_slots": "新しく生成された候補枠",
+        "new_proposal_version": "更新後の提案バージョン",
+        "new_propose_count": "累計再提案回数",
+        "max_reached": "OpenSlotsへの誘導フラグ（2回超過時true）",
+        "message": "結果メッセージ"
+      },
+      "executor": "frontend:executors/oneOnOne.ts::executeOneOnOneRequestAlternate",
+      "api": "POST /i/:token/request-alternate",
+      "examples": [
+        "この日程だと都合が悪いので、来週の午後で再提案してほしい",
+        "再来週でお願いします",
+        "午前中の候補を出してもらえますか"
+      ],
+      "ui_flow": {
+        "modal_form": "別日希望モーダル（期間・時間帯・補足コメント入力）",
+        "success": "ページリロードで新しい候補表示",
+        "max_reached": "OpenSlotsへの誘導画面表示"
+      },
+      "notes": "Phase B-3: 最大2回の再提案。3回目はOpenSlots(B-4)へ誘導。constraints_json更新、proposal_version+1。"
     },
 
     {
