@@ -33,3 +33,19 @@ export type {
   UpdateSlackSettingsResponse,
   TestSlackResponse
 } from './workspaceNotifications';
+
+// Phase D-1: Relationships API
+export { 
+  relationshipsApi,
+  getRelationTypeLabel,
+  getRelationTypeBadgeClass,
+  getPermissionPresetLabel,
+} from './relationships';
+export type { 
+  RelationType,
+  PermissionPreset,
+  Relationship,
+  RelationshipRequest,
+  RelationshipsListResponse,
+  PendingRequestsResponse,
+} from './relationships';

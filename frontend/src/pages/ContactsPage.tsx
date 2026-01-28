@@ -1,11 +1,50 @@
 /**
- * Contacts Page
- * Manage contact list with search and CRUD operations
+ * Contacts Page - Phase D-1 Updated
+ * Manage contact list with relationship badges
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { contactsApi } from '../core/api';
+import { 
+  getRelationTypeLabel, 
+  getRelationTypeBadgeClass,
+  type RelationType 
+} from '../core/api/relationships';
+import { 
+  getRelationshipMap, 
+  getRelationTypeForUserSync,
+  type RelationshipInfo 
+} from '../core/cache/relationshipsCache';
 import type { Contact } from '../core/models';
+
+// ============================================================
+// Relationship Badge Component
+// ============================================================
+
+interface RelationshipBadgeProps {
+  relationType: RelationType;
+  showStranger?: boolean;
+}
+
+function RelationshipBadge({ relationType, showStranger = false }: RelationshipBadgeProps) {
+  // Don't show badge for strangers unless explicitly requested
+  if (relationType === 'stranger' && !showStranger) {
+    return null;
+  }
+  
+  const label = getRelationTypeLabel(relationType);
+  const colorClass = getRelationTypeBadgeClass(relationType);
+  
+  return (
+    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colorClass}`}>
+      {label}
+    </span>
+  );
+}
+
+// ============================================================
+// Main Page Component
+// ============================================================
 
 export function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -13,9 +52,19 @@ export function ContactsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  
+  // Phase D-1: Relationship cache
+  const [relationshipMap, setRelationshipMap] = useState<Map<string, RelationshipInfo>>(new Map());
+  const [relationshipsLoading, setRelationshipsLoading] = useState(true);
 
+  // Load contacts
   useEffect(() => {
     loadContacts();
+  }, []);
+  
+  // Load relationships cache
+  useEffect(() => {
+    loadRelationships();
   }, []);
 
   const loadContacts = async (query?: string) => {
@@ -27,6 +76,19 @@ export function ContactsPage() {
       setError(err instanceof Error ? err.message : 'Failed to load contacts');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const loadRelationships = async () => {
+    try {
+      setRelationshipsLoading(true);
+      const map = await getRelationshipMap();
+      setRelationshipMap(map);
+    } catch (err) {
+      console.error('Failed to load relationships:', err);
+      // Non-blocking error - continue without relationship badges
+    } finally {
+      setRelationshipsLoading(false);
     }
   };
 
@@ -55,6 +117,31 @@ export function ContactsPage() {
       alert(err instanceof Error ? err.message : 'Failed to create contact');
     }
   };
+  
+  // Get relationship type for a contact
+  const getContactRelationType = (contact: Contact): RelationType => {
+    // If contact has a linked user_id, check relationships
+    if (contact.user_id) {
+      const info = relationshipMap.get(contact.user_id);
+      if (info) {
+        return info.relation_type;
+      }
+    }
+    
+    // Fallback to contact's relationship_type (converted)
+    if (contact.relationship_type) {
+      switch (contact.relationship_type) {
+        case 'family':
+          return 'family';
+        case 'coworker':
+          return 'workmate';
+        default:
+          return 'stranger';
+      }
+    }
+    
+    return 'stranger';
+  };
 
   if (loading && contacts.length === 0) {
     return (
@@ -72,6 +159,12 @@ export function ContactsPage() {
           <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
             連絡先
           </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            {relationshipsLoading 
+              ? '関係情報を読み込み中...' 
+              : `${relationshipMap.size}件の関係を取得済み`
+            }
+          </p>
         </div>
         <div className="mt-4 flex md:mt-0 md:ml-4">
           <button
@@ -116,33 +209,46 @@ export function ContactsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-gray-200">
-            {contacts.map((contact) => (
-              <li key={contact.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {contact.display_name}
-                    </p>
-                    {contact.email && (
-                      <p className="text-sm text-gray-500 truncate">{contact.email}</p>
-                    )}
-                    {contact.notes && (
-                      <p className="mt-1 text-sm text-gray-500">{contact.notes}</p>
-                    )}
-                  </div>
-                  <div className="ml-4 flex-shrink-0 flex gap-2">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                      {contact.relationship_type || contact.kind}
-                    </span>
-                    {contact.tags && contact.tags.length > 0 && (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                        {contact.tags[0]}
+            {contacts.map((contact) => {
+              const relationType = getContactRelationType(contact);
+              
+              return (
+                <li key={contact.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {contact.display_name}
+                        </p>
+                        {/* Phase D-1: Relationship Badge */}
+                        <RelationshipBadge 
+                          relationType={relationType} 
+                          showStranger={false} 
+                        />
+                      </div>
+                      {contact.email && (
+                        <p className="text-sm text-gray-500 truncate">{contact.email}</p>
+                      )}
+                      {contact.notes && (
+                        <p className="mt-1 text-sm text-gray-500">{contact.notes}</p>
+                      )}
+                    </div>
+                    <div className="ml-4 flex-shrink-0 flex gap-2">
+                      {/* Contact kind badge */}
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        {contact.kind === 'internal_user' ? '内部' : '外部'}
                       </span>
-                    )}
+                      {/* Tags */}
+                      {contact.tags && contact.tags.length > 0 && (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                          {contact.tags[0]}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
