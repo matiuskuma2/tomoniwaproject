@@ -3,6 +3,7 @@
  * v1.0: 1対1予定調整（固定日時スタート）の Intent 分類
  * v1.1: Phase B-1 候補3つ提示対応
  * v1.2: Phase B-2 freebusy から候補生成
+ * v1.3: Phase B-4 Open Slots（TimeRex型公開枠）
  * 
  * ユーザー発話例:
  * - 「Aさんと来週木曜17時から1時間、予定調整お願い」→ fixed
@@ -12,6 +13,8 @@
  * - 「Aさんと1/28、1/29、1/30で予定調整」→ candidates3
  * - 「田中さんと来週の空いてるところから候補出して」→ freebusy
  * - 「佐藤さんに2週間以内の午後で候補送って」→ freebusy
+ * - 「田中さんに私の空いてる枠を共有して選んでもらって」→ open_slots
+ * - 「佐藤さんに空き時間を公開して好きなところ選んでもらう」→ open_slots
  * 
  * 抽出するパラメータ:
  * - person: { name, email? } - 相手の情報
@@ -124,6 +127,25 @@ const FREEBUSY_KEYWORDS = [
   'カレンダーから',
   'freebusyから',
   'freebusy',
+];
+
+// ============================================================
+// Phase B-4: Open Slots 検出パターン
+// ============================================================
+
+// Open Slots（相手に選んでもらう）キーワード
+const OPEN_SLOTS_KEYWORDS = [
+  '選んでもらう',
+  '選んでもらって',
+  '選んでもらえる',
+  '好きなところを選んで',
+  '好きな時間を選んで',
+  '公開して',
+  '空き枠を共有',
+  '空きを共有',
+  'オープンスロット',
+  'open slots',
+  'openslots',
 ];
 
 // 時間帯の prefer 検出
@@ -327,6 +349,13 @@ function hasFreebusyKeyword(input: string): boolean {
 }
 
 /**
+ * Phase B-4: Open Slots キーワードが含まれているか
+ */
+function hasOpenSlotsKeyword(input: string): boolean {
+  return OPEN_SLOTS_KEYWORDS.some(word => input.toLowerCase().includes(word.toLowerCase()));
+}
+
+/**
  * Phase B-2: prefer（時間帯）を抽出
  */
 function extractPrefer(input: string): 'morning' | 'afternoon' | 'evening' | 'business' | null {
@@ -509,6 +538,47 @@ export const classifyOneOnOne: ClassifierFn = (
   if (input.includes('会議')) title = '会議';
   if (input.includes('面談')) title = '面談';
   if (input.includes('相談')) title = '相談';
+
+  // ============================================================
+  // Phase B-4: Open Slots 判定（最優先）
+  // ============================================================
+  
+  if (hasOpenSlotsKeyword(input)) {
+    // prefer と time_range を抽出
+    const prefer = extractPrefer(input);
+    const timeRange = extractTimeRange(input);
+    
+    // constraints を組み立て
+    const constraints: {
+      time_min?: string;
+      time_max?: string;
+      prefer?: 'morning' | 'afternoon' | 'evening' | 'business';
+      duration?: number;
+    } = {};
+    
+    if (timeRange) {
+      constraints.time_min = timeRange.time_min.toISOString();
+      constraints.time_max = timeRange.time_max.toISOString();
+    }
+    if (prefer) {
+      constraints.prefer = prefer;
+    }
+    if (durationMinutes !== 60) {
+      constraints.duration = durationMinutes;
+    }
+    
+    return {
+      intent: 'schedule.1on1.open_slots',
+      confidence: 0.9,
+      params: {
+        person,
+        constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+        duration_minutes: durationMinutes,
+        title,
+        rawInput: input,
+      },
+    };
+  }
 
   // ============================================================
   // Phase B-2: freebusy 判定（candidates3 より先に判定）
