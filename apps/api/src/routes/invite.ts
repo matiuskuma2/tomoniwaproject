@@ -1333,7 +1333,7 @@ app.post('/:token/request-alternate', async (c) => {
 
       // Open Slots を自動生成
       const openSlotsResult = await createOpenSlotsInternal({
-        env: { DB: env.DB, ENVIRONMENT: env.ENVIRONMENT },
+        env,
         userId: thread.organizer_user_id,
         workspaceId,
         threadId: thread.id,
