@@ -189,7 +189,41 @@ export const relationshipsApi = {
   }> {
     return api.delete(`/api/relationships/${relationshipId}`);
   },
+
+  /**
+   * Search for users by email or display name
+   */
+  async search(query: string): Promise<UserSearchResponse> {
+    const searchParams = new URLSearchParams({ q: query });
+    return api.get(`/api/relationships/search?${searchParams.toString()}`);
+  },
 };
+
+// ============================================================
+// Search Types
+// ============================================================
+
+export interface UserSearchResult {
+  id: string;
+  email: string;
+  display_name: string;
+  relationship: {
+    id: string;
+    relation_type: RelationType;
+    permission_preset: PermissionPreset | null;
+  } | null;
+  pending_request: {
+    id: string;
+    requested_type: string;
+  } | null;
+  can_request: boolean;
+}
+
+export interface UserSearchResponse {
+  query: string;
+  results: UserSearchResult[];
+  count: number;
+}
 
 // ============================================================
 // Helpers
