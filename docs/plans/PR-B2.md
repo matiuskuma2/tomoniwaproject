@@ -1,7 +1,7 @@
 # PR-B2: 主催者freebusy → 候補生成（R0: 他人）
 
-> **Version**: 2026-01-27  
-> **Status**: 計画書（実装前）  
+> **Version**: 2026-01-28  
+> **Status**: PR-B2-API ✅ 完了 (PR #47)  
 > **依存**: PR-B1（✅ 完了）
 
 ---
@@ -153,11 +153,12 @@ interface FreebusyPrepareResponse {
 | 認証なし | `{ error: 'unauthorized', message: 'ログインが必要です' }` |
 
 **DoD**:
-- [ ] curl で `freebusy/prepare` を叩くと `slots.length === 3` になる
-- [ ] 0件の場合はユーザー向けエラーメッセージを返す
-- [ ] 既存 `multiSlotUI` で表示できる（slot形式が一致）
-- [ ] `slot_policy = 'freebusy_multi'` がセットされる
-- [ ] `constraints_json` に constraints が保存される
+- [x] curl で `freebusy/prepare` を叩くと `slots.length === 3` になる
+- [x] 0件の場合はユーザー向けエラーメッセージを返す
+- [x] 既存 `multiSlotUI` で表示できる（slot形式が一致）
+- [x] `slot_policy = 'freebusy_multi'` がセットされる
+- [x] `constraints_json` に constraints が保存される
+- [x] CI green (PR #47 merged)
 
 ---
 
