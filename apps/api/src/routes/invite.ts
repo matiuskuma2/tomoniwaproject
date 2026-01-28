@@ -141,6 +141,41 @@ function getHtmlHead(title: string): string {
         .success-icon {
           animation: fadeIn 0.5s ease-out, pulse 2s ease-in-out infinite;
         }
+        /* B-3: 別日希望モーダル */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          padding: 1rem;
+        }
+        .modal-content {
+          background: white;
+          border-radius: 1rem;
+          max-width: 28rem;
+          width: 100%;
+          max-height: 90vh;
+          overflow-y: auto;
+          animation: fadeIn 0.3s ease-out;
+        }
+        .option-card {
+          border: 2px solid #E5E7EB;
+          border-radius: 0.5rem;
+          padding: 0.75rem 1rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .option-card:hover {
+          border-color: #3B82F6;
+          background: #EFF6FF;
+        }
+        .option-card.selected {
+          border-color: #3B82F6;
+          background: #DBEAFE;
+        }
       </style>
     </head>
   `;
@@ -238,10 +273,10 @@ function singleSlotUI(slot: { slot_id: string; start_at: string; end_at: string 
           
           <button 
             id="declineBtn"
-            onclick="declineInvite()"
+            onclick="showAlternateModal()"
             class="w-full btn-secondary text-gray-700 font-semibold py-3 px-6 rounded-xl flex items-center justify-center"
           >
-            <span id="declineText">別の日程を希望する</span>
+            <span id="declineText">別日を希望する</span>
             <div id="declineSpinner" class="spinner ml-2 hidden" style="border-top-color: #374151;"></div>
           </button>
         </div>
@@ -263,12 +298,165 @@ function singleSlotUI(slot: { slot_id: string; start_at: string; end_at: string 
         </p>
       </div>
 
+      <!-- B-3: 別日希望モーダル -->
+      <div id="alternateModal" class="modal-overlay hidden">
+        <div class="modal-content p-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4 text-center">別日のご希望を教えてください</h2>
+          
+          <!-- 希望期間 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">📅 希望期間</label>
+            <div class="grid grid-cols-3 gap-2">
+              <label class="option-card selected" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="next_week" checked class="hidden" />
+                <div class="text-center text-sm font-medium">来週</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="next_next_week" class="hidden" />
+                <div class="text-center text-sm font-medium">再来週</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="any" class="hidden" />
+                <div class="text-center text-sm font-medium">指定なし</div>
+              </label>
+            </div>
+          </div>
+          
+          <!-- 時間帯 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">🕒 時間帯</label>
+            <div class="grid grid-cols-4 gap-2">
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="morning" class="hidden" />
+                <div class="text-center text-sm font-medium">午前</div>
+              </label>
+              <label class="option-card selected" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="afternoon" checked class="hidden" />
+                <div class="text-center text-sm font-medium">午後</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="evening" class="hidden" />
+                <div class="text-center text-sm font-medium">夕方</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="any" class="hidden" />
+                <div class="text-center text-sm font-medium">指定なし</div>
+              </label>
+            </div>
+          </div>
+          
+          <!-- 補足 -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">📝 補足（任意）</label>
+            <input 
+              type="text" 
+              id="alternateComment" 
+              placeholder="例: 火曜はNG、15時以降だと助かります"
+              class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <!-- モーダルエラーメッセージ -->
+          <div id="modalError" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm"></div>
+          
+          <!-- ボタン -->
+          <div class="flex space-x-3">
+            <button 
+              onclick="hideAlternateModal()"
+              class="flex-1 btn-secondary text-gray-700 font-semibold py-3 px-4 rounded-xl"
+            >
+              やっぱりやめる
+            </button>
+            <button 
+              id="submitAlternateBtn"
+              onclick="submitAlternateRequest()"
+              class="flex-1 btn-primary text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center"
+            >
+              <span id="submitAlternateText">この条件で再提案する</span>
+              <div id="submitAlternateSpinner" class="spinner ml-2 hidden"></div>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <script>
         const TOKEN = '${token}';
         const SLOT_ID = '${slot.slot_id}';
         const SLOT_START = '${slot.start_at}';
         const SLOT_END = '${slot.end_at}';
         const THREAD_TITLE = '${(thread?.title || '打ち合わせ').replace(/'/g, "\\'")}';
+
+        function selectOption(element, group) {
+          document.querySelectorAll(\`input[name="\${group}"]\`).forEach(input => {
+            input.closest('.option-card').classList.remove('selected');
+          });
+          element.classList.add('selected');
+          element.querySelector('input').checked = true;
+        }
+
+        function showAlternateModal() {
+          document.getElementById('alternateModal').classList.remove('hidden');
+        }
+
+        function hideAlternateModal() {
+          document.getElementById('alternateModal').classList.add('hidden');
+          document.getElementById('modalError').classList.add('hidden');
+        }
+
+        async function submitAlternateRequest() {
+          const submitBtn = document.getElementById('submitAlternateBtn');
+          const submitSpinner = document.getElementById('submitAlternateSpinner');
+          const modalError = document.getElementById('modalError');
+          
+          const range = document.querySelector('input[name="range"]:checked')?.value || 'next_week';
+          const prefer = document.querySelector('input[name="prefer"]:checked')?.value || 'afternoon';
+          const comment = document.getElementById('alternateComment').value.trim();
+          
+          submitBtn.disabled = true;
+          submitSpinner.classList.remove('hidden');
+          modalError.classList.add('hidden');
+          
+          try {
+            const response = await fetch('/i/' + TOKEN + '/request-alternate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ range, prefer, comment })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+              if (data.max_reached) {
+                document.body.innerHTML = \`
+                  <div class="bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center fade-in">
+                      <div class="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+                        <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                      </div>
+                      <h1 class="text-2xl font-bold text-gray-800 mb-4">\${data.message}</h1>
+                      <p class="text-gray-600 mb-6">主催者に連絡して、空き時間一覧を送ってもらうようお願いしてください。</p>
+                      <p class="text-sm text-gray-500">このページは閉じて構いません</p>
+                    </div>
+                  </div>
+                \`;
+              } else {
+                window.location.reload();
+              }
+            } else {
+              modalError.textContent = data.error || data.message || '送信に失敗しました。もう一度お試しください。';
+              modalError.classList.remove('hidden');
+              submitBtn.disabled = false;
+              submitSpinner.classList.add('hidden');
+            }
+          } catch (error) {
+            modalError.textContent = 'ネットワークエラーが発生しました。接続を確認してください。';
+            modalError.classList.remove('hidden');
+            submitBtn.disabled = false;
+            submitSpinner.classList.add('hidden');
+          }
+        }
 
         function setLoading(btnId, loading) {
           const btn = document.getElementById(btnId);
@@ -307,7 +495,6 @@ function singleSlotUI(slot: { slot_id: string; start_at: string; end_at: string 
             });
             
             if (response.ok) {
-              // サンキューページへ遷移
               window.location.href = '/i/' + TOKEN + '/thank-you?slot_id=' + SLOT_ID;
             } else {
               const error = await response.json();
@@ -317,49 +504,6 @@ function singleSlotUI(slot: { slot_id: string; start_at: string; end_at: string 
           } catch (error) {
             showError('ネットワークエラーが発生しました。接続を確認してください。');
             setLoading('acceptBtn', false);
-          }
-        }
-
-        async function declineInvite() {
-          if (!confirm('別の日程をご希望ですか？\\n\\n「OK」を押すと、主催者に別日希望の連絡が届きます。')) {
-            return;
-          }
-
-          try {
-            setLoading('declineBtn', true);
-            
-            const response = await fetch('/i/' + TOKEN + '/respond', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                status: 'declined'
-              })
-            });
-
-            if (response.ok) {
-              document.body.innerHTML = \`
-                <div class="bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center min-h-screen p-4">
-                  <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center fade-in">
-                    <div class="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-                      <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                      </svg>
-                    </div>
-                    <h1 class="text-2xl font-bold text-gray-800 mb-4">別日希望を送信しました</h1>
-                    <p class="text-gray-600 mb-2">主催者に別の日程をご希望であることが伝わりました。</p>
-                    <p class="text-gray-600 mb-6">新しい候補が届くまでお待ちください。</p>
-                    <p class="text-sm text-gray-500">このページは閉じて構いません</p>
-                  </div>
-                </div>
-              \`;
-            } else {
-              const error = await response.json();
-              showError(error.error || '送信に失敗しました。もう一度お試しください。');
-              setLoading('declineBtn', false);
-            }
-          } catch (error) {
-            showError('ネットワークエラーが発生しました。接続を確認してください。');
-            setLoading('declineBtn', false);
           }
         }
       </script>
@@ -443,10 +587,10 @@ function multiSlotUI(slots: Array<{ slot_id: string; start_at: string; end_at: s
           
           <button 
             id="declineBtn"
-            onclick="declineInvite()"
+            onclick="showAlternateModal()"
             class="w-full btn-secondary text-gray-700 font-semibold py-3 px-6 rounded-xl flex items-center justify-center"
           >
-            <span id="declineText">辞退する</span>
+            <span id="declineText">別日を希望する</span>
             <div id="declineSpinner" class="spinner ml-2 hidden" style="border-top-color: #374151;"></div>
           </button>
         </div>
@@ -466,8 +610,165 @@ function multiSlotUI(slots: Array<{ slot_id: string; start_at: string; end_at: s
         </p>
       </div>
 
+      <!-- B-3: 別日希望モーダル -->
+      <div id="alternateModal" class="modal-overlay hidden">
+        <div class="modal-content p-6">
+          <h2 class="text-xl font-bold text-gray-800 mb-4 text-center">別日のご希望を教えてください</h2>
+          
+          <!-- 希望期間 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">📅 希望期間</label>
+            <div class="grid grid-cols-3 gap-2">
+              <label class="option-card selected" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="next_week" checked class="hidden" />
+                <div class="text-center text-sm font-medium">来週</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="next_next_week" class="hidden" />
+                <div class="text-center text-sm font-medium">再来週</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'range')">
+                <input type="radio" name="range" value="any" class="hidden" />
+                <div class="text-center text-sm font-medium">指定なし</div>
+              </label>
+            </div>
+          </div>
+          
+          <!-- 時間帯 -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">🕒 時間帯</label>
+            <div class="grid grid-cols-4 gap-2">
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="morning" class="hidden" />
+                <div class="text-center text-sm font-medium">午前</div>
+              </label>
+              <label class="option-card selected" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="afternoon" checked class="hidden" />
+                <div class="text-center text-sm font-medium">午後</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="evening" class="hidden" />
+                <div class="text-center text-sm font-medium">夕方</div>
+              </label>
+              <label class="option-card" onclick="selectOption(this, 'prefer')">
+                <input type="radio" name="prefer" value="any" class="hidden" />
+                <div class="text-center text-sm font-medium">指定なし</div>
+              </label>
+            </div>
+          </div>
+          
+          <!-- 補足 -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">📝 補足（任意）</label>
+            <input 
+              type="text" 
+              id="alternateComment" 
+              placeholder="例: 火曜はNG、15時以降だと助かります"
+              class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <!-- モーダルエラーメッセージ -->
+          <div id="modalError" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm"></div>
+          
+          <!-- ボタン -->
+          <div class="flex space-x-3">
+            <button 
+              onclick="hideAlternateModal()"
+              class="flex-1 btn-secondary text-gray-700 font-semibold py-3 px-4 rounded-xl"
+            >
+              やっぱりやめる
+            </button>
+            <button 
+              id="submitAlternateBtn"
+              onclick="submitAlternateRequest()"
+              class="flex-1 btn-primary text-white font-semibold py-3 px-4 rounded-xl flex items-center justify-center"
+            >
+              <span id="submitAlternateText">この条件で再提案する</span>
+              <div id="submitAlternateSpinner" class="spinner ml-2 hidden"></div>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <script>
         const TOKEN = '${token}';
+
+        function selectOption(element, group) {
+          document.querySelectorAll(\`input[name="\${group}"]\`).forEach(input => {
+            input.closest('.option-card').classList.remove('selected');
+          });
+          element.classList.add('selected');
+          element.querySelector('input').checked = true;
+        }
+
+        function showAlternateModal() {
+          document.getElementById('alternateModal').classList.remove('hidden');
+        }
+
+        function hideAlternateModal() {
+          document.getElementById('alternateModal').classList.add('hidden');
+          document.getElementById('modalError').classList.add('hidden');
+        }
+
+        async function submitAlternateRequest() {
+          const submitBtn = document.getElementById('submitAlternateBtn');
+          const submitText = document.getElementById('submitAlternateText');
+          const submitSpinner = document.getElementById('submitAlternateSpinner');
+          const modalError = document.getElementById('modalError');
+          
+          // 選択値取得
+          const range = document.querySelector('input[name="range"]:checked')?.value || 'next_week';
+          const prefer = document.querySelector('input[name="prefer"]:checked')?.value || 'afternoon';
+          const comment = document.getElementById('alternateComment').value.trim();
+          
+          submitBtn.disabled = true;
+          submitSpinner.classList.remove('hidden');
+          modalError.classList.add('hidden');
+          
+          try {
+            const response = await fetch('/i/' + TOKEN + '/request-alternate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ range, prefer, comment })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+              if (data.max_reached) {
+                // 再提案上限到達
+                document.body.innerHTML = \`
+                  <div class="bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center min-h-screen p-4">
+                    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center fade-in">
+                      <div class="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+                        <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                      </div>
+                      <h1 class="text-2xl font-bold text-gray-800 mb-4">\${data.message}</h1>
+                      <p class="text-gray-600 mb-6">主催者に連絡して、空き時間一覧を送ってもらうようお願いしてください。</p>
+                      <p class="text-sm text-gray-500">このページは閉じて構いません</p>
+                    </div>
+                  </div>
+                \`;
+              } else {
+                // 再提案成功 → ページリロードで新しい候補を表示
+                window.location.reload();
+              }
+            } else {
+              modalError.textContent = data.error || data.message || '送信に失敗しました。もう一度お試しください。';
+              modalError.classList.remove('hidden');
+              submitBtn.disabled = false;
+              submitSpinner.classList.add('hidden');
+            }
+          } catch (error) {
+            modalError.textContent = 'ネットワークエラーが発生しました。接続を確認してください。';
+            modalError.classList.remove('hidden');
+            submitBtn.disabled = false;
+            submitSpinner.classList.add('hidden');
+          }
+        }
 
         function updateSelection(radio) {
           document.querySelectorAll('.slot-card').forEach(card => {
@@ -930,6 +1231,214 @@ app.post('/:token/respond', async (c) => {
     });
   } catch (error) {
     log.error('Respond error', { error: error instanceof Error ? error.message : String(error) });
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+/**
+ * Request alternate dates (B-3: 別日希望 → 再提案)
+ * 
+ * @route POST /:token/request-alternate
+ * @body { range: 'next_week' | 'next_next_week' | 'any', prefer: 'morning' | 'afternoon' | 'evening' | 'any', comment?: string }
+ */
+app.post('/:token/request-alternate', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'Invite', handler: 'request-alternate' });
+  const token = c.req.param('token');
+
+  try {
+    const body = await c.req.json();
+    const { range = 'next_week', prefer = 'afternoon', comment } = body as {
+      range?: 'next_week' | 'next_next_week' | 'any';
+      prefer?: 'morning' | 'afternoon' | 'evening' | 'any';
+      comment?: string;
+    };
+
+    const threadsRepo = new ThreadsRepository(env.DB);
+    const invite = await threadsRepo.getInviteByToken(token);
+
+    if (!invite) {
+      return c.json({ error: 'Invitation not found' }, 404);
+    }
+
+    if (new Date(invite.expires_at) < new Date()) {
+      return c.json({ error: 'Invitation expired' }, 400);
+    }
+
+    // Get thread info
+    const thread = await env.DB.prepare(`
+      SELECT id, proposal_version, additional_propose_count, constraints_json, organizer_user_id, title
+      FROM scheduling_threads WHERE id = ?
+    `).bind(invite.thread_id).first<{
+      id: string;
+      proposal_version: number;
+      additional_propose_count: number;
+      constraints_json: string | null;
+      organizer_user_id: string;
+      title: string | null;
+    }>();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    const currentProposeCount = thread.additional_propose_count || 0;
+    const MAX_REPROPOSALS = 2;
+
+    // Check if max reproposals reached
+    if (currentProposeCount >= MAX_REPROPOSALS) {
+      log.debug('Max reproposals reached', { thread_id: thread.id, count: currentProposeCount });
+      return c.json({
+        success: true,
+        max_reached: true,
+        message: `候補を${MAX_REPROPOSALS}回出しました。空いている枠一覧から選べるリンクを作りますか？`,
+        current_count: currentProposeCount
+      });
+    }
+
+    // Update invite status to 'pending' again (allow re-selection)
+    await threadsRepo.updateInviteStatus(invite.id, 'pending');
+
+    // Update thread: increment proposal_version and additional_propose_count
+    const newProposalVersion = (thread.proposal_version || 1) + 1;
+    const newProposeCount = currentProposeCount + 1;
+
+    // Update constraints_json with new preferences
+    const existingConstraints = thread.constraints_json ? JSON.parse(thread.constraints_json) : {};
+    const newConstraints = {
+      ...existingConstraints,
+      prefer,
+      range,
+      comment,
+      updated_at: new Date().toISOString(),
+      source: 'alternate_request'
+    };
+
+    // Calculate new time range based on 'range' selection
+    const now = new Date();
+    let timeMin: Date;
+    let timeMax: Date;
+
+    if (range === 'next_week') {
+      // Next week (Mon-Sun)
+      const daysUntilNextMonday = (8 - now.getDay()) % 7 || 7;
+      timeMin = new Date(now);
+      timeMin.setDate(timeMin.getDate() + daysUntilNextMonday);
+      timeMin.setHours(9, 0, 0, 0);
+      timeMax = new Date(timeMin);
+      timeMax.setDate(timeMax.getDate() + 5); // Friday
+      timeMax.setHours(18, 0, 0, 0);
+    } else if (range === 'next_next_week') {
+      // Week after next
+      const daysUntilNextMonday = (8 - now.getDay()) % 7 || 7;
+      timeMin = new Date(now);
+      timeMin.setDate(timeMin.getDate() + daysUntilNextMonday + 7);
+      timeMin.setHours(9, 0, 0, 0);
+      timeMax = new Date(timeMin);
+      timeMax.setDate(timeMax.getDate() + 5);
+      timeMax.setHours(18, 0, 0, 0);
+    } else {
+      // 'any' - 2 weeks from now
+      timeMin = new Date(now);
+      timeMin.setDate(timeMin.getDate() + 1);
+      timeMin.setHours(9, 0, 0, 0);
+      timeMax = new Date(now);
+      timeMax.setDate(timeMax.getDate() + 14);
+      timeMax.setHours(18, 0, 0, 0);
+    }
+
+    newConstraints.time_min = timeMin.toISOString();
+    newConstraints.time_max = timeMax.toISOString();
+
+    await env.DB.prepare(`
+      UPDATE scheduling_threads 
+      SET proposal_version = ?, additional_propose_count = ?, constraints_json = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(newProposalVersion, newProposeCount, JSON.stringify(newConstraints), thread.id).run();
+
+    // Delete old slots (from previous proposal)
+    await env.DB.prepare(`DELETE FROM scheduling_slots WHERE thread_id = ?`).bind(thread.id).run();
+
+    // Generate new slots (simplified: 3 fixed slots for now)
+    // TODO: In PR-B3-API, this should use slotGenerator with freebusy
+    const duration = 60; // 60 minutes
+    const slotsToCreate: Array<{ slot_id: string; start_at: string; end_at: string }> = [];
+
+    // Determine time window based on prefer
+    const getHourRange = (p: string): [number, number] => {
+      switch (p) {
+        case 'morning': return [9, 12];
+        case 'afternoon': return [13, 17];
+        case 'evening': return [17, 20];
+        default: return [9, 18];
+      }
+    };
+    const [startHour, endHour] = getHourRange(prefer);
+
+    // Create 3 slots within the time range
+    const slotDate = new Date(timeMin);
+    for (let i = 0; i < 3; i++) {
+      // Skip weekends
+      while (slotDate.getDay() === 0 || slotDate.getDay() === 6) {
+        slotDate.setDate(slotDate.getDate() + 1);
+      }
+      
+      if (slotDate > timeMax) break;
+
+      const hour = startHour + Math.floor((endHour - startHour) / 3) * i;
+      const slotStart = new Date(slotDate);
+      slotStart.setHours(hour, 0, 0, 0);
+      const slotEnd = new Date(slotStart);
+      slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+
+      const slotId = `slot-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}`;
+      slotsToCreate.push({
+        slot_id: slotId,
+        start_at: slotStart.toISOString(),
+        end_at: slotEnd.toISOString()
+      });
+
+      slotDate.setDate(slotDate.getDate() + 1);
+    }
+
+    // Insert new slots
+    for (const slot of slotsToCreate) {
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label, proposal_version, created_at)
+        VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, ?, datetime('now'))
+      `).bind(slot.slot_id, thread.id, slot.start_at, slot.end_at, thread.title || '打ち合わせ', newProposalVersion).run();
+    }
+
+    // Notify organizer
+    const inboxRepo = new InboxRepository(env.DB);
+    await inboxRepo.create({
+      user_id: thread.organizer_user_id,
+      type: 'system_message',
+      priority: 'normal',
+      title: `${thread.title || 'スレッド'} - 別日希望`,
+      message: `${invite.candidate_name}さんが別日を希望しています。希望: ${range === 'next_week' ? '来週' : range === 'next_next_week' ? '再来週' : '指定なし'}, ${prefer === 'morning' ? '午前' : prefer === 'afternoon' ? '午後' : prefer === 'evening' ? '夕方' : '指定なし'}${comment ? ` (補足: ${comment})` : ''}`,
+      action_type: 'view_thread',
+      action_target_id: thread.id,
+      action_url: `/scheduling/threads/${thread.id}`,
+      data: { thread_id: thread.id, invite_id: invite.id, alternate_request: { range, prefer, comment } }
+    });
+
+    log.debug('Alternate request processed', { 
+      thread_id: thread.id, 
+      new_proposal_version: newProposalVersion,
+      new_propose_count: newProposeCount,
+      slots_created: slotsToCreate.length
+    });
+
+    return c.json({
+      success: true,
+      new_proposal_version: newProposalVersion,
+      slots: slotsToCreate,
+      message: `新しい候補を${slotsToCreate.length}件生成しました`
+    });
+
+  } catch (error) {
+    log.error('Request alternate error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
