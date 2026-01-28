@@ -486,15 +486,25 @@ relationships.get('/', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   
-  // Query parameters
+  // Query parameters - cursor-based pagination (P0-2 compliant)
   const type = c.req.query('type'); // filter by relation_type
   const limitParam = c.req.query('limit') || '50';
-  const offsetParam = c.req.query('offset') || '0';
+  const cursor = c.req.query('cursor'); // format: "created_at,id" (both as strings)
   
   const limit = Math.min(parseInt(limitParam, 10), 100);
-  const offset = parseInt(offsetParam, 10);
   
-  // Build query
+  // Parse cursor
+  let cursorCreatedAt: number | null = null;
+  let cursorId: string | null = null;
+  if (cursor) {
+    const parts = cursor.split(',');
+    if (parts.length === 2) {
+      cursorCreatedAt = parseInt(parts[0], 10);
+      cursorId = parts[1];
+    }
+  }
+  
+  // Build query with cursor pagination
   let query = `
     SELECT 
       r.id,
@@ -523,8 +533,14 @@ relationships.get('/', async (c) => {
     params.push(type);
   }
   
-  query += ` ORDER BY r.created_at DESC LIMIT ? OFFSET ?`;
-  params.push(limit, offset);
+  // Cursor-based pagination: fetch items older than cursor
+  if (cursorCreatedAt !== null && cursorId !== null) {
+    query += ` AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))`;
+    params.push(cursorCreatedAt, cursorCreatedAt, cursorId);
+  }
+  
+  query += ` ORDER BY r.created_at DESC, r.id DESC LIMIT ?`;
+  params.push(limit + 1); // Fetch one extra to check has_more
   
   const results = await env.DB.prepare(query)
     .bind(...params)
@@ -539,25 +555,18 @@ relationships.get('/', async (c) => {
       other_user_email: string;
     }>();
   
-  // Get total count
-  let countQuery = `
-    SELECT COUNT(*) as count
-    FROM relationships
-    WHERE (user_a_id = ? OR user_b_id = ?)
-      AND status = 'active'
-  `;
-  const countParams: string[] = [userId, userId];
+  const allItems = results.results || [];
+  const hasMore = allItems.length > limit;
+  const items = hasMore ? allItems.slice(0, limit) : allItems;
   
-  if (type && isValidRelationType(type)) {
-    countQuery += ` AND relation_type = ?`;
-    countParams.push(type);
+  // Build next cursor
+  let nextCursor: string | null = null;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1];
+    nextCursor = `${lastItem.created_at},${lastItem.id}`;
   }
   
-  const countResult = await env.DB.prepare(countQuery)
-    .bind(...countParams)
-    .first<{ count: number }>();
-  
-  const items = (results.results || []).map(r => ({
+  const mappedItems = items.map(r => ({
     id: r.id,
     relation_type: r.relation_type,
     status: r.status,
@@ -571,12 +580,11 @@ relationships.get('/', async (c) => {
   }));
   
   return c.json({
-    items,
+    items: mappedItems,
     pagination: {
-      total: countResult?.count || 0,
       limit,
-      offset,
-      has_more: offset + items.length < (countResult?.count || 0),
+      has_more: hasMore,
+      next_cursor: nextCursor,
     },
   });
 });
