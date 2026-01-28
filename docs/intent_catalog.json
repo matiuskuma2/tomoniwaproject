@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026-01-28-b3",
+  "version": "2026-01-28-b4",
   "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
 
   "principles": {
@@ -338,6 +338,71 @@
         "max_reached": "OpenSlotsへの誘導画面表示"
       },
       "notes": "Phase B-3: 最大2回の再提案。3回目はOpenSlots(B-4)へ誘導。constraints_json更新、proposal_version+1。"
+    },
+
+    {
+      "intent": "schedule.1on1.open_slots",
+      "category": "schedule.1on1",
+      "description": "主催者の空き枠を公開し、相手に選んでもらう（TimeRex型）- Phase B-4",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "invitee": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "name": { "type": "string", "required": true, "description": "相手の名前" },
+            "email": { "type": "string", "format": "email", "optional": true, "description": "メールアドレス（send_via=email時は必須）" }
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "optional": true,
+          "properties": {
+            "time_min": { "type": "string", "format": "date-time", "optional": true, "description": "公開開始日（デフォルト: 翌営業日09:00）" },
+            "time_max": { "type": "string", "format": "date-time", "optional": true, "description": "公開終了日（デフォルト: 2週間後）" },
+            "prefer": { "type": "string", "enum": ["morning", "afternoon", "evening", "business", "any"], "optional": true, "description": "時間帯（デフォルト: afternoon）" },
+            "days": { "type": "array", "items": { "type": "string" }, "optional": true, "description": "曜日（デフォルト: mon-fri）" },
+            "duration": { "type": "number", "optional": true, "description": "分（デフォルト: 60）" },
+            "slot_interval": { "type": "number", "optional": true, "description": "枠の間隔（分）（デフォルト: 30）" }
+          }
+        },
+        "title": { "type": "string", "optional": true, "default": "打ち合わせ", "description": "予定タイトル" },
+        "send_via": { "type": "string", "enum": ["share_link", "email"], "default": "share_link", "description": "送信手段" },
+        "expires_in_days": { "type": "number", "optional": true, "default": 14, "description": "有効期限（日数）" }
+      },
+      "clarify_rules": {
+        "invitee_name_missing": "誰との予定ですか？相手の名前を教えてください。",
+        "time_range_missing": "いつ頃の空き枠を公開しますか？（例: 来週、2週間以内、2月上旬）",
+        "calendar_unavailable": "カレンダー連携が使えません。Google連携状態を確認してください。",
+        "no_available_slots": "指定条件で空きが見つかりませんでした。期間を広げるか、時間帯/曜日を変えてください。"
+      },
+      "outputs": {
+        "share_url": "公開枠リンク（https://app.tomoniwao.jp/open/:token）",
+        "message_for_chat": "AI秘書がユーザーに返す文章（リンク文言含む）",
+        "thread_id": "作成されたスレッドID",
+        "open_slots_token": "公開枠トークン",
+        "slots_count": "生成された枠数",
+        "slots": "生成された枠一覧（slot_id, start_at, end_at）",
+        "time_range": "公開期間（time_min, time_max）",
+        "constraints_used": "実際に使用された制約条件",
+        "expires_at": "有効期限"
+      },
+      "executor": "frontend:executors/oneOnOne.ts::executeOneOnOneOpenSlots",
+      "api": "POST /api/one-on-one/open-slots/prepare",
+      "examples": [
+        "田中さんに私の空いてる枠を共有して好きなところを選んでもらって",
+        "佐藤さんに来週の空き枠を公開して選んでもらう",
+        "山田さんと打ち合わせ、私の空き時間から選んでもらえるようにして",
+        "2週間以内の午後の空き枠を公開して"
+      ],
+      "ui_flow": {
+        "open_page": "/open/:token - 公開枠一覧UI（日付ごと・時間帯ボタン）",
+        "select": "POST /open/:token/select - 枠選択",
+        "thank_you_page": "/open/:token/thank-you - 選択完了（Googleカレンダー追加 + 成長導線）"
+      },
+      "notes": "Phase B-4: TimeRex型公開枠。open_slots/open_slot_itemsテーブルに保存。expires_atで自動失効。"
     },
 
     {
