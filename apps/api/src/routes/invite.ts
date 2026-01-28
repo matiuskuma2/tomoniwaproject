@@ -12,6 +12,7 @@ import { ThreadsRepository } from '../repositories/threadsRepository';
 import { InboxRepository } from '../repositories/inboxRepository';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { createLogger } from '../utils/logger';
+import { createOpenSlotsInternal } from '../services/openSlotsService';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -1285,13 +1286,114 @@ app.post('/:token/request-alternate', async (c) => {
     const currentProposeCount = thread.additional_propose_count || 0;
     const MAX_REPROPOSALS = 2;
 
-    // Check if max reproposals reached
+    // Check if max reproposals reached - B-5: 自動で Open Slots を生成
     if (currentProposeCount >= MAX_REPROPOSALS) {
-      log.debug('Max reproposals reached', { thread_id: thread.id, count: currentProposeCount });
+      log.debug('Max reproposals reached, auto-creating Open Slots', { thread_id: thread.id, count: currentProposeCount });
+      
+      // 既存の constraints から時間範囲を計算
+      const existingConstraints = thread.constraints_json ? JSON.parse(thread.constraints_json) : {};
+      const now = new Date();
+      
+      // リクエストの range/prefer を使って新しい constraints を作成
+      let timeMin: Date;
+      let timeMax: Date;
+      
+      if (range === 'next_week') {
+        const daysUntilNextMonday = (8 - now.getDay()) % 7 || 7;
+        timeMin = new Date(now);
+        timeMin.setDate(timeMin.getDate() + daysUntilNextMonday);
+        timeMin.setHours(9, 0, 0, 0);
+        timeMax = new Date(timeMin);
+        timeMax.setDate(timeMax.getDate() + 5);
+        timeMax.setHours(18, 0, 0, 0);
+      } else if (range === 'next_next_week') {
+        const daysUntilNextMonday = (8 - now.getDay()) % 7 || 7;
+        timeMin = new Date(now);
+        timeMin.setDate(timeMin.getDate() + daysUntilNextMonday + 7);
+        timeMin.setHours(9, 0, 0, 0);
+        timeMax = new Date(timeMin);
+        timeMax.setDate(timeMax.getDate() + 5);
+        timeMax.setHours(18, 0, 0, 0);
+      } else {
+        // 'any' - 2週間
+        timeMin = new Date(now);
+        timeMin.setDate(timeMin.getDate() + 1);
+        timeMin.setHours(9, 0, 0, 0);
+        timeMax = new Date(now);
+        timeMax.setDate(timeMax.getDate() + 14);
+        timeMax.setHours(18, 0, 0, 0);
+      }
+
+      // workspace_id を取得
+      const workspaceResult = await env.DB.prepare(`
+        SELECT workspace_id FROM scheduling_threads WHERE id = ?
+      `).bind(thread.id).first<{ workspace_id: string }>();
+      
+      const workspaceId = workspaceResult?.workspace_id || 'default';
+
+      // Open Slots を自動生成
+      const openSlotsResult = await createOpenSlotsInternal({
+        env,
+        userId: thread.organizer_user_id,
+        workspaceId,
+        threadId: thread.id,
+        invitee: {
+          name: invite.candidate_name || '招待者',
+          email: invite.candidate_email || undefined,
+        },
+        constraints: {
+          time_min: timeMin.toISOString(),
+          time_max: timeMax.toISOString(),
+          prefer: prefer === 'any' ? 'afternoon' : prefer as 'morning' | 'afternoon' | 'evening',
+          duration: existingConstraints.duration || 60,
+        },
+        title: thread.title || '打ち合わせ',
+        source: 'auto_from_alternate',
+      });
+
+      if (!openSlotsResult.success) {
+        // Open Slots 生成に失敗した場合はエラーを返す
+        log.error('Failed to auto-create Open Slots', { error: openSlotsResult });
+        return c.json({
+          success: true,
+          max_reached: true,
+          auto_open_slots: false,
+          message: `候補を${MAX_REPROPOSALS}回出しました。空き時間の生成に失敗しました。`,
+          error: (openSlotsResult as { error?: string }).error,
+          current_count: currentProposeCount
+        });
+      }
+
+      // 成功時: Open Slots URL を返す
+      log.info('Auto-created Open Slots', { 
+        thread_id: thread.id, 
+        open_slots_token: openSlotsResult.token,
+        slots_count: openSlotsResult.slotsCount 
+      });
+
+      // 主催者に通知
+      const inboxRepo = new InboxRepository(env.DB);
+      await inboxRepo.create({
+        user_id: thread.organizer_user_id,
+        type: 'system_message',
+        priority: 'normal',
+        title: `${thread.title || 'スレッド'} - 空き時間共有リンク作成`,
+        message: `${invite.candidate_name}さんとの調整で自動的に空き時間共有リンクを作成しました。${openSlotsResult.slotsCount}枠から選択可能です。`,
+        action_type: 'view_open_slots',
+        action_target_id: openSlotsResult.openSlotsId,
+        action_url: `/open/${openSlotsResult.token}`,
+        data: { thread_id: thread.id, open_slots_id: openSlotsResult.openSlotsId }
+      });
+
       return c.json({
         success: true,
         max_reached: true,
-        message: `候補を${MAX_REPROPOSALS}回出しました。空いている枠一覧から選べるリンクを作りますか？`,
+        auto_open_slots: true,
+        open_slots_url: openSlotsResult.shareUrl,
+        open_slots_token: openSlotsResult.token,
+        slots_count: openSlotsResult.slotsCount,
+        expires_at: openSlotsResult.expiresAt,
+        message: '何度も調整ありがとうございます。空き時間から直接選んでいただけるようにしました。',
         current_count: currentProposeCount
       });
     }
