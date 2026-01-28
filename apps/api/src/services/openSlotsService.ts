@@ -12,17 +12,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../utils/logger';
 import { GoogleCalendarService } from './googleCalendar';
 import { generateAvailableSlots, type AvailableSlot } from '../utils/slotGenerator';
+import type { Env } from '../../../../packages/shared/src/types/env';
 
 // ============================================================
 // Types
 // ============================================================
 
 export interface CreateOpenSlotsParams {
-  env: {
-    DB: D1Database;
-    ENVIRONMENT?: string;
-    [key: string]: unknown;
-  };
+  env: Env;
   userId: string;
   workspaceId: string;
   threadId?: string;  // 既存スレッドがある場合（request-alternate）
@@ -103,17 +100,17 @@ function formatTimeJP(isoString: string): string {
 /**
  * prefer から時間帯ウィンドウを取得
  */
-function getTimeWindowFromPrefer(prefer: string): { start: number; end: number } {
+function getTimeWindowFromPrefer(prefer: string): { startHour: number; endHour: number } {
   switch (prefer) {
     case 'morning':
-      return { start: 9, end: 12 };
+      return { startHour: 9, endHour: 12 };
     case 'afternoon':
-      return { start: 13, end: 17 };
+      return { startHour: 13, endHour: 17 };
     case 'evening':
-      return { start: 17, end: 21 };
+      return { startHour: 17, endHour: 21 };
     case 'any':
     default:
-      return { start: 9, end: 18 };
+      return { startHour: 9, endHour: 18 };
   }
 }
 
