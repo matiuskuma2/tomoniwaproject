@@ -1,7 +1,7 @@
 # PR-B2: 主催者freebusy → 候補生成（R0: 他人）
 
 > **Version**: 2026-01-28  
-> **Status**: PR-B2-API ✅ 完了 (PR #47)  
+> **Status**: PR-B2-API ✅ (PR #47) / PR-B2-SSOT ✅ (PR #48)  
 > **依存**: PR-B1（✅ 完了）
 
 ---
@@ -205,9 +205,10 @@ interface FreebusyPrepareResponse {
 ```
 
 **DoD**:
-- [ ] SSOT (`docs/intent_catalog.json`) に追加済み
-- [ ] examples が3つ以上
-- [ ] `params_schema` が B-2 API と一致
+- [x] SSOT (`docs/intent_catalog.json`) に追加済み
+- [x] examples が3つ以上
+- [x] `params_schema` が B-2 API と一致
+- [x] CI green (PR #48 merged)
 
 ---
 
