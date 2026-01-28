@@ -765,4 +765,90 @@ relationships.get('/with/:targetUserId', async (c) => {
   });
 });
 
+// ============================================================
+// GET /api/relationships/search
+// Search for users by email or user ID (for relationship request)
+// ============================================================
+relationships.get('/search', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const query = c.req.query('q');
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  if (!query || query.trim().length < 3) {
+    return c.json({ 
+      error: 'Query too short',
+      message: '3文字以上で検索してください'
+    }, 400);
+  }
+  
+  const searchTerm = query.trim().toLowerCase();
+  
+  // Search by exact email or partial display_name
+  const results = await env.DB.prepare(`
+    SELECT id, email, display_name
+    FROM users
+    WHERE id != ?
+      AND (
+        LOWER(email) = ?
+        OR LOWER(display_name) LIKE ?
+      )
+    LIMIT 10
+  `).bind(userId, searchTerm, `%${searchTerm}%`).all<{
+    id: string;
+    email: string;
+    display_name: string;
+  }>();
+  
+  // Enrich results with relationship status
+  const enrichedResults = await Promise.all(
+    (results.results || []).map(async (user) => {
+      const relationship = await getExistingRelationship(env.DB, userId, user.id);
+      
+      // Check for pending request
+      const pendingRequest = await env.DB.prepare(`
+        SELECT id, status, requested_type
+        FROM relationship_requests
+        WHERE ((inviter_user_id = ? AND invitee_user_id = ?)
+           OR (inviter_user_id = ? AND invitee_user_id = ?))
+          AND status = 'pending'
+        LIMIT 1
+      `).bind(userId, user.id, user.id, userId).first<{
+        id: string;
+        status: string;
+        requested_type: string;
+      }>();
+      
+      return {
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+        relationship: relationship && relationship.status === RELATIONSHIP_STATUS.ACTIVE
+          ? {
+              id: relationship.id as string,
+              relation_type: relationship.relation_type as RelationType,
+              permission_preset: relationship.permission_preset as PermissionPreset | null,
+            }
+          : null,
+        pending_request: pendingRequest
+          ? {
+              id: pendingRequest.id,
+              requested_type: pendingRequest.requested_type,
+            }
+          : null,
+        can_request: !relationship || relationship.status !== RELATIONSHIP_STATUS.ACTIVE,
+      };
+    })
+  );
+  
+  return c.json({
+    query: query.trim(),
+    results: enrichedResults,
+    count: enrichedResults.length,
+  });
+});
+
 export default relationships;

@@ -8,6 +8,7 @@ import { ThreadDetailPage } from './pages/ThreadDetailPage';
 import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
+import { RelationshipRequestPage } from './pages/RelationshipRequestPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
 import WorkspaceNotificationsPage from './pages/WorkspaceNotificationsPage';
@@ -60,6 +61,15 @@ function App() {
           element={
             <ProtectedRoute>
               <ContactsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Phase D-1: Relationship Request */}
+        <Route
+          path="/relationships/request"
+          element={
+            <ProtectedRoute>
+              <RelationshipRequestPage />
             </ProtectedRoute>
           }
         />

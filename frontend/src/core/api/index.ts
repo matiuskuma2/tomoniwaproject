@@ -48,4 +48,6 @@ export type {
   RelationshipRequest,
   RelationshipsListResponse,
   PendingRequestsResponse,
+  UserSearchResult,
+  UserSearchResponse,
 } from './relationships';
