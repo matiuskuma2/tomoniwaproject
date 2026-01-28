@@ -592,17 +592,13 @@ app.post('/:token/select', async (c) => {
       const inboxRepo = new InboxRepository(env.DB);
       await inboxRepo.create({
         user_id: openSlots.owner_user_id,
-        workspace_id: openSlots.workspace_id,
         type: 'system',
         title: '日程が確定しました',
-        body: `${openSlots.invitee_name || name || '相手'}さんが「${openSlots.title}」の日程を選択しました: ${formatDateTimeJP(slot.start_at)} 〜 ${formatTimeJP(slot.end_at)}`,
-        metadata: JSON.stringify({
-          thread_id: openSlots.thread_id,
-          open_slots_id: openSlots.id,
-          selected_slot_id: slot_id,
-          start_at: slot.start_at,
-          end_at: slot.end_at
-        })
+        message: `${openSlots.invitee_name || name || '相手'}さんが「${openSlots.title}」の日程を選択しました: ${formatDateTimeJP(slot.start_at)} 〜 ${formatTimeJP(slot.end_at)}`,
+        action_type: 'view_thread',
+        action_target_id: openSlots.thread_id,
+        action_url: `/threads/${openSlots.thread_id}`,
+        priority: 'normal'
       });
     } catch (inboxError) {
       log.warn('Failed to send inbox notification', { error: inboxError });

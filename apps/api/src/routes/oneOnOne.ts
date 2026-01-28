@@ -1123,19 +1123,20 @@ app.post('/freebusy/prepare', requireAuth, async (c) => {
 // POST /api/one-on-one/open-slots/prepare (Phase B-4)
 // TimeRex型: 主催者の空き枠を公開し、相手が好きな時間を選べる
 // ============================================================
-app.post('/open-slots/prepare', async (c) => {
+app.post('/open-slots/prepare', requireAuth, async (c) => {
   const { env } = c;
   const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const log = createLogger(env, { module: 'OneOnOne', handler: 'open-slots-prepare', requestId });
 
   try {
-    // 認証チェック
-    const userId = c.req.header('x-user-id');
-    const workspaceId = c.req.header('x-workspace-id');
-
-    if (!userId || !workspaceId) {
+    // 認証チェック（requireAuthミドルウェアで設定済み）
+    const userId = c.get('userId');
+    if (!userId) {
       return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
     }
+
+    // テナントコンテキスト取得
+    const { workspaceId, ownerUserId } = getTenant(c);
 
     const body = await c.req.json() as {
       invitee: { name: string; email?: string; contact_id?: string };
@@ -1163,8 +1164,6 @@ app.post('/open-slots/prepare', async (c) => {
       }, 400);
     }
 
-    const ownerUserId = userId;
-
     // デフォルト値の設定
     const now = new Date();
     
@@ -1185,82 +1184,92 @@ app.post('/open-slots/prepare', async (c) => {
     const duration = constraints.duration || 60;
     const slotInterval = constraints.slot_interval || 30;
 
+    // 上限定数
+    const MAX_SLOTS_PER_DAY = 8;
+    const MAX_TOTAL_SLOTS = 40;
+
     log.debug('Open slots prepare request', { 
       invitee, timeMin, timeMax, prefer, days, duration, slotInterval 
     });
 
     // ============================================================
-    // 1. Google Calendar freebusy を取得
+    // 1. 主催者のアクセストークンを取得し、freebusy を取得
     // ============================================================
-    const tokensRepo = new OAuthTokensRepository(env.DB);
-    const googleTokens = await tokensRepo.getByUserAndProvider(ownerUserId, 'google');
-
-    if (!googleTokens) {
+    const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, ownerUserId, env);
+    if (!accessToken) {
       return c.json({ 
         error: 'calendar_unavailable', 
-        message: 'Google連携が設定されていません。設定画面からGoogleアカウントを連携してください。',
+        message: 'Googleカレンダーが連携されていません。設定からカレンダー連携を行ってください。',
         request_id: requestId 
       }, 400);
     }
 
-    // freebusy API を呼び出し
-    const freebusyResponse = await fetch(
-      `https://www.googleapis.com/calendar/v3/freeBusy`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${googleTokens.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          timeMin,
-          timeMax,
-          items: [{ id: 'primary' }],
-        }),
-      }
-    );
+    // freebusy を取得
+    let busyPeriods: Array<{ start: string; end: string }>;
+    try {
+      const freebusyResponse = await fetch(
+        'https://www.googleapis.com/calendar/v3/freeBusy',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            timeMin,
+            timeMax,
+            items: [{ id: 'primary' }],
+          }),
+        }
+      );
 
-    if (!freebusyResponse.ok) {
-      log.error('Google freebusy API failed', { 
-        status: freebusyResponse.status,
-        statusText: freebusyResponse.statusText 
-      });
+      if (!freebusyResponse.ok) {
+        log.error('Google freebusy API failed', { 
+          status: freebusyResponse.status,
+          statusText: freebusyResponse.statusText 
+        });
+        return c.json({ 
+          error: 'calendar_unavailable', 
+          message: 'Googleカレンダーから空き時間を取得できませんでした。',
+          request_id: requestId 
+        }, 500);
+      }
+
+      const freebusyData = await freebusyResponse.json() as {
+        calendars: { primary: { busy: Array<{ start: string; end: string }> } };
+      };
+      busyPeriods = freebusyData.calendars?.primary?.busy || [];
+    } catch (freebusyError) {
+      log.error('Failed to fetch freebusy', { error: freebusyError });
       return c.json({ 
         error: 'calendar_unavailable', 
-        message: 'Googleカレンダーから空き時間を取得できませんでした。',
+        message: 'Googleカレンダーとの通信でエラーが発生しました。',
         request_id: requestId 
       }, 500);
     }
 
-    const freebusyData = await freebusyResponse.json() as {
-      calendars: { primary: { busy: Array<{ start: string; end: string }> } };
-    };
-
-    const busyPeriods = freebusyData.calendars?.primary?.busy || [];
-
     // ============================================================
     // 2. 空き枠を生成（slotGeneratorを使用）
     // ============================================================
-    const availableSlots = slotGenerator.generateAvailableSlots({
+    const dayTimeWindow = getTimeWindowFromPrefer(prefer);
+    const slotResult = generateAvailableSlots({
       timeMin,
       timeMax,
-      busyPeriods,
-      duration,
-      prefer,
-      days,
+      busy: busyPeriods,
+      meetingLengthMin: duration,
+      stepMin: slotInterval,
+      maxResults: MAX_TOTAL_SLOTS,
+      dayTimeWindow,
     });
 
     // slotInterval で枠をフィルタ（30分刻みなら00分/30分開始のみ）
-    let filteredSlots = availableSlots.filter(slot => {
+    let filteredSlots = slotResult.available_slots.filter((slot: AvailableSlot) => {
       const startDate = new Date(slot.start_at);
       const minutes = startDate.getMinutes();
       return minutes % slotInterval === 0;
     });
 
-    // 上限チェック（1日8枠、全体40枠）
-    const MAX_SLOTS_PER_DAY = 8;
-    const MAX_TOTAL_SLOTS = 40;
-    
+    // 上限チェック（1日8枠）
     const slotCountByDate = new Map<string, number>();
     const limitedSlots: typeof filteredSlots = [];
     
