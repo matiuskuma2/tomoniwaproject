@@ -2,6 +2,7 @@
  * classifier/oneOnOne.ts
  * v1.0: 1対1予定調整（固定日時スタート）の Intent 分類
  * v1.1: Phase B-1 候補3つ提示対応
+ * v1.2: Phase B-2 freebusy から候補生成
  * 
  * ユーザー発話例:
  * - 「Aさんと来週木曜17時から1時間、予定調整お願い」→ fixed
@@ -9,6 +10,8 @@
  * - 「田中さんと来週月曜10時か火曜14時で打ち合わせ」→ candidates3
  * - 「佐藤さんに3つ候補出して日程調整」→ candidates3
  * - 「Aさんと1/28、1/29、1/30で予定調整」→ candidates3
+ * - 「田中さんと来週の空いてるところから候補出して」→ freebusy
+ * - 「佐藤さんに2週間以内の午後で候補送って」→ freebusy
  * 
  * 抽出するパラメータ:
  * - person: { name, email? } - 相手の情報
@@ -104,6 +107,79 @@ const WEEKDAY_PATTERNS = [
 // 複数時刻を検出するパターン
 // 注意: 「1時間」のような所要時間表現を除外するため、後続が「時間」でないことを確認
 const MULTIPLE_TIME_PATTERN = /(\d{1,2})[時:：](\d{0,2})分?(?!間)/g;
+
+// ============================================================
+// Phase B-2: freebusy 検出パターン
+// ============================================================
+
+// freebusy から候補を生成するキーワード
+const FREEBUSY_KEYWORDS = [
+  '空いてるところから',
+  '空き時間から',
+  '空いてる時間から',
+  '空いてる時間帯から',
+  '空きから',
+  '私の空き',
+  '自分の空き',
+  'カレンダーから',
+  'freebusyから',
+  'freebusy',
+];
+
+// 時間帯の prefer 検出
+const PREFER_PATTERNS: Array<{ pattern: RegExp; prefer: 'morning' | 'afternoon' | 'evening' | 'business' }> = [
+  { pattern: /午前|朝|AM/, prefer: 'morning' },
+  { pattern: /午後|昼|PM/, prefer: 'afternoon' },
+  { pattern: /夕方|夜/, prefer: 'evening' },
+  { pattern: /営業時間|ビジネス/, prefer: 'business' },
+];
+
+// 期間の検出パターン（time_min / time_max 用）
+const RANGE_PATTERNS: Array<{ pattern: RegExp; resolver: () => { time_min: Date; time_max: Date } }> = [
+  // 「来週」→ 来週の月曜〜日曜
+  { 
+    pattern: /来週/, 
+    resolver: () => {
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      const timeMin = new Date(now);
+      timeMin.setDate(now.getDate() + daysUntilMonday);
+      timeMin.setHours(0, 0, 0, 0);
+      const timeMax = new Date(timeMin);
+      timeMax.setDate(timeMin.getDate() + 6);
+      timeMax.setHours(23, 59, 59, 999);
+      return { time_min: timeMin, time_max: timeMax };
+    }
+  },
+  // 「今週」→ 今日〜今週日曜
+  { 
+    pattern: /今週/, 
+    resolver: () => {
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const timeMin = new Date(now);
+      timeMin.setHours(0, 0, 0, 0);
+      const timeMax = new Date(now);
+      timeMax.setDate(now.getDate() + (7 - dayOfWeek));
+      timeMax.setHours(23, 59, 59, 999);
+      return { time_min: timeMin, time_max: timeMax };
+    }
+  },
+  // 「2週間」「2週間以内」→ 今日から2週間
+  { 
+    pattern: /2週間|二週間/, 
+    resolver: () => {
+      const now = new Date();
+      const timeMin = new Date(now);
+      timeMin.setHours(0, 0, 0, 0);
+      const timeMax = new Date(now);
+      timeMax.setDate(now.getDate() + 14);
+      timeMax.setHours(23, 59, 59, 999);
+      return { time_min: timeMin, time_max: timeMax };
+    }
+  },
+];
 
 // トリガーワード（これがないと1対1として認識しない）
 const TRIGGER_WORDS = [
@@ -244,6 +320,37 @@ function hasMultipleSlotKeyword(input: string): boolean {
 }
 
 /**
+ * Phase B-2: freebusy キーワードが含まれているか
+ */
+function hasFreebusyKeyword(input: string): boolean {
+  return FREEBUSY_KEYWORDS.some(word => input.includes(word));
+}
+
+/**
+ * Phase B-2: prefer（時間帯）を抽出
+ */
+function extractPrefer(input: string): 'morning' | 'afternoon' | 'evening' | 'business' | null {
+  for (const { pattern, prefer } of PREFER_PATTERNS) {
+    if (pattern.test(input)) {
+      return prefer;
+    }
+  }
+  return null;
+}
+
+/**
+ * Phase B-2: time_min / time_max を抽出
+ */
+function extractTimeRange(input: string): { time_min: Date; time_max: Date } | null {
+  for (const { pattern, resolver } of RANGE_PATTERNS) {
+    if (pattern.test(input)) {
+      return resolver();
+    }
+  }
+  return null;
+}
+
+/**
  * 「〜か〜」パターンで日時の選択肢があるか
  */
 function hasAlternativePattern(input: string): boolean {
@@ -358,12 +465,16 @@ function extractMultipleSlots(input: string, durationMinutes: number): Array<{st
 // ============================================================
 
 /**
- * 1対1の Intent 分類（fixed / candidates3 分岐）
+ * 1対1の Intent 分類（fixed / candidates3 / freebusy 分岐）
  * 
  * Phase B-1: 候補3つ判定ロジック
  * - 「候補」「3つ」「いくつか」などのキーワード
  * - 「〜か〜」パターンで複数日時
  * - 複数の日時トークン（2つ以上）
+ * 
+ * Phase B-2: freebusy 判定ロジック
+ * - 「空いてるところから」「空き時間から」などのキーワード
+ * - 主催者のカレンダーから空き枠を自動生成
  * 
  * 重要: 日時トークンが2つ以上ある場合のみ candidates3 化
  */
@@ -398,6 +509,47 @@ export const classifyOneOnOne: ClassifierFn = (
   if (input.includes('会議')) title = '会議';
   if (input.includes('面談')) title = '面談';
   if (input.includes('相談')) title = '相談';
+
+  // ============================================================
+  // Phase B-2: freebusy 判定（candidates3 より先に判定）
+  // ============================================================
+  
+  if (hasFreebusyKeyword(input)) {
+    // prefer と time_range を抽出
+    const prefer = extractPrefer(input);
+    const timeRange = extractTimeRange(input);
+    
+    // constraints を組み立て
+    const constraints: {
+      time_min?: string;
+      time_max?: string;
+      prefer?: 'morning' | 'afternoon' | 'evening' | 'business';
+      duration?: number;
+    } = {};
+    
+    if (timeRange) {
+      constraints.time_min = timeRange.time_min.toISOString();
+      constraints.time_max = timeRange.time_max.toISOString();
+    }
+    if (prefer) {
+      constraints.prefer = prefer;
+    }
+    if (durationMinutes !== 60) {
+      constraints.duration = durationMinutes;
+    }
+    
+    return {
+      intent: 'schedule.1on1.freebusy',
+      confidence: 0.9,
+      params: {
+        person,
+        constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+        duration_minutes: durationMinutes,
+        title,
+        rawInput: input,
+      },
+    };
+  }
 
   // ============================================================
   // Phase B-1: 候補3つ（candidates3）判定

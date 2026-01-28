@@ -80,6 +80,8 @@ import {
   executeOneOnOneFixed as executeOneOnOneFixedFromExecutors,
   // v1.1: Phase B-1 候補3つ
   executeOneOnOneCandidates as executeOneOnOneCandidatesFromExecutors,
+  // v1.2: Phase B-2 freebusy から候補生成
+  executeOneOnOneFreebusy as executeOneOnOneFreebusyFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -565,6 +567,10 @@ export async function executeIntent(
     // v1.1: Phase B-1 候補3つ提示
     case 'schedule.1on1.candidates3':
       return executeOneOnOneCandidatesFromExecutors(intentResult);
+    
+    // v1.2: Phase B-2 freebusy から候補生成
+    case 'schedule.1on1.freebusy':
+      return executeOneOnOneFreebusyFromExecutors(intentResult);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）
