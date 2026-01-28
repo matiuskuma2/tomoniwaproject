@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "version": "2026-01-27",
+  "version": "2026-01-28",
   "description": "AI会話化ロードマップ用 Intent Catalog - nlRouterの許可リスト",
 
   "principles": {
@@ -218,6 +218,66 @@
         "thank_you_page": "/i/:token/thank-you - 承諾後（Googleカレンダー追加 + 成長導線）"
       },
       "notes": "Phase B-1: 候補3つ提示。slot_policy='fixed_multi'でDB登録。"
+    },
+
+    {
+      "intent": "schedule.1on1.freebusy",
+      "category": "schedule.1on1",
+      "description": "主催者のGoogleカレンダーfreebusyから空き枠を生成し、候補3つで他人に日程確認リンクを作る（R0: 他人、カレンダー非共有）- Phase B-2",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "1:1",
+      "params_schema": {
+        "invitee": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "name": { "type": "string", "required": true, "description": "相手の名前" },
+            "email": { "type": "string", "format": "email", "optional": true, "description": "メールアドレス（send_via=email時は必須）" }
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "optional": true,
+          "properties": {
+            "time_min": { "type": "string", "format": "date-time", "optional": true, "description": "検索開始（デフォルト: 翌営業日09:00）" },
+            "time_max": { "type": "string", "format": "date-time", "optional": true, "description": "検索終了（デフォルト: 2週間後）" },
+            "prefer": { "type": "string", "enum": ["morning", "afternoon", "evening", "business", "any"], "optional": true, "description": "時間帯（デフォルト: afternoon）" },
+            "days": { "type": "array", "items": { "type": "string" }, "optional": true, "description": "曜日（デフォルト: mon-fri）" },
+            "duration": { "type": "number", "optional": true, "description": "分（デフォルト: 60）" }
+          }
+        },
+        "candidate_count": { "type": "number", "optional": true, "default": 3, "description": "候補数（デフォルト: 3）" },
+        "title": { "type": "string", "optional": true, "default": "打ち合わせ", "description": "予定タイトル" },
+        "send_via": { "type": "string", "enum": ["share_link", "email"], "default": "share_link", "description": "送信手段" }
+      },
+      "clarify_rules": {
+        "invitee_name_missing": "誰との予定ですか？相手の名前を教えてください。",
+        "time_range_missing": "いつ頃の予定にしますか？（例: 来週、2週間以内、2月上旬）",
+        "calendar_unavailable": "カレンダー連携が使えません。Google連携状態を確認してください。",
+        "no_available_slots": "指定条件で空きが見つかりませんでした。期間を広げるか、時間帯/曜日を変えてください。"
+      },
+      "outputs": {
+        "share_url": "招待リンク（https://app.tomoniwao.jp/i/:token）",
+        "message_for_chat": "AI秘書がユーザーに返す文章（候補リスト含む）",
+        "thread_id": "作成されたスレッドID",
+        "invite_token": "招待トークン",
+        "slots": "生成された候補枠（slot_id, start_at, end_at）",
+        "mode": "share_link または email",
+        "constraints_used": "実際に使用された制約条件"
+      },
+      "executor": "frontend:executors/oneOnOne.ts::executeOneOnOneFreebusy",
+      "api": "POST /api/one-on-one/freebusy/prepare",
+      "examples": [
+        "田中さんと来週の空いてるところから3つ候補出して送って",
+        "佐藤さんに2週間以内の午後で候補3つ送って日程調整して",
+        "山田さんと来週月〜金のどこかで1時間、空いてる候補を送って"
+      ],
+      "ui_flow": {
+        "invite_page": "/i/:token - 複数候補UI（multiSlotUI）",
+        "thank_you_page": "/i/:token/thank-you - 承諾後（Googleカレンダー追加 + 成長導線）"
+      },
+      "notes": "Phase B-2: 主催者freebusyから候補生成。slot_policy='freebusy_multi'でDB登録。相手のカレンダーは見ない（R0: 他人）。"
     },
 
     {
