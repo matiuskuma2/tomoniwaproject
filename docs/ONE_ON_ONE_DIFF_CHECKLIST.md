@@ -1,7 +1,7 @@
 # 1対1（R0: 他人・カレンダー非共有）差分チェックシート
 
-> **Version**: 2026-01-28（B-4完了）  
-> **Status**: Phase B-1〜B-4 全て完了  
+> **Version**: 2026-01-28（B-5完了）  
+> **Status**: Phase B-1〜B-5 全て完了  
 > **対象**: R0（他人）のみ。R1/R2は別フェーズ。
 
 ---
@@ -74,6 +74,7 @@
 | **B-2** | 主催者freebusyから候補生成 | 主催者の空きだけから3候補を作る | ✅ **完了** (2026-01-28) |
 | **B-3** | 別日希望→再提案 | 最大2回の再提案、条件入力 | ✅ **完了** (2026-01-28) |
 | **B-4** | TimeRex型（Open Slots） | 空き枠カレンダーを提示して選ばせる | ✅ **完了** (2026-01-28) |
+| **B-5** | B-3→B-4自動誘導 | 再提案3回目で自動Open Slots生成 | ✅ **完了** (2026-01-28) |
 
 ---
 
@@ -307,17 +308,81 @@ CREATE TABLE open_slot_items (
 | #58 | PR-B4-SSOT: schedule.1on1.open_slots | ✅ merged |
 | #59 | PR-B4-FE: open_slots classifier/executor | ✅ merged |
 
+### Phase B-5 (2026-01-28)
+
+| PR | 内容 | 状態 |
+|----|------|------|
+| #61 | PR-B5-API: auto-create Open Slots on 3rd alternate | ✅ merged |
+
+---
+
+## Phase B-5: B-3→B-4自動誘導 ✅ 完了
+
+> 再提案が3回目に達した際、自動的に Open Slots を生成して共有。  
+> **2026-01-28 完了**
+
+### PRs
+
+| PR | タイトル | 状態 |
+|----|---------|------|
+| #61 | feat(api): PR-B5-API - auto-create Open Slots on 3rd alternate request | ✅ merged |
+
+### 実装詳細
+
+#### 共通サービス
+
+- **新規ファイル**: `apps/api/src/services/openSlotsService.ts`
+  - `createOpenSlotsInternal()`: Open Slots 作成の共通関数
+  - direct（直接作成）と auto_from_alternate（自動誘導）の両方をサポート
+  - Google Calendar freebusy 取得 → `slotGenerator` で枠生成 → DB 保存
+
+#### API修正
+
+- **POST /i/:token/request-alternate** の修正
+  - `additional_propose_count >= 2` の場合、自動で Open Slots を生成
+  - `createOpenSlotsInternal()` を内部呼び出し
+  - レスポンスに `auto_open_slots: true`, `open_slots_url`, `open_slots_token`, `slots_count` を追加
+  - 主催者に Inbox 通知を送信
+
+#### フロー
+
+1. 招待者が「別日希望」を2回リクエスト済み
+2. 3回目の `/request-alternate` で `additional_propose_count >= 2`
+3. 自動で `createOpenSlotsInternal()` を呼び出し
+4. Open Slots を生成（freebusy → 空き枠生成 → DB保存）
+5. `open_slots_url` を含むレスポンスを返す
+6. 主催者に Inbox 通知「空き時間共有リンク作成」
+
+### 設計ドキュメント
+
+- `docs/plans/PR-B5.md`: 設計書・実装計画
+
 ---
 
 ## 5. 次のステップ
 
-Phase B-1〜B-4 が完了し、R0（他人）向けの1対1日程調整の主要機能が揃いました。
+Phase B-1〜B-5 が完了し、R0（他人）向けの1対1日程調整の完全なフローが揃いました。
+
+### 完了した体験フロー
+
+```
+1. 主催者: 「田中さんと来週打ち合わせ」
+   → 候補3つ提示（B-1/B-2）
+   → 招待リンク発行
+
+2. 招待者: 候補から選択 or 別日希望
+   → 選択: 確定 → thank-you
+   → 別日希望: 再提案（最大2回, B-3）
+   → 3回目: 自動 Open Slots（B-5）
+
+3. Open Slots: 空き枠から自由に選択（B-4）
+   → 確定 → thank-you
+```
 
 ### 今後の拡張案
 
 | Phase | 機能 | 概要 |
 |-------|------|------|
-| **B-5** | B-3 → B-4 自動誘導 | 再提案3回目で自動的に Open Slots 生成 |
 | **C-1** | R1対応（知人） | 相手のカレンダーも参照して共通空き時間を提示 |
 | **C-2** | R2対応（家族） | 予定の自動投入に近い体験 |
 
@@ -331,4 +396,5 @@ Phase B-1〜B-4 が完了し、R0（他人）向けの1対1日程調整の主要
 | 2026-01-27 | Phase B-1 完了 |
 | 2026-01-28 | Phase B-2 完了 |
 | 2026-01-28 | Phase B-3 完了 |
-| 2026-01-28 | Phase B-4 完了、全Phase完了に更新 |
+| 2026-01-28 | Phase B-4 完了 |
+| 2026-01-28 | Phase B-5 完了、R0向け全Phase完了 |
