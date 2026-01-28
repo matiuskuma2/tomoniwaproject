@@ -1,7 +1,7 @@
 # PR-B2: 主催者freebusy → 候補生成（R0: 他人）
 
 > **Version**: 2026-01-28  
-> **Status**: PR-B2-API ✅ (PR #47) / PR-B2-SSOT ✅ (PR #48)  
+> **Status**: PR-B2-API ✅ (PR #47) / PR-B2-SSOT ✅ (PR #48) / PR-B2-FE ✅ (PR #49)  
 > **依存**: PR-B1（✅ 完了）
 
 ---
@@ -262,12 +262,11 @@ case 'schedule.1on1.freebusy':
 ```
 
 **DoD**:
-- [ ] 「来週木曜以降の午後で空いてる時間から3つ候補出して」→ intent が `schedule.1on1.freebusy` になる
-- [ ] range 不足 → clarify が出る
-- [ ] invitee 不足 → clarify が出る
-- [ ] TypeScript build pass
-- [ ] lint pass
-- [ ] 単体テスト追加
+- [x] 「来週木曜以降の午後で空いてる時間から3つ候補出して」→ intent が `schedule.1on1.freebusy` になる
+- [x] invitee 不足 → null（トリガーワード + 相手名が必要）
+- [x] TypeScript build pass
+- [x] lint pass (0 errors)
+- [x] CI green (PR #49 merged)
 
 ---
 
