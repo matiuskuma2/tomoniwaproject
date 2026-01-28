@@ -313,6 +313,7 @@ CREATE TABLE open_slot_items (
 | PR | 内容 | 状態 |
 |----|------|------|
 | #61 | PR-B5-API: auto-create Open Slots on 3rd alternate | ✅ merged |
+| #62 | PR-B5-E2E: auto Open Slots redirect tests | ✅ merged |
 
 ---
 
@@ -326,6 +327,7 @@ CREATE TABLE open_slot_items (
 | PR | タイトル | 状態 |
 |----|---------|------|
 | #61 | feat(api): PR-B5-API - auto-create Open Slots on 3rd alternate request | ✅ merged |
+| #62 | test(e2e): PR-B5-E2E - add auto Open Slots redirect tests | ✅ merged |
 
 ### 実装詳細
 
