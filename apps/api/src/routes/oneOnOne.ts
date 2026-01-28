@@ -10,8 +10,13 @@
  * - 複数の候補枠を提示
  * - 相手が選択して承諾
  * 
+ * Phase B-2: freebusy → 候補生成
+ * - 主催者のGoogleカレンダーから空き時間を取得
+ * - 自動で候補3つを生成して招待
+ * 
  * @route POST /api/one-on-one/fixed/prepare      - 固定1枠（v1.0）
  * @route POST /api/one-on-one/candidates/prepare - 候補3つ（B-1）
+ * @route POST /api/one-on-one/freebusy/prepare   - freebusy → 候補生成（B-2）
  */
 
 import { Hono } from 'hono';
@@ -21,6 +26,8 @@ import { createLogger } from '../utils/logger';
 import { requireAuth, type Variables } from '../middleware/auth';
 import { getTenant } from '../utils/workspaceContext';
 import { EmailQueueService } from '../services/emailQueue';
+import { GoogleCalendarService } from '../services/googleCalendar';
+import { generateAvailableSlots, getTimeWindowFromPrefer, type AvailableSlot } from '../utils/slotGenerator';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -102,6 +109,59 @@ interface OneOnOneCandidatesPrepareResponse {
 }
 
 // ============================================================
+// Types - freebusy → 候補生成 API（B-2）
+// ============================================================
+
+interface FreebusyConstraints {
+  time_min?: string;      // ISO8601, デフォルト: 翌営業日09:00
+  time_max?: string;      // ISO8601, デフォルト: 2週間後
+  prefer?: 'morning' | 'afternoon' | 'evening' | 'business' | 'any';  // デフォルト: afternoon
+  days?: string[];        // ['mon','tue','wed','thu','fri'], デフォルト: 平日
+  duration?: number;      // 分, デフォルト: 60
+}
+
+interface OneOnOneFreebusyPrepareRequest {
+  /** 相手の情報 */
+  invitee: {
+    name: string;
+    email?: string;
+    contact_id?: string;
+  };
+  /** 制約条件（省略時はデフォルト値を使用） */
+  constraints?: FreebusyConstraints;
+  /** 候補数（デフォルト: 3, 最大: 5） */
+  candidate_count?: number;
+  /** 予定タイトル（省略時: 打ち合わせ） */
+  title?: string;
+  /** 相手へのメッセージ（任意） */
+  message_hint?: string;
+  /** 送信手段: email | share_link（省略時は自動判定） */
+  send_via?: 'email' | 'share_link';
+}
+
+interface OneOnOneFreebusyPrepareResponse {
+  success: boolean;
+  thread_id: string;
+  invite_token: string;
+  share_url: string;
+  slots: Array<{
+    slot_id: string;
+    start_at: string;
+    end_at: string;
+  }>;
+  message_for_chat: string;
+  mode: 'email' | 'share_link';
+  email_queued?: boolean;
+  constraints_used: {
+    time_min: string;
+    time_max: string;
+    prefer: string;
+    duration: number;
+  };
+  request_id: string;
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 
@@ -147,6 +207,59 @@ function formatDateTimeJP(dateStr: string): string {
   const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
   const weekday = weekdays[date.getDay()];
   return `${month}/${day}（${weekday}）${hours}:${minutes}`;
+}
+
+/**
+ * B-2: 翌営業日の指定時刻を取得
+ * 土日をスキップして次の平日を返す
+ */
+function getNextBusinessDayAt(hour: number, minute: number = 0, timezone: string = 'Asia/Tokyo'): Date {
+  const now = new Date();
+  const jstOffset = 9 * 60 * 60 * 1000; // JST = UTC+9
+  
+  // JST での現在時刻
+  const jstNow = new Date(now.getTime() + jstOffset);
+  
+  // 翌日からスタート
+  const result = new Date(jstNow);
+  result.setUTCDate(result.getUTCDate() + 1);
+  result.setUTCHours(hour - 9, minute, 0, 0); // JST → UTC 変換
+  
+  // 土日をスキップ
+  let dayOfWeek = result.getUTCDay();
+  while (dayOfWeek === 0 || dayOfWeek === 6) { // 0 = 日曜, 6 = 土曜
+    result.setUTCDate(result.getUTCDate() + 1);
+    dayOfWeek = result.getUTCDay();
+  }
+  
+  return result;
+}
+
+/**
+ * B-2: N週間後の日時を取得
+ */
+function getDateAfterWeeks(weeks: number): Date {
+  const now = new Date();
+  return new Date(now.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * B-2: 曜日フィルター（days配列に含まれる曜日のみ許可）
+ * days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+ */
+function filterSlotsByDays(slots: AvailableSlot[], days: string[], timezone: string = 'Asia/Tokyo'): AvailableSlot[] {
+  const dayMap: Record<string, number> = {
+    'sun': 0, 'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6
+  };
+  const allowedDays = new Set(days.map(d => dayMap[d.toLowerCase()]));
+  
+  return slots.filter(slot => {
+    const date = new Date(slot.start_at);
+    // JST での曜日を取得
+    const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    const dayOfWeek = jstDate.getUTCDay();
+    return allowedDays.has(dayOfWeek);
+  });
 }
 
 // ============================================================
@@ -652,6 +765,351 @@ app.post('/candidates/prepare', requireAuth, async (c) => {
 });
 
 // ============================================================
+// POST /api/one-on-one/freebusy/prepare
+// freebusy → 候補生成（B-2）
+// 主催者のGoogleカレンダーから空き時間を取得し、候補3つを自動生成
+// ============================================================
+app.post('/freebusy/prepare', requireAuth, async (c) => {
+  const requestId = crypto.randomUUID();
+  const { env } = c;
+  const log = createLogger(env, { module: 'OneOnOne', handler: 'freebusy/prepare', requestId });
+
+  try {
+    // 認証チェック
+    const userId = c.get('userId');
+    if (!userId) {
+      return c.json({ error: 'Unauthorized', request_id: requestId }, 401);
+    }
+
+    // テナントコンテキスト取得
+    const { workspaceId, ownerUserId } = getTenant(c);
+    
+    // リクエストボディ
+    const body = await c.req.json<OneOnOneFreebusyPrepareRequest>();
+    const { 
+      invitee, 
+      constraints = {}, 
+      candidate_count = 3,
+      title = '打ち合わせ', 
+      message_hint, 
+      send_via 
+    } = body;
+
+    // バリデーション: invitee.name
+    if (!invitee?.name) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'invitee.name is required',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // バリデーション: candidate_count（1〜5）
+    if (candidate_count < 1 || candidate_count > 5) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'candidate_count must be between 1 and 5',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // send_via=email 指定時はメールアドレス必須
+    if (send_via === 'email' && !invitee.email) {
+      return c.json({ 
+        error: 'validation_error', 
+        details: 'invitee.email is required when send_via is "email"',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // ============================================================
+    // デフォルト値の適用
+    // ============================================================
+    const defaultTimeMin = getNextBusinessDayAt(9, 0); // 翌営業日 09:00
+    const defaultTimeMax = getDateAfterWeeks(2);        // 2週間後
+    const defaultPrefer = 'afternoon';
+    const defaultDays = ['mon', 'tue', 'wed', 'thu', 'fri']; // 平日
+    const defaultDuration = 60;
+
+    const timeMin = constraints.time_min || defaultTimeMin.toISOString();
+    const timeMax = constraints.time_max || defaultTimeMax.toISOString();
+    const prefer = constraints.prefer || defaultPrefer;
+    const days = constraints.days || defaultDays;
+    const duration = constraints.duration || defaultDuration;
+
+    log.debug('Creating 1-on-1 freebusy schedule', { 
+      inviteeName: invitee.name,
+      hasEmail: !!invitee.email,
+      timeMin,
+      timeMax,
+      prefer,
+      days,
+      duration,
+      candidate_count
+    });
+
+    // ============================================================
+    // 1. 主催者のアクセストークンを取得
+    // ============================================================
+    const accessToken = await GoogleCalendarService.getOrganizerAccessToken(env.DB, ownerUserId, env);
+    if (!accessToken) {
+      return c.json({ 
+        error: 'calendar_unavailable', 
+        message: 'Googleカレンダーが連携されていません。設定からカレンダー連携を行ってください。',
+        request_id: requestId 
+      }, 400);
+    }
+
+    // ============================================================
+    // 2. freebusy を取得
+    // ============================================================
+    let busy: Array<{ start: string; end: string }>;
+    try {
+      const calendarService = new GoogleCalendarService(accessToken, env);
+      busy = await calendarService.getFreeBusy(timeMin, timeMax);
+    } catch (calendarError) {
+      log.error('Failed to fetch freebusy', { 
+        error: calendarError instanceof Error ? calendarError.message : String(calendarError) 
+      });
+      return c.json({ 
+        error: 'calendar_unavailable', 
+        message: 'カレンダーの空き時間を取得できませんでした。しばらく待ってから再試行してください。',
+        request_id: requestId 
+      }, 503);
+    }
+
+    // ============================================================
+    // 3. 空き枠を生成
+    // ============================================================
+    const dayTimeWindow = prefer === 'any' ? undefined : getTimeWindowFromPrefer(prefer);
+    const slotResult = generateAvailableSlots({
+      timeMin,
+      timeMax,
+      busy,
+      meetingLengthMin: duration,
+      stepMin: 30,
+      maxResults: candidate_count * 3, // 余裕を持って生成
+      dayTimeWindow,
+      timezone: 'Asia/Tokyo',
+    });
+
+    // 曜日フィルター適用
+    let filteredSlots = filterSlotsByDays(slotResult.available_slots, days);
+    
+    // 候補数に絞る
+    filteredSlots = filteredSlots.slice(0, candidate_count);
+
+    // ============================================================
+    // 4. 候補が0件の場合のエラーハンドリング
+    // ============================================================
+    if (filteredSlots.length === 0) {
+      const suggestions = [
+        prefer !== 'any' ? '時間帯の制約を「指定なし」に変更' : null,
+        days.length < 7 ? '曜日の制約を緩和（週末も含める）' : null,
+        '期間を広げる（例: 3週間後まで）',
+        '所要時間を短くする（例: 30分）',
+      ].filter(Boolean);
+
+      return c.json({ 
+        error: 'no_available_slots', 
+        message: `指定期間（${formatDateTimeJP(timeMin)}〜${formatDateTimeJP(timeMax)}）に空きが見つかりませんでした。`,
+        suggestions,
+        constraints_used: {
+          time_min: timeMin,
+          time_max: timeMax,
+          prefer,
+          duration,
+        },
+        request_id: requestId 
+      }, 422);
+    }
+
+    // モード判定
+    const mode: 'email' | 'share_link' = 
+      send_via === 'email' && invitee.email ? 'email' : 
+      send_via === 'share_link' ? 'share_link' :
+      invitee.email ? 'email' : 'share_link';
+
+    // ============================================================
+    // 5. DB操作: scheduling_thread + scheduling_slots + thread_invites
+    // ============================================================
+    const threadId = uuidv4();
+    const inviteId = uuidv4();
+    const token = generateToken();
+    const inviteeKey = await generateInviteeKey(invitee.email);
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(); // 72時間後
+
+    const inviteeEmail = invitee.email || `guest-${token.substring(0, 8)}@placeholder.local`;
+
+    // constraints_json に制約を保存
+    const constraintsJson = JSON.stringify({
+      time_min: timeMin,
+      time_max: timeMax,
+      prefer,
+      days,
+      duration,
+      source: 'freebusy',
+    });
+
+    // 1. scheduling_threads 作成（slot_policy = 'freebusy_multi'）
+    await env.DB.prepare(`
+      INSERT INTO scheduling_threads (
+        id, workspace_id, organizer_user_id, title, description, status, mode, 
+        slot_policy, constraints_json, proposal_version, additional_propose_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'draft', 'one_on_one', 'freebusy_multi', ?, 1, 0, ?, ?)
+    `).bind(
+      threadId,
+      workspaceId,
+      ownerUserId,
+      title,
+      message_hint || null,
+      constraintsJson,
+      now,
+      now
+    ).run();
+
+    // 2. scheduling_slots 作成（複数枠）
+    const createdSlots: Array<{ slot_id: string; start_at: string; end_at: string }> = [];
+    for (const slot of filteredSlots) {
+      const slotId = uuidv4();
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (
+          slot_id, thread_id, start_at, end_at, timezone, label, proposal_version, created_at
+        ) VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, 1, ?)
+      `).bind(
+        slotId,
+        threadId,
+        slot.start_at,
+        slot.end_at,
+        slot.label || title,
+        now
+      ).run();
+      createdSlots.push({ slot_id: slotId, start_at: slot.start_at, end_at: slot.end_at });
+    }
+
+    // 3. thread_invites 作成
+    await env.DB.prepare(`
+      INSERT INTO thread_invites (
+        id, thread_id, token, email, candidate_name, candidate_reason, 
+        invitee_key, status, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `).bind(
+      inviteId,
+      threadId,
+      token,
+      inviteeEmail,
+      invitee.name,
+      message_hint || null,
+      inviteeKey,
+      expiresAt,
+      now
+    ).run();
+
+    // 4. スレッド status を sent に更新
+    await env.DB.prepare(`
+      UPDATE scheduling_threads SET status = 'sent', updated_at = ? WHERE id = ?
+    `).bind(now, threadId).run();
+
+    log.debug('1-on-1 freebusy schedule created', { 
+      threadId, 
+      slotCount: createdSlots.length, 
+      inviteId, 
+      token, 
+      mode 
+    });
+
+    // ============================================================
+    // 6. メール送信（mode === 'email' の場合）
+    // ============================================================
+    let emailQueued = false;
+    if (mode === 'email' && invitee.email) {
+      try {
+        const organizer = await env.DB.prepare(
+          `SELECT display_name, email FROM users WHERE id = ?`
+        ).bind(ownerUserId).first<{ display_name: string | null; email: string }>();
+        
+        const organizerName = organizer?.display_name || organizer?.email?.split('@')[0] || 'ユーザー';
+        
+        const emailQueue = new EmailQueueService(env.EMAIL_QUEUE, undefined);
+        await emailQueue.sendOneOnOneEmail({
+          to: invitee.email,
+          token,
+          organizerName,
+          inviteeName: invitee.name,
+          title,
+          slot: {
+            start_at: createdSlots[0].start_at,
+            end_at: createdSlots[0].end_at,
+          },
+          messageHint: message_hint,
+        });
+        
+        emailQueued = true;
+        log.debug('Email queued successfully', { email: invitee.email, threadId, token });
+      } catch (emailError) {
+        log.warn('Failed to queue email, falling back to share_link', { 
+          email: invitee.email, 
+          threadId,
+          error: emailError instanceof Error ? emailError.message : String(emailError)
+        });
+      }
+    }
+
+    // ============================================================
+    // 7. レスポンス生成
+    // ============================================================
+    const baseUrl = 'https://app.tomoniwao.jp';
+    const shareUrl = `${baseUrl}/i/${token}`;
+
+    const slotsLabel = createdSlots.map((slot, i) => {
+      const label = `${formatDateTimeJP(slot.start_at)}〜${new Date(slot.end_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+      return `  ${i + 1}. ${label}`;
+    }).join('\n');
+
+    // チャット用メッセージ
+    let messageForChat: string;
+    if (mode === 'email' && emailQueued) {
+      messageForChat = `了解です。あなたの空き時間から${createdSlots.length}件の候補を選んで、${invitee.name}さん（${invitee.email}）にメールで確認を送りました📧\n\n📅 候補日時：\n${slotsLabel}\n\n返事が来たらお知らせします。`;
+    } else if (mode === 'email' && !emailQueued) {
+      messageForChat = `了解です。あなたの空き時間から${createdSlots.length}件の候補を選びました。\n（メール送信に失敗したため、手動で共有してください）\n\n📅 候補日時：\n${slotsLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから都合の良い日時を選んでください。\n${shareUrl}\n---`;
+    } else {
+      messageForChat = `了解です。あなたの空き時間から${createdSlots.length}件の候補を選びました。\n\n📅 候補日時：\n${slotsLabel}\n\n次のメッセージを${invitee.name}さんに送ってください：\n\n---\n${invitee.name}さん、日程のご確認です。\n下記リンクから都合の良い日時を選んでください。\n${shareUrl}\n---`;
+    }
+
+    const response: OneOnOneFreebusyPrepareResponse = {
+      success: true,
+      thread_id: threadId,
+      invite_token: token,
+      share_url: shareUrl,
+      slots: createdSlots,
+      message_for_chat: messageForChat,
+      mode,
+      email_queued: emailQueued || undefined,
+      constraints_used: {
+        time_min: timeMin,
+        time_max: timeMax,
+        prefer,
+        duration,
+      },
+      request_id: requestId
+    };
+
+    return c.json(response, 201);
+
+  } catch (error) {
+    log.error('Failed to prepare 1-on-1 freebusy schedule', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error',
+      request_id: requestId 
+    }, 500);
+  }
+});
+
+// ============================================================
 // GET /api/one-on-one/health
 // ヘルスチェック（疎通確認用）
 // ============================================================
@@ -659,10 +1117,11 @@ app.get('/health', (c) => {
   return c.json({ 
     status: 'ok', 
     module: 'one-on-one',
-    version: '1.1',  // B-1 追加に伴いバージョンアップ
+    version: '1.2',  // B-2 追加に伴いバージョンアップ
     endpoints: [
       'POST /fixed/prepare',
-      'POST /candidates/prepare'
+      'POST /candidates/prepare',
+      'POST /freebusy/prepare'
     ],
     timestamp: Math.floor(Date.now() / 1000) 
   });
