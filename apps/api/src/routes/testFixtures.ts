@@ -269,7 +269,8 @@ app.post('/one-on-one-candidates', async (c) => {
       title = 'E2E候補3つテスト',
       slot_count = 3,
       start_offset_hours = 24,
-      duration_minutes = 60
+      duration_minutes = 60,
+      additional_propose_count = 0  // B-5: 既存の再提案回数を設定（0 = 未再提案）
     } = body as {
       invitee_name?: string;
       invitee_email?: string;
@@ -277,6 +278,7 @@ app.post('/one-on-one-candidates', async (c) => {
       slot_count?: number;
       start_offset_hours?: number;
       duration_minutes?: number;
+      additional_propose_count?: number;
     };
 
     const now = new Date();
@@ -302,16 +304,18 @@ app.post('/one-on-one-candidates', async (c) => {
     const SLOT_HOURS = [10, 14, 16, 11, 15];
 
     // 1. scheduling_threads 作成 (slot_policy = 'fixed_multi')
+    // B-5: additional_propose_count を設定可能にして3回目の別日希望テストを可能にする
     await env.DB.prepare(`
       INSERT INTO scheduling_threads (
         id, organizer_user_id, title, description, status, mode, 
-        slot_policy, proposal_version, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'sent', 'one_on_one', 'fixed_multi', 1, ?, ?)
+        slot_policy, proposal_version, additional_propose_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'sent', 'one_on_one', 'fixed_multi', 1, ?, ?, ?)
     `).bind(
       threadId,
       testUserId,
       title,
       `E2Eテスト用fixture - 候補${slot_count}件`,
+      additional_propose_count,
       nowISO,
       nowISO
     ).run();
