@@ -28,6 +28,7 @@ import threadsStatusRoutes from './routes/threadsStatus';
 import threadsRemindRoutes from './routes/threadsRemind';
 import threadsFinalizeRoutes from './routes/threadsFinalize';
 import inviteRoutes from './routes/invite';
+import openSlotsRoutes from './routes/openSlots';
 import inboxRoutes from './routes/inbox';
 import roomsRoutes from './routes/rooms';
 import schedulingApiRoutes from './routes/schedulingApi';
@@ -188,6 +189,9 @@ app.route('/api/otp', otpRoutes);
 
 // External Invite Routes (Ticket 10 - Public, no auth required)
 app.route('/i', inviteRoutes);
+
+// Open Slots Routes (Phase B-4 - Public, TimeRex型の公開枠選択)
+app.route('/open', openSlotsRoutes);
 
 // ============================================================
 // Protected API Routes (requireAuth middleware)
