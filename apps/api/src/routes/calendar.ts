@@ -8,7 +8,7 @@
  */
 
 import { Hono } from 'hono';
-import { GoogleCalendarService } from '../services/googleCalendar';
+import { GoogleCalendarService, createProxyEvent, ProxyBookingError } from '../services/googleCalendar';
 import { generateAvailableSlots, getTimeWindowFromPrefer } from '../utils/slotGenerator';
 import { getBatchFreeBusy, getThreadParticipants } from '../services/freebusyBatch';
 import type { ParticipantInfo } from '../services/freebusyBatch';
@@ -472,6 +472,131 @@ app.post('/freebusy/batch', async (c) => {
     return c.json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+// ============================================================
+// Phase D-1 ACCESS-3: Proxy Booking (代理予約) API
+// ============================================================
+
+/**
+ * POST /api/calendar/proxy-event
+ * Create a calendar event on behalf of another user (代理予約)
+ * 
+ * IMPORTANT: Requires family_can_write permission (write_calendar)
+ * 
+ * Request body:
+ * - targetUserId: Target user's ID (whose calendar to write to)
+ * - summary: Event title
+ * - description: Event description (optional)
+ * - start: Start time (ISO 8601)
+ * - end: End time (ISO 8601)
+ * - timeZone: Timezone (default: Asia/Tokyo)
+ * 
+ * Response:
+ * - success: boolean
+ * - event: Created calendar event details
+ * - targetUserId: Target user ID
+ * - requesterId: Requester user ID
+ * 
+ * Error codes:
+ * - 401: Not authenticated
+ * - 403: No write_calendar permission (no_permission)
+ * - 400: Target user has no linked calendar (target_no_calendar)
+ * - 500: Event creation failed (create_failed)
+ * 
+ * Phase: D-1 ACCESS-3 (R2 entry point for family proxy booking)
+ */
+app.post('/proxy-event', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'Calendar', handler: 'proxy-event' });
+  const userId = c.get('userId');
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized', message: '認証が必要です' }, 401);
+  }
+  
+  try {
+    const body = await c.req.json<{
+      targetUserId: string;
+      summary: string;
+      description?: string;
+      start: string;
+      end: string;
+      timeZone?: string;
+    }>();
+    
+    // Validate required fields
+    if (!body.targetUserId || !body.summary || !body.start || !body.end) {
+      return c.json({
+        error: 'invalid_request',
+        message: 'targetUserId, summary, start, end は必須です',
+      }, 400);
+    }
+    
+    // Cannot create proxy event for yourself
+    if (body.targetUserId === userId) {
+      return c.json({
+        error: 'invalid_request',
+        message: '自分自身への代理予約はできません。通常のカレンダー登録を使用してください。',
+      }, 400);
+    }
+    
+    log.debug('Proxy event request', {
+      targetUserId: body.targetUserId,
+      summary: body.summary,
+      start: body.start,
+      end: body.end,
+    });
+    
+    // Create proxy event with permission check
+    const result = await createProxyEvent(env.DB, env, {
+      requesterId: userId,
+      targetUserId: body.targetUserId,
+      event: {
+        summary: body.summary,
+        description: body.description,
+        start: body.start,
+        end: body.end,
+        timeZone: body.timeZone || 'Asia/Tokyo',
+      },
+    });
+    
+    log.debug('Proxy event created', {
+      eventId: result.event.id,
+      targetUserId: result.targetUserId,
+    });
+    
+    return c.json({
+      success: true,
+      event: {
+        id: result.event.id,
+        summary: result.event.summary,
+        start: result.event.start,
+        end: result.event.end,
+        hangoutLink: result.event.hangoutLink,
+        htmlLink: result.event.htmlLink,
+      },
+      targetUserId: result.targetUserId,
+      requesterId: result.requesterId,
+    }, 201);
+    
+  } catch (error) {
+    if (error instanceof ProxyBookingError) {
+      log.warn('Proxy booking error', { code: error.code, message: error.message });
+      return c.json({
+        error: error.code,
+        message: error.message,
+      }, error.status as 400 | 403 | 500);
+    }
+    
+    log.error('Unexpected error in proxy-event', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return c.json({
+      error: 'internal_error',
+      message: 'カレンダーイベントの作成中にエラーが発生しました',
     }, 500);
   }
 });
