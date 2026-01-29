@@ -6,6 +6,11 @@
  * - 各参加者のbusyを取得（self=Google Calendar、外部=未連携なら除外）
  * - busyのunionを計算（= 全員のbusy）
  * - slotGeneratorに渡してintersection（共通空き）を生成
+ * 
+ * D-1 ACCESS: 
+ * - app_user の freebusy 取得には view_freebusy 権限が必要
+ * - threadId 経由の取得は既存動作を維持（スケジュール調整の参加者）
+ * - 直接 participants 指定の場合のみ権限チェック
  */
 
 import { GoogleCalendarService } from './googleCalendar';
@@ -14,6 +19,7 @@ import { scoreSlots, type ParticipantPrefs } from '../utils/slotScorer';
 import { parseSchedulePrefs, type ScoredSlot, type ScoreReason } from '../utils/schedulePrefs';
 import type { AvailableSlot, DayTimeWindow, SlotGeneratorResult } from '../utils/slotGenerator';
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { createRelationshipAccessService } from './relationshipAccess';
 
 // ============================================================
 // Types
@@ -36,12 +42,14 @@ export interface BatchFreeBusyParams {
   maxResults?: number;
   prefer?: string;        // 'morning' | 'afternoon' | 'evening' | 'business'
   timezone?: string;
+  /** D-1: スレッド経由の取得か（true の場合、権限チェックをスキップ） */
+  isThreadContext?: boolean;
 }
 
 export interface ParticipantBusy {
   participant: ParticipantInfo;
   busy: Array<{ start: string; end: string }>;
-  status: 'success' | 'not_linked' | 'error' | 'external_excluded';
+  status: 'success' | 'not_linked' | 'error' | 'external_excluded' | 'no_permission';
   error?: string;
 }
 
@@ -124,12 +132,16 @@ export async function getBatchFreeBusy(
     maxResults = 8,
     prefer,
     timezone = 'Asia/Tokyo',
+    isThreadContext = false,
   } = params;
   
   const perParticipant: ParticipantBusy[] = [];
   const allBusy: Array<Array<{ start: string; end: string }>> = [];
   let excludedCount = 0;
   let linkedCount = 0;
+  
+  // D-1: 権限チェック用サービス（直接参加者指定の場合のみ使用）
+  const accessService = !isThreadContext ? createRelationshipAccessService(db) : null;
   
   // 1. 各参加者のbusyを取得
   for (const participant of participants) {
@@ -169,6 +181,26 @@ export async function getBatchFreeBusy(
     } else if (participant.type === 'app_user' && participant.userId) {
       // アプリユーザー（Google連携済みの可能性あり）
       try {
+        // D-1 ACCESS: 直接参加者指定の場合は権限チェック
+        if (accessService) {
+          const hasPermission = await accessService.hasPermission(
+            organizerUserId,
+            participant.userId,
+            'view_freebusy'
+          );
+          
+          if (!hasPermission) {
+            perParticipant.push({
+              participant,
+              busy: [],
+              status: 'no_permission',
+              error: 'この参加者の空き情報を見る権限がありません',
+            });
+            excludedCount++;
+            continue;
+          }
+        }
+        
         const accessToken = await GoogleCalendarService.getOrganizerAccessToken(db, participant.userId, env);
         if (!accessToken) {
           perParticipant.push({

@@ -406,6 +406,7 @@ app.post('/freebusy/batch', async (c) => {
     }
 
     // 3. バッチfreebusyを実行
+    // D-1: threadId 経由の場合は権限チェックをスキップ（スケジュール調整の参加者）
     const result = await getBatchFreeBusy(env.DB, env, {
       organizerUserId: userId,
       participants,
@@ -416,6 +417,7 @@ app.post('/freebusy/batch', async (c) => {
       maxResults: 8,
       prefer,
       timezone: 'Asia/Tokyo',
+      isThreadContext: !!body.threadId,
     });
 
     // FAIL-1: スレッドに関連付けた空き検索で候補0件の場合、失敗を記録
