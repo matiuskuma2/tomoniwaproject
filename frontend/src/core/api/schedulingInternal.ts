@@ -116,12 +116,32 @@ export interface InternalRespondRequest {
 }
 
 /**
+ * Calendar registration status for a participant (R1.1)
+ */
+export interface CalendarRegistrationStatus {
+  registered: boolean;
+  event_id?: string;
+  meeting_url?: string;
+  error?: string;
+}
+
+/**
+ * Calendar status for all participants (R1.1)
+ */
+export interface CalendarStatus {
+  organizer: CalendarRegistrationStatus;
+  invitee: CalendarRegistrationStatus;
+}
+
+/**
  * Respond response
  */
 export interface InternalRespondResponse {
   success: boolean;
   thread_status: string;
   confirmed_slot: SchedulingSlot;
+  calendar_status?: CalendarStatus;
+  meeting_url?: string | null;
   message?: string;
 }
 

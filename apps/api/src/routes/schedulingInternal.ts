@@ -24,6 +24,7 @@ import { getBatchFreeBusy, type ParticipantInfo } from '../services/freebusyBatc
 import { createRelationshipAccessService } from '../services/relationshipAccess';
 import { InboxRepository } from '../repositories/inboxRepository';
 import { THREAD_KIND } from '../../../../packages/shared/src/types/thread';
+import { GoogleCalendarService, type CalendarEvent } from '../services/googleCalendar';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -717,6 +718,135 @@ app.post('/:threadId/respond', requireAuth, async (c) => {
     organizer: thread.organizer_user_id
   });
   
+  // ============================================================
+  // 5. Create Google Calendar events for both parties (R1.1)
+  // ============================================================
+  const calendarStatus: {
+    organizer: { registered: boolean; event_id?: string; meeting_url?: string; error?: string };
+    invitee: { registered: boolean; event_id?: string; error?: string };
+  } = {
+    organizer: { registered: false },
+    invitee: { registered: false }
+  };
+  
+  // 5-1. Create event on organizer's calendar
+  try {
+    const organizerToken = await GoogleCalendarService.getOrganizerAccessToken(
+      env.DB,
+      thread.organizer_user_id,
+      env
+    );
+    
+    if (organizerToken) {
+      // Get organizer's email
+      const organizerUser = await env.DB
+        .prepare('SELECT email FROM users WHERE id = ?')
+        .bind(thread.organizer_user_id)
+        .first<{ email: string }>();
+      
+      const calendarService = new GoogleCalendarService(organizerToken, env);
+      const event = await calendarService.createEventWithMeet({
+        summary: thread.title,
+        description: `日程調整: ${inviteeName}さんとのミーティング`,
+        start: slot.start_time,
+        end: slot.end_time,
+        timeZone: slot.timezone || 'Asia/Tokyo',
+        organizerEmail: organizerUser?.email
+      });
+      
+      if (event) {
+        calendarStatus.organizer = {
+          registered: true,
+          event_id: event.id,
+          meeting_url: event.hangoutLink
+        };
+        log.info('Organizer calendar event created', { 
+          eventId: event.id, 
+          meetingUrl: event.hangoutLink 
+        });
+      } else {
+        calendarStatus.organizer = {
+          registered: false,
+          error: 'calendar_write_failed'
+        };
+        log.warn('Failed to create organizer calendar event');
+      }
+    } else {
+      calendarStatus.organizer = {
+        registered: false,
+        error: 'no_calendar_connected'
+      };
+      log.info('Organizer has no Google Calendar connected');
+    }
+  } catch (error: any) {
+    calendarStatus.organizer = {
+      registered: false,
+      error: error.message || 'calendar_error'
+    };
+    log.error('Error creating organizer calendar event', { error: error.message });
+  }
+  
+  // 5-2. Create event on invitee's calendar
+  try {
+    const inviteeToken = await GoogleCalendarService.getOrganizerAccessToken(
+      env.DB,
+      userId, // invitee is the current user
+      env
+    );
+    
+    if (inviteeToken) {
+      // Get invitee's email
+      const inviteeUser = await env.DB
+        .prepare('SELECT email FROM users WHERE id = ?')
+        .bind(userId)
+        .first<{ email: string }>();
+      
+      const calendarService = new GoogleCalendarService(inviteeToken, env);
+      const event = await calendarService.createEventWithMeet({
+        summary: thread.title,
+        description: `日程調整: ${organizerName}さんとのミーティング`,
+        start: slot.start_time,
+        end: slot.end_time,
+        timeZone: slot.timezone || 'Asia/Tokyo',
+        organizerEmail: inviteeUser?.email
+      });
+      
+      if (event) {
+        calendarStatus.invitee = {
+          registered: true,
+          event_id: event.id
+        };
+        log.info('Invitee calendar event created', { eventId: event.id });
+      } else {
+        calendarStatus.invitee = {
+          registered: false,
+          error: 'calendar_write_failed'
+        };
+        log.warn('Failed to create invitee calendar event');
+      }
+    } else {
+      calendarStatus.invitee = {
+        registered: false,
+        error: 'no_calendar_connected'
+      };
+      log.info('Invitee has no Google Calendar connected');
+    }
+  } catch (error: any) {
+    calendarStatus.invitee = {
+      registered: false,
+      error: error.message || 'calendar_error'
+    };
+    log.error('Error creating invitee calendar event', { error: error.message });
+  }
+  
+  log.info('Internal scheduling confirmed', { 
+    threadId, 
+    selectedSlotId: slot.id,
+    invitee: userId,
+    organizer: thread.organizer_user_id,
+    calendarStatus
+  });
+  
   return c.json({
     success: true,
     thread_status: 'confirmed',
@@ -726,6 +856,8 @@ app.post('/:threadId/respond', requireAuth, async (c) => {
       end_at: slot.end_time,
       timezone: slot.timezone
     },
+    calendar_status: calendarStatus,
+    meeting_url: calendarStatus.organizer.meeting_url || null,
     message: '日程が確定しました'
   });
 });
