@@ -1213,6 +1213,168 @@ app.delete('/inbox/:userId', async (c) => {
   }
 });
 
+/**
+ * Create Relationship Between Users (PR-D1-ACCESS-E2E)
+ * 
+ * E2Eテスト用に2ユーザー間の関係を直接作成（リクエスト/承認をスキップ）
+ * 
+ * @route POST /test/fixtures/relationships
+ * @body {
+ *   user_a_id: string,           // ユーザーA ID (e2e- prefix required)
+ *   user_b_id: string,           // ユーザーB ID (e2e- prefix required)
+ *   relation_type: 'workmate' | 'family',
+ *   permission_preset: 'workmate_default' | 'family_view_freebusy' | 'family_can_write'
+ * }
+ * @returns {
+ *   success: true,
+ *   relationship_id: string,
+ *   relation_type: string,
+ *   permission_preset: string
+ * }
+ */
+app.post('/relationships', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'create-relationship' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json();
+    const {
+      user_a_id,
+      user_b_id,
+      relation_type,
+      permission_preset
+    } = body as {
+      user_a_id: string;
+      user_b_id: string;
+      relation_type: 'workmate' | 'family';
+      permission_preset: 'workmate_default' | 'family_view_freebusy' | 'family_can_write';
+    };
+
+    // Validate required fields
+    if (!user_a_id || !user_b_id || !relation_type || !permission_preset) {
+      return c.json({ 
+        error: 'invalid_request', 
+        message: 'user_a_id, user_b_id, relation_type, permission_preset are required' 
+      }, 400);
+    }
+
+    // E2E ユーザーのみ許可
+    if (!user_a_id.startsWith('e2e-') || !user_b_id.startsWith('e2e-')) {
+      return c.json({ error: 'Only e2e- prefixed users allowed' }, 403);
+    }
+
+    const now = new Date();
+    const nowISO = now.toISOString();
+    
+    // Normalize user pair (alphabetical order)
+    const [normalizedA, normalizedB] = [user_a_id, user_b_id].sort();
+    const relationshipId = `e2e-rel-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // 既存の関係を削除
+    await env.DB.prepare(`
+      DELETE FROM relationships 
+      WHERE (user_a_id = ? AND user_b_id = ?) OR (user_a_id = ? AND user_b_id = ?)
+    `).bind(normalizedA, normalizedB, normalizedB, normalizedA).run();
+
+    // 関係を作成
+    await env.DB.prepare(`
+      INSERT INTO relationships (id, user_a_id, user_b_id, relation_type, status, permission_preset, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+    `).bind(relationshipId, normalizedA, normalizedB, relation_type, permission_preset, nowISO, nowISO).run();
+
+    log.debug('E2E relationship created', { 
+      relationshipId, 
+      user_a_id: normalizedA, 
+      user_b_id: normalizedB,
+      relation_type,
+      permission_preset
+    });
+
+    return c.json({
+      success: true,
+      relationship_id: relationshipId,
+      user_a_id: normalizedA,
+      user_b_id: normalizedB,
+      relation_type,
+      permission_preset
+    }, 201);
+
+  } catch (error) {
+    log.error('Failed to create E2E relationship', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * Delete Relationship Between Users (PR-D1-ACCESS-E2E)
+ * 
+ * @route DELETE /test/fixtures/relationships
+ * @body { user_a_id: string, user_b_id: string }
+ */
+app.delete('/relationships', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'delete-relationship' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json();
+    const { user_a_id, user_b_id } = body as { user_a_id: string; user_b_id: string };
+
+    if (!user_a_id || !user_b_id) {
+      return c.json({ error: 'user_a_id and user_b_id required' }, 400);
+    }
+
+    // E2E ユーザーのみ許可
+    if (!user_a_id.startsWith('e2e-') || !user_b_id.startsWith('e2e-')) {
+      return c.json({ error: 'Only e2e- prefixed users allowed' }, 403);
+    }
+
+    // Normalize user pair (alphabetical order)
+    const [normalizedA, normalizedB] = [user_a_id, user_b_id].sort();
+
+    const result = await env.DB.prepare(`
+      DELETE FROM relationships 
+      WHERE user_a_id = ? AND user_b_id = ?
+    `).bind(normalizedA, normalizedB).run();
+
+    log.debug('E2E relationship deleted', { 
+      user_a_id: normalizedA, 
+      user_b_id: normalizedB,
+      deleted_count: result.meta.changes
+    });
+
+    return c.json({ 
+      success: true, 
+      deleted_count: result.meta.changes 
+    });
+
+  } catch (error) {
+    log.error('Failed to delete E2E relationship', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 app.get('/health', (c) => {
   const env = c.env as Env;
   
@@ -1227,11 +1389,13 @@ app.get('/health', (c) => {
       'POST /freebusy-context',
       'POST /open-slots',
       'POST /users/pair',
+      'POST /relationships',
       'DELETE /one-on-one/:token',
       'DELETE /freebusy-context/:token',
       'DELETE /open-slots/:token',
       'DELETE /users/pair',
-      'DELETE /inbox/:userId'
+      'DELETE /inbox/:userId',
+      'DELETE /relationships'
     ]
   });
 });
