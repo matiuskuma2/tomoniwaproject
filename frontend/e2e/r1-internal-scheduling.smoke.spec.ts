@@ -3,16 +3,15 @@
  * R1 Internal Scheduling Smoke Test - Production Safety
  * 
  * テスト対象:
- * - 本番環境で scheduling_internal fixture が存在しないことを確認（403/404）
- * - 認証なしで API にアクセスすると 401 が返ることを確認
+ * - 本番環境で fixture API が 403 を返すことを確認（セキュリティ検証）
+ * - 本番環境で認証なしで API にアクセスすると 401 が返ることを確認
  * 
- * NOTE: smoke プロジェクトで実行
+ * NOTE: smoke プロジェクトで実行（本番 URL に対してテスト）
  */
 
 import { test, expect } from '@playwright/test';
 
 const PROD_API_URL = 'https://webapp.snsrilarc.workers.dev';
-const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:8787';
 
 test.describe('R1 Internal Scheduling Smoke: Production Safety', () => {
   
@@ -62,8 +61,8 @@ test.describe('R1 Internal Scheduling Smoke: Production Safety', () => {
     }
   });
 
-  test('認証なしで scheduling/internal/prepare にアクセスすると 401', async ({ request }) => {
-    const response = await request.post(`${API_BASE_URL}/api/scheduling/internal/prepare`, {
+  test('本番環境で認証なしで scheduling/internal/prepare にアクセスすると 401', async ({ request }) => {
+    const response = await request.post(`${PROD_API_URL}/api/scheduling/internal/prepare`, {
       headers: {
         'Content-Type': 'application/json'
       },
@@ -77,15 +76,15 @@ test.describe('R1 Internal Scheduling Smoke: Production Safety', () => {
     console.log('[R1-Smoke] Unauthorized access to prepare API returns 401');
   });
 
-  test('認証なしで scheduling/internal/:threadId にアクセスすると 401', async ({ request }) => {
-    const response = await request.get(`${API_BASE_URL}/api/scheduling/internal/smoke-test-thread-id`);
+  test('本番環境で認証なしで scheduling/internal/:threadId にアクセスすると 401', async ({ request }) => {
+    const response = await request.get(`${PROD_API_URL}/api/scheduling/internal/smoke-test-thread-id`);
     
     expect(response.status()).toBe(401);
     console.log('[R1-Smoke] Unauthorized access to thread detail API returns 401');
   });
 
-  test('認証なしで scheduling/internal/:threadId/respond にアクセスすると 401', async ({ request }) => {
-    const response = await request.post(`${API_BASE_URL}/api/scheduling/internal/smoke-test-thread-id/respond`, {
+  test('本番環境で認証なしで scheduling/internal/:threadId/respond にアクセスすると 401', async ({ request }) => {
+    const response = await request.post(`${PROD_API_URL}/api/scheduling/internal/smoke-test-thread-id/respond`, {
       headers: {
         'Content-Type': 'application/json'
       },
@@ -96,19 +95,5 @@ test.describe('R1 Internal Scheduling Smoke: Production Safety', () => {
     
     expect(response.status()).toBe(401);
     console.log('[R1-Smoke] Unauthorized access to respond API returns 401');
-  });
-});
-
-test.describe('R1 Internal Scheduling Smoke: Basic API Check', () => {
-  
-  test('存在しないスレッドにアクセスすると 404', async ({ request }) => {
-    // 本番 URL での確認（認証なしで 401 または 認証ありで 404）
-    // Smoke テストでは 401 を確認
-    const response = await request.get(`${PROD_API_URL}/api/scheduling/internal/non-existent-thread`);
-    
-    // 401 (unauthorized) または 404 (not found)
-    expect([401, 404]).toContain(response.status());
-    
-    console.log('[R1-Smoke] Non-existent thread returns:', response.status());
   });
 });
