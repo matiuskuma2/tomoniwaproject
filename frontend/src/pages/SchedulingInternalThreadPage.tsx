@@ -14,7 +14,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { schedulingInternalApi } from '../core/api';
 import type { 
   InternalThreadResponse, 
-  SchedulingSlot,
   ThreadParticipant 
 } from '../core/api/schedulingInternal';
 import { formatDateTimeRangeForViewer } from '../utils/datetime';

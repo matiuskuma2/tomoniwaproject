@@ -75,7 +75,8 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
   const isSchedulingRequest = notificationType === INBOX_TYPE_SCHEDULING_REQUEST;
   const isSchedulingConfirmed = notificationType === INBOX_TYPE_SCHEDULING_CONFIRMED;
   const isSchedulingDeclined = notificationType === INBOX_TYPE_SCHEDULING_DECLINED;
-  const isSchedulingRelated = isSchedulingRequest || isSchedulingConfirmed || isSchedulingDeclined;
+  // Note: isSchedulingRelated can be used for future logic (e.g., grouping)
+  // const isSchedulingRelated = isSchedulingRequest || isSchedulingConfirmed || isSchedulingDeclined;
   
   // Get token for relationship request
   const token = payload.token;
