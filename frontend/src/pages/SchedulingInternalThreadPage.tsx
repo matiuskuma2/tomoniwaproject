@@ -283,11 +283,29 @@ export function SchedulingInternalThreadPage() {
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                       </svg>
                       {calendarStatus.invitee.error === 'no_calendar_connected' 
-                        ? 'カレンダー未連携（設定から連携できます）' 
+                        ? 'カレンダー未連携' 
                         : '登録失敗'}
                     </span>
                   )}
                 </div>
+                
+                {/* R1.2: Calendar connection CTA for invitee */}
+                {!calendarStatus.invitee.registered && calendarStatus.invitee.error === 'no_calendar_connected' && (
+                  <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="text-sm text-amber-800 mb-3">
+                      📅 Googleカレンダーを連携すると、確定した予定が自動で登録されます。
+                    </p>
+                    <button
+                      onClick={() => navigate('/settings')}
+                      className="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                      設定でカレンダーを連携する
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             
