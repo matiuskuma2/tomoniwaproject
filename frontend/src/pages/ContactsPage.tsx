@@ -1,18 +1,22 @@
 /**
  * Contacts Page - Phase D-1 Updated
  * Manage contact list with relationship badges
+ * 
+ * Phase D-1 UI-3: Added relationship removal functionality
  */
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { contactsApi } from '../core/api';
 import { 
+  relationshipsApi,
   getRelationTypeLabel, 
   getRelationTypeBadgeClass,
   type RelationType 
 } from '../core/api/relationships';
 import { 
-  getRelationshipMap, 
+  getRelationshipMap,
+  invalidateRelationships,
   type RelationshipInfo 
 } from '../core/cache/relationshipsCache';
 import type { Contact } from '../core/models';
@@ -24,9 +28,18 @@ import type { Contact } from '../core/models';
 interface RelationshipBadgeProps {
   relationType: RelationType;
   showStranger?: boolean;
+  relationshipId?: string;
+  onRemove?: (relationshipId: string) => void;
+  isRemoving?: boolean;
 }
 
-function RelationshipBadge({ relationType, showStranger = false }: RelationshipBadgeProps) {
+function RelationshipBadge({ 
+  relationType, 
+  showStranger = false, 
+  relationshipId,
+  onRemove,
+  isRemoving = false,
+}: RelationshipBadgeProps) {
   // Don't show badge for strangers unless explicitly requested
   if (relationType === 'stranger' && !showStranger) {
     return null;
@@ -35,9 +48,39 @@ function RelationshipBadge({ relationType, showStranger = false }: RelationshipB
   const label = getRelationTypeLabel(relationType);
   const colorClass = getRelationTypeBadgeClass(relationType);
   
+  const handleRemoveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (relationshipId && onRemove && !isRemoving) {
+      onRemove(relationshipId);
+    }
+  };
+  
   return (
-    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colorClass}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${colorClass}`}>
       {label}
+      {/* Show remove button only for active relationships */}
+      {relationshipId && onRemove && (
+        <button
+          type="button"
+          onClick={handleRemoveClick}
+          disabled={isRemoving}
+          className={`ml-0.5 p-0.5 rounded-full hover:bg-black/10 focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-gray-400 ${
+            isRemoving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+          }`}
+          title="関係を解除"
+        >
+          {isRemoving ? (
+            <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          )}
+        </button>
+      )}
     </span>
   );
 }
@@ -57,6 +100,10 @@ export function ContactsPage() {
   // Phase D-1: Relationship cache
   const [relationshipMap, setRelationshipMap] = useState<Map<string, RelationshipInfo>>(new Map());
   const [relationshipsLoading, setRelationshipsLoading] = useState(true);
+  
+  // Phase D-1 UI-3: Relationship removal state
+  const [removingRelationshipId, setRemovingRelationshipId] = useState<string | null>(null);
+  const [removalSuccess, setRemovalSuccess] = useState<string | null>(null);
 
   // Load contacts
   useEffect(() => {
@@ -143,6 +190,53 @@ export function ContactsPage() {
     
     return 'stranger';
   };
+  
+  // Get relationship info for a contact (includes relationship_id)
+  const getContactRelationshipInfo = (contact: Contact): RelationshipInfo | null => {
+    if (contact.user_id) {
+      return relationshipMap.get(contact.user_id) || null;
+    }
+    return null;
+  };
+  
+  // Phase D-1 UI-3: Handle relationship removal
+  const handleRemoveRelationship = async (relationshipId: string) => {
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      'この関係を解除しますか？\n（相手にも解除が反映されます）'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
+    setRemovingRelationshipId(relationshipId);
+    setRemovalSuccess(null);
+    
+    try {
+      await relationshipsApi.remove(relationshipId);
+      
+      // Invalidate cache and refresh
+      invalidateRelationships();
+      await loadRelationships();
+      
+      // Show success message
+      setRemovalSuccess('関係を解除しました');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setRemovalSuccess(null);
+      }, 3000);
+    } catch (err) {
+      console.error('Failed to remove relationship:', err);
+      
+      // Show error to user
+      const errorMessage = err instanceof Error ? err.message : '関係の解除に失敗しました';
+      alert(errorMessage);
+    } finally {
+      setRemovingRelationshipId(null);
+    }
+  };
 
   if (loading && contacts.length === 0) {
     return (
@@ -211,6 +305,21 @@ export function ContactsPage() {
           {error}
         </div>
       )}
+      
+      {/* Phase D-1 UI-3: Success message for relationship removal */}
+      {removalSuccess && (
+        <div className="mb-4 bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded flex items-center justify-between">
+          <span>{removalSuccess}</span>
+          <button
+            onClick={() => setRemovalSuccess(null)}
+            className="text-green-600 hover:text-green-800"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Contacts List */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -222,6 +331,7 @@ export function ContactsPage() {
           <ul className="divide-y divide-gray-200">
             {contacts.map((contact) => {
               const relationType = getContactRelationType(contact);
+              const relationshipInfo = getContactRelationshipInfo(contact);
               
               return (
                 <li key={contact.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
@@ -231,10 +341,13 @@ export function ContactsPage() {
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {contact.display_name}
                         </p>
-                        {/* Phase D-1: Relationship Badge */}
+                        {/* Phase D-1: Relationship Badge with Remove Button */}
                         <RelationshipBadge 
                           relationType={relationType} 
-                          showStranger={false} 
+                          showStranger={false}
+                          relationshipId={relationshipInfo?.relationship_id}
+                          onRemove={handleRemoveRelationship}
+                          isRemoving={removingRelationshipId === relationshipInfo?.relationship_id}
                         />
                       </div>
                       {contact.email && (
