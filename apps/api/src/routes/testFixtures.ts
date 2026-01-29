@@ -991,6 +991,228 @@ app.delete('/open-slots/:token', async (c) => {
  * 
  * @route GET /test/fixtures/health
  */
+/**
+ * Create User Pair Fixture (PR-D1-E2E)
+ * 
+ * E2Eテスト用に2ユーザーを作成し、それぞれのログイントークンを発行
+ * 
+ * @route POST /test/fixtures/users/pair
+ * @body {
+ *   user_a?: { email?: string; display_name?: string },
+ *   user_b?: { email?: string; display_name?: string }
+ * }
+ * @returns {
+ *   success: true,
+ *   fixture_id: string,
+ *   user_a: { id: string, email: string, display_name: string, token: string },
+ *   user_b: { id: string, email: string, display_name: string, token: string }
+ * }
+ */
+app.post('/users/pair', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'users-pair' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      user_a = {},
+      user_b = {}
+    } = body as {
+      user_a?: { email?: string; display_name?: string };
+      user_b?: { email?: string; display_name?: string };
+    };
+
+    const now = new Date();
+    const nowISO = now.toISOString();
+    const fixtureId = `fixture-pair-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // ユーザーA
+    const userAId = `e2e-user-a-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const userAEmail = user_a.email || `e2e-a-${Date.now()}@example.com`;
+    const userADisplayName = user_a.display_name || 'E2Eテスト ユーザーA';
+    const userAToken = `e2e-token-a-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // ユーザーB
+    const userBId = `e2e-user-b-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const userBEmail = user_b.email || `e2e-b-${Date.now()}@example.com`;
+    const userBDisplayName = user_b.display_name || 'E2Eテスト ユーザーB';
+    const userBToken = `e2e-token-b-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // デフォルトワークスペース
+    const testWorkspaceId = 'test-workspace-e2e';
+
+    // ワークスペースが存在しない場合は作成
+    const existingWorkspace = await env.DB.prepare(
+      `SELECT id FROM workspaces WHERE id = ?`
+    ).bind(testWorkspaceId).first();
+    
+    if (!existingWorkspace) {
+      await env.DB.prepare(`
+        INSERT INTO workspaces (id, name, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+      `).bind(testWorkspaceId, 'E2E Test Workspace', nowISO, nowISO).run();
+    }
+
+    // ユーザーA作成
+    await env.DB.prepare(`
+      INSERT INTO users (id, workspace_id, email, display_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(userAId, testWorkspaceId, userAEmail, userADisplayName, nowISO, nowISO).run();
+
+    // ユーザーB作成
+    await env.DB.prepare(`
+      INSERT INTO users (id, workspace_id, email, display_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(userBId, testWorkspaceId, userBEmail, userBDisplayName, nowISO, nowISO).run();
+
+    // セッショントークンをsessionsテーブルに保存（1時間有効）
+    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+    
+    await env.DB.prepare(`
+      INSERT INTO sessions (id, user_id, token, expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(`sess-a-${Date.now()}`, userAId, userAToken, expiresAt, nowISO).run();
+
+    await env.DB.prepare(`
+      INSERT INTO sessions (id, user_id, token, expires_at, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(`sess-b-${Date.now()}`, userBId, userBToken, expiresAt, nowISO).run();
+
+    log.debug('E2E user pair created', { 
+      fixtureId, 
+      userAId, userAEmail,
+      userBId, userBEmail 
+    });
+
+    return c.json({
+      success: true,
+      fixture_id: fixtureId,
+      user_a: {
+        id: userAId,
+        email: userAEmail,
+        display_name: userADisplayName,
+        token: userAToken
+      },
+      user_b: {
+        id: userBId,
+        email: userBEmail,
+        display_name: userBDisplayName,
+        token: userBToken
+      }
+    }, 201);
+
+  } catch (error) {
+    log.error('Failed to create E2E user pair', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * Cleanup User Pair Fixture
+ * 
+ * @route DELETE /test/fixtures/users/pair/:fixtureId
+ * @body { user_ids: string[] }
+ */
+app.delete('/users/pair', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'cleanup-users-pair' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { user_ids = [] } = body as { user_ids?: string[] };
+
+    if (user_ids.length === 0) {
+      return c.json({ error: 'user_ids required' }, 400);
+    }
+
+    // E2E ユーザーのみ削除可能（e2e- プレフィックス必須）
+    const validIds = user_ids.filter(id => id.startsWith('e2e-'));
+    
+    for (const userId of validIds) {
+      // 関連データを削除（順序重要）
+      await env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId).run();
+      await env.DB.prepare(`DELETE FROM inbox WHERE user_id = ?`).bind(userId).run();
+      await env.DB.prepare(`DELETE FROM relationships WHERE user_a_id = ? OR user_b_id = ?`).bind(userId, userId).run();
+      await env.DB.prepare(`DELETE FROM relationship_requests WHERE inviter_user_id = ? OR invitee_user_id = ?`).bind(userId, userId).run();
+      await env.DB.prepare(`DELETE FROM contacts WHERE owner_user_id = ?`).bind(userId).run();
+      await env.DB.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run();
+    }
+
+    log.debug('E2E user pair cleaned up', { deleted_user_ids: validIds });
+
+    return c.json({ success: true, deleted_user_ids: validIds });
+
+  } catch (error) {
+    log.error('Failed to cleanup E2E user pair', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * Clear inbox for user
+ * 
+ * @route DELETE /test/fixtures/inbox/:userId
+ */
+app.delete('/inbox/:userId', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'clear-inbox' });
+  const userId = c.req.param('userId');
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  // E2E ユーザーのみ削除可能
+  if (!userId.startsWith('e2e-')) {
+    return c.json({ error: 'Only e2e- prefixed users allowed' }, 403);
+  }
+
+  try {
+    const result = await env.DB.prepare(`DELETE FROM inbox WHERE user_id = ?`).bind(userId).run();
+    
+    log.debug('Inbox cleared', { userId, deleted_count: result.meta.changes });
+
+    return c.json({ 
+      success: true, 
+      user_id: userId,
+      deleted_count: result.meta.changes 
+    });
+
+  } catch (error) {
+    log.error('Failed to clear inbox', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 app.get('/health', (c) => {
   const env = c.env as Env;
   
@@ -1004,9 +1226,12 @@ app.get('/health', (c) => {
       'POST /one-on-one-candidates',
       'POST /freebusy-context',
       'POST /open-slots',
+      'POST /users/pair',
       'DELETE /one-on-one/:token',
       'DELETE /freebusy-context/:token',
-      'DELETE /open-slots/:token'
+      'DELETE /open-slots/:token',
+      'DELETE /users/pair',
+      'DELETE /inbox/:userId'
     ]
   });
 });
