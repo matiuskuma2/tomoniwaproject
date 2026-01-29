@@ -851,4 +851,46 @@ relationships.get('/search', async (c) => {
   });
 });
 
+// ============================================================
+// GET /api/relationships/permissions/with/:targetUserId
+// Get detailed permissions with a specific user
+// ============================================================
+relationships.get('/permissions/with/:targetUserId', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const targetUserId = c.req.param('targetUserId');
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  // Import and use RelationshipAccessService
+  const { createRelationshipAccessService } = await import('../services/relationshipAccess');
+  const accessService = createRelationshipAccessService(env.DB);
+  
+  const summary = await accessService.getPermissionSummary(userId, targetUserId);
+  
+  // Get target user info
+  const targetUser = await env.DB.prepare(`
+    SELECT id, email, display_name
+    FROM users
+    WHERE id = ?
+  `).bind(targetUserId).first<{
+    id: string;
+    email: string;
+    display_name: string;
+  }>();
+  
+  return c.json({
+    requester_user_id: userId,
+    target_user_id: targetUserId,
+    target_user: targetUser ? {
+      id: targetUser.id,
+      email: targetUser.email,
+      display_name: targetUser.display_name,
+    } : null,
+    ...summary,
+  });
+});
+
 export default relationships;
