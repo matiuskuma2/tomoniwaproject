@@ -14,7 +14,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { schedulingInternalApi } from '../core/api';
 import type { 
   InternalThreadResponse, 
-  ThreadParticipant 
+  ThreadParticipant,
+  CalendarStatus
 } from '../core/api/schedulingInternal';
 import { formatDateTimeRangeForViewer } from '../utils/datetime';
 import { useViewerTimezone } from '../core/hooks/useViewerTimezone';
@@ -31,6 +32,8 @@ export function SchedulingInternalThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null);
+  const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
 
   // Format date range for display
   const formatRange = useCallback((start: string, end: string) => {
@@ -71,9 +74,17 @@ export function SchedulingInternalThreadPage() {
     
     try {
       setSubmitting(true);
-      await schedulingInternalApi.respond(threadId, {
+      const response = await schedulingInternalApi.respond(threadId, {
         selected_slot_id: selectedSlotId,
       });
+      
+      // Save calendar status and meeting URL from response (R1.1)
+      if (response.calendar_status) {
+        setCalendarStatus(response.calendar_status);
+      }
+      if (response.meeting_url) {
+        setMeetingUrl(response.meeting_url);
+      }
       
       // Reload to show confirmed status
       await loadThread();
@@ -211,9 +222,81 @@ export function SchedulingInternalThreadPage() {
                 <p className="text-sm text-gray-500 mt-1">{confirmed_slot.label}</p>
               )}
             </div>
-            <p className="text-sm text-green-700 mt-4">
-              ※ Google カレンダーへの登録は今後のアップデートで対応予定です
-            </p>
+            
+            {/* Meeting URL (R1.1) */}
+            {meetingUrl && (
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm font-medium text-blue-800 mb-1">
+                  🎥 Google Meet
+                </p>
+                <a 
+                  href={meetingUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline break-all text-sm"
+                >
+                  {meetingUrl}
+                </a>
+              </div>
+            )}
+            
+            {/* Calendar Status (R1.1) */}
+            {calendarStatus && (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700">カレンダー連携状況:</p>
+                
+                {/* Organizer status */}
+                <div className="flex items-center text-sm">
+                  <span className="text-gray-600 w-20">主催者:</span>
+                  {calendarStatus.organizer.registered ? (
+                    <span className="text-green-600 flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Googleカレンダーに登録済み
+                    </span>
+                  ) : (
+                    <span className="text-gray-500 flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      {calendarStatus.organizer.error === 'no_calendar_connected' 
+                        ? 'カレンダー未連携' 
+                        : '登録失敗'}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Invitee status */}
+                <div className="flex items-center text-sm">
+                  <span className="text-gray-600 w-20">あなた:</span>
+                  {calendarStatus.invitee.registered ? (
+                    <span className="text-green-600 flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Googleカレンダーに登録済み
+                    </span>
+                  ) : (
+                    <span className="text-gray-500 flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                      {calendarStatus.invitee.error === 'no_calendar_connected' 
+                        ? 'カレンダー未連携（設定から連携できます）' 
+                        : '登録失敗'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Fallback message if no calendar status */}
+            {!calendarStatus && (
+              <p className="text-sm text-gray-500 mt-4">
+                ※ Googleカレンダー連携状況は設定から確認できます
+              </p>
+            )}
           </div>
         )}
 
