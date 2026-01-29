@@ -5,6 +5,7 @@
  * P1-1: uses inbox cache
  * P1-3: uses viewerTz for consistent timezone display
  * D-1: relationship request approve/decline actions
+ * R1: scheduling request notifications
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -21,6 +22,27 @@ const INBOX_TYPE_RELATIONSHIP_REQUEST = 'relationship_request';
 const INBOX_TYPE_RELATIONSHIP_ACCEPTED = 'relationship_accepted';
 const INBOX_TYPE_RELATIONSHIP_DECLINED = 'relationship_declined';
 
+// R1: Inbox notification types for scheduling
+const INBOX_TYPE_SCHEDULING_REQUEST = 'scheduling_request_received';
+const INBOX_TYPE_SCHEDULING_CONFIRMED = 'scheduling_request_confirmed';
+const INBOX_TYPE_SCHEDULING_DECLINED = 'scheduling_request_declined';
+
+/**
+ * Helper to get notification type from InboxNotification
+ * Supports both new (type) and legacy (kind) field names
+ */
+function getNotificationType(notification: InboxNotification): string {
+  return notification.type || notification.kind || 'unknown';
+}
+
+/**
+ * Helper to check if notification is read
+ * Supports both new (is_read) and legacy (read) field names
+ */
+function isNotificationRead(notification: InboxNotification): boolean {
+  return notification.is_read ?? notification.read ?? false;
+}
+
 // Notification item with relationship actions
 interface NotificationItemProps {
   notification: InboxNotification;
@@ -33,7 +55,7 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
   const [processing, setProcessing] = useState(false);
   const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
-  // Parse payload
+  // Parse payload (legacy support)
   let payload: any = {};
   try {
     payload = notification.payload || JSON.parse(notification.payload_json || '{}');
@@ -41,9 +63,20 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
     console.error('Failed to parse notification payload:', e);
   }
   
-  const isRelationshipRequest = notification.kind === INBOX_TYPE_RELATIONSHIP_REQUEST;
-  const isRelationshipAccepted = notification.kind === INBOX_TYPE_RELATIONSHIP_ACCEPTED;
-  const isRelationshipDeclined = notification.kind === INBOX_TYPE_RELATIONSHIP_DECLINED;
+  // Get notification type (supports both new and legacy field names)
+  const notificationType = getNotificationType(notification);
+  
+  // Relationship types
+  const isRelationshipRequest = notificationType === INBOX_TYPE_RELATIONSHIP_REQUEST;
+  const isRelationshipAccepted = notificationType === INBOX_TYPE_RELATIONSHIP_ACCEPTED;
+  const isRelationshipDeclined = notificationType === INBOX_TYPE_RELATIONSHIP_DECLINED;
+  
+  // R1: Scheduling types
+  const isSchedulingRequest = notificationType === INBOX_TYPE_SCHEDULING_REQUEST;
+  const isSchedulingConfirmed = notificationType === INBOX_TYPE_SCHEDULING_CONFIRMED;
+  const isSchedulingDeclined = notificationType === INBOX_TYPE_SCHEDULING_DECLINED;
+  // Note: isSchedulingRelated can be used for future logic (e.g., grouping)
+  // const isSchedulingRelated = isSchedulingRequest || isSchedulingConfirmed || isSchedulingDeclined;
   
   // Get token for relationship request
   const token = payload.token;
@@ -100,6 +133,7 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
   
   // Display label based on notification type
   const getDisplayInfo = () => {
+    // Relationship: request
     if (isRelationshipRequest) {
       const relationLabel = payload.requested_type === 'family' ? '家族' : '仕事仲間';
       const inviterName = payload.inviter_name || payload.inviter_email || '不明なユーザー';
@@ -107,28 +141,68 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
         title: `${inviterName} さんから「${relationLabel}」申請`,
         icon: '👋',
         showActions: !actionResult,
+        showOpenButton: false,
       };
     }
+    // Relationship: accepted
     if (isRelationshipAccepted) {
       const accepterName = payload.accepted_by_name || '不明なユーザー';
       return {
         title: `${accepterName} さんが関係申請を承認しました`,
         icon: '✅',
         showActions: false,
+        showOpenButton: false,
       };
     }
+    // Relationship: declined
     if (isRelationshipDeclined) {
       const declinerName = payload.declined_by_name || '不明なユーザー';
       return {
         title: `${declinerName} さんが関係申請を辞退しました`,
         icon: '❌',
         showActions: false,
+        showOpenButton: false,
       };
     }
+    
+    // R1: Scheduling request received
+    if (isSchedulingRequest) {
+      // Use title from API, or fallback
+      const title = notification.title || '日程調整の依頼が届きました';
+      return {
+        title,
+        icon: '📅',
+        showActions: false,
+        showOpenButton: !!notification.action_url,
+      };
+    }
+    // R1: Scheduling confirmed
+    if (isSchedulingConfirmed) {
+      const title = notification.title || '日程調整が確定しました';
+      return {
+        title,
+        icon: '✅',
+        showActions: false,
+        showOpenButton: !!notification.action_url,
+      };
+    }
+    // R1: Scheduling declined
+    if (isSchedulingDeclined) {
+      const title = notification.title || '日程調整が辞退されました';
+      return {
+        title,
+        icon: '❌',
+        showActions: false,
+        showOpenButton: !!notification.action_url,
+      };
+    }
+    
+    // Default: unknown type - use title from API if available
     return {
-      title: notification.kind,
+      title: notification.title || notificationType,
       icon: '📬',
       showActions: false,
+      showOpenButton: !!notification.action_url,
     };
   };
   
@@ -138,7 +212,7 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
     <div
       onClick={onClick}
       className={`p-4 cursor-pointer hover:bg-gray-50 ${
-        !notification.read ? 'bg-blue-50' : ''
+        !isNotificationRead(notification) ? 'bg-blue-50' : ''
       }`}
     >
       <div className="flex items-start">
@@ -179,8 +253,23 @@ function NotificationItem({ notification, viewerTz, onAction, onClick }: Notific
               </button>
             </div>
           )}
+          
+          {/* R1: Open button for scheduling notifications */}
+          {displayInfo.showOpenButton && notification.action_url && (
+            <div className="mt-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClick();
+                }}
+                className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+              >
+                開く
+              </button>
+            </div>
+          )}
         </div>
-        {!notification.read && (
+        {!isNotificationRead(notification) && (
           <span className="ml-2 w-2 h-2 bg-blue-600 rounded-full flex-shrink-0"></span>
         )}
       </div>
@@ -219,10 +308,14 @@ export function NotificationBell() {
     return unsubscribe;
   }, [loadNotifications]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Use helper for unread count calculation
+  const unreadCount = notifications.filter(n => !isNotificationRead(n)).length;
 
   const handleNotificationClick = (notification: InboxNotification) => {
-    // Parse payload
+    // Get notification type (supports both new and legacy field names)
+    const notificationType = getNotificationType(notification);
+    
+    // Parse payload (legacy support)
     let payload: any = {};
     try {
       payload = notification.payload || JSON.parse(notification.payload_json || '{}');
@@ -230,20 +323,34 @@ export function NotificationBell() {
       console.error('Failed to parse notification payload:', error);
     }
     
+    // R1: Scheduling notifications - navigate to action_url if available
+    if (notification.action_url && notification.action_url.startsWith('/scheduling/')) {
+      navigate(notification.action_url);
+      setIsOpen(false);
+      return;
+    }
+    
     // Relationship notifications: navigate to contacts
-    if (notification.kind === INBOX_TYPE_RELATIONSHIP_ACCEPTED ||
-        notification.kind === INBOX_TYPE_RELATIONSHIP_DECLINED) {
+    if (notificationType === INBOX_TYPE_RELATIONSHIP_ACCEPTED ||
+        notificationType === INBOX_TYPE_RELATIONSHIP_DECLINED) {
       navigate('/contacts');
       setIsOpen(false);
       return;
     }
     
     // Relationship request: don't navigate (actions are inline)
-    if (notification.kind === INBOX_TYPE_RELATIONSHIP_REQUEST) {
+    if (notificationType === INBOX_TYPE_RELATIONSHIP_REQUEST) {
       return;
     }
     
-    // If payload contains thread_id, navigate to /chat/:threadId
+    // Fallback: If action_url is available, navigate to it
+    if (notification.action_url) {
+      navigate(notification.action_url);
+      setIsOpen(false);
+      return;
+    }
+    
+    // Legacy: If payload contains thread_id, navigate to /chat/:threadId
     if (payload.thread_id) {
       navigate(`/chat/${payload.thread_id}`);
       setIsOpen(false);

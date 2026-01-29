@@ -3,11 +3,12 @@
  * Manage contact list with relationship badges
  * 
  * Phase D-1 UI-3: Added relationship removal functionality
+ * Phase R1: Added internal scheduling button for workmates
  */
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { contactsApi } from '../core/api';
+import { contactsApi, schedulingInternalApi } from '../core/api';
 import { 
   relationshipsApi,
   getRelationTypeLabel, 
@@ -104,6 +105,10 @@ export function ContactsPage() {
   // Phase D-1 UI-3: Relationship removal state
   const [removingRelationshipId, setRemovingRelationshipId] = useState<string | null>(null);
   const [removalSuccess, setRemovalSuccess] = useState<string | null>(null);
+  
+  // Phase R1: Internal scheduling state
+  const [schedulingUserId, setSchedulingUserId] = useState<string | null>(null);
+  const [schedulingSuccess, setSchedulingSuccess] = useState<string | null>(null);
 
   // Load contacts
   useEffect(() => {
@@ -237,6 +242,51 @@ export function ContactsPage() {
       setRemovingRelationshipId(null);
     }
   };
+  
+  // Phase R1: Handle start internal scheduling
+  const handleStartScheduling = async (contact: Contact) => {
+    if (!contact.user_id) {
+      alert('このユーザーとの日程調整はできません（ユーザーIDがありません）');
+      return;
+    }
+    
+    setSchedulingUserId(contact.user_id);
+    setSchedulingSuccess(null);
+    
+    try {
+      // Generate time range: 2 weeks from now
+      const now = new Date();
+      const twoWeeksLater = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+      
+      const result = await schedulingInternalApi.prepare({
+        invitee_user_id: contact.user_id,
+        title: `${contact.display_name}さんとの日程調整`,
+        constraints: {
+          time_min: now.toISOString(),
+          time_max: twoWeeksLater.toISOString(),
+          prefer: 'any',
+          duration: 60,  // 60 minutes
+          candidate_count: 3,
+        },
+      });
+      
+      if (result.success) {
+        // Show success message
+        setSchedulingSuccess(`${contact.display_name}さんに日程調整の依頼を送信しました`);
+        
+        // Navigate to the thread page after a short delay
+        setTimeout(() => {
+          navigate(`/scheduling/${result.thread_id}`);
+        }, 1500);
+      }
+    } catch (err) {
+      console.error('Failed to start scheduling:', err);
+      const errorMessage = err instanceof Error ? err.message : '日程調整の開始に失敗しました';
+      alert(errorMessage);
+    } finally {
+      setSchedulingUserId(null);
+    }
+  };
 
   if (loading && contacts.length === 0) {
     return (
@@ -320,6 +370,21 @@ export function ContactsPage() {
           </button>
         </div>
       )}
+      
+      {/* Phase R1: Success message for scheduling */}
+      {schedulingSuccess && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-600 px-4 py-3 rounded flex items-center justify-between">
+          <span>📅 {schedulingSuccess}</span>
+          <button
+            onClick={() => setSchedulingSuccess(null)}
+            className="text-blue-600 hover:text-blue-800"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Contacts List */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
@@ -357,7 +422,37 @@ export function ContactsPage() {
                         <p className="mt-1 text-sm text-gray-500">{contact.notes}</p>
                       )}
                     </div>
-                    <div className="ml-4 flex-shrink-0 flex gap-2">
+                    <div className="ml-4 flex-shrink-0 flex gap-2 items-center">
+                      {/* Phase R1: Scheduling button for workmates */}
+                      {relationType === 'workmate' && contact.user_id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartScheduling(contact);
+                          }}
+                          disabled={schedulingUserId === contact.user_id}
+                          className={`
+                            px-3 py-1 text-xs font-medium rounded-md
+                            ${schedulingUserId === contact.user_id
+                              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                            }
+                          `}
+                          title="日程調整を開始"
+                        >
+                          {schedulingUserId === contact.user_id ? (
+                            <span className="flex items-center">
+                              <svg className="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              送信中...
+                            </span>
+                          ) : (
+                            <>📅 日程調整</>
+                          )}
+                        </button>
+                      )}
                       {/* Contact kind badge */}
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                         {contact.kind === 'internal_user' ? '内部' : '外部'}
