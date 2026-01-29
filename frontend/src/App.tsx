@@ -9,6 +9,7 @@ import { ContactsPage } from './pages/ContactsPage';
 import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
 import { RelationshipRequestPage } from './pages/RelationshipRequestPage';
+import { SchedulingInternalThreadPage } from './pages/SchedulingInternalThreadPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
 import WorkspaceNotificationsPage from './pages/WorkspaceNotificationsPage';
@@ -126,6 +127,16 @@ function App() {
           element={
             <ProtectedRoute>
               <WorkspaceNotificationsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Phase R1: Internal Scheduling Thread */}
+        <Route
+          path="/scheduling/:threadId"
+          element={
+            <ProtectedRoute>
+              <SchedulingInternalThreadPage />
             </ProtectedRoute>
           }
         />

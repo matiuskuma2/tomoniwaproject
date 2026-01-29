@@ -51,3 +51,17 @@ export type {
   UserSearchResult,
   UserSearchResponse,
 } from './relationships';
+
+// Phase R1: Scheduling Internal API
+export { schedulingInternalApi } from './schedulingInternal';
+export type {
+  SchedulingConstraints,
+  InternalPrepareRequest,
+  InternalPrepareResponse,
+  SchedulingSlot,
+  ThreadParticipant,
+  ThreadSelection,
+  InternalThreadResponse,
+  InternalRespondRequest,
+  InternalRespondResponse,
+} from './schedulingInternal';

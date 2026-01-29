@@ -226,15 +226,68 @@ export interface BusinessCard {
 // ============================================================
 // Inbox (Notifications)
 // ============================================================
+
+/**
+ * Inbox Item type values
+ * - relationship_request: relationship request notification
+ * - relationship_accepted: relationship accepted notification
+ * - relationship_declined: relationship declined notification
+ * - scheduling_request_received: R1 internal scheduling request
+ * - scheduling_request_confirmed: R1 internal scheduling confirmed
+ * - scheduling_request_declined: R1 internal scheduling declined
+ */
+export type InboxItemType =
+  | 'relationship_request'
+  | 'relationship_accepted'
+  | 'relationship_declined'
+  | 'scheduling_request_received'
+  | 'scheduling_request_confirmed'
+  | 'scheduling_request_declined'
+  | string;  // Allow unknown types for forward compatibility
+
+/**
+ * Inbox Item priority
+ */
+export type InboxPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+/**
+ * InboxNotification (matches API InboxItem structure)
+ * 
+ * API Response: /api/inbox returns items with this structure
+ */
 export interface InboxNotification {
   id: string;
   user_id: string;
-  kind: string;
-  payload_json?: string;
-  payload?: any;
-  read: boolean;
+  /** Notification type - determines handling and display */
+  type: InboxItemType;
+  /** Display title */
+  title: string;
+  /** Optional message body */
+  message?: string | null;
+  /** Action type for programmatic handling */
+  action_type?: string | null;
+  /** Target ID for action (thread_id, relationship_id, etc.) */
+  action_target_id?: string | null;
+  /** URL to navigate to when clicked */
+  action_url?: string | null;
+  /** Priority level */
+  priority: InboxPriority;
+  /** Read status */
+  is_read: boolean;
+  /** When marked as read */
+  read_at?: string | null;
+  /** Creation timestamp */
   created_at: string;
-  read_at?: string;
+  
+  // Legacy fields (for backward compatibility during migration)
+  /** @deprecated Use type instead */
+  kind?: string;
+  /** @deprecated Use message/action_target_id instead */
+  payload_json?: string;
+  /** @deprecated Parsed payload_json */
+  payload?: any;
+  /** @deprecated Use is_read instead */
+  read?: boolean;
 }
 
 // ============================================================
