@@ -1,7 +1,12 @@
 /**
  * Google Calendar Service
  * 
- * Handles Google Calendar Event creation with Meet integration
+ * Handles Google Calendar Event creation with Meet integration.
+ * 
+ * Phase D-1 ACCESS-3: Proxy Calendar Write Support
+ * - createEventOnBehalf() allows writing to another user's calendar
+ * - Requires write_calendar permission (family_can_write preset)
+ * - Use with RelationshipAccessService.requirePermission() guard
  */
 
 import type { Env } from '../../../../packages/shared/src/types/env';
@@ -346,6 +351,63 @@ export class GoogleCalendarService {
       console.error('[GoogleCalendar] Get access token error:', error);
       return null;
     }
+  }
+
+  // ============================================================
+  // Phase D-1 ACCESS-3: Proxy Calendar Write (代理予約)
+  // ============================================================
+
+  /**
+   * Create a Calendar Event on behalf of another user (代理予約)
+   * 
+   * IMPORTANT: Caller MUST verify write_calendar permission BEFORE calling this method.
+   * Use RelationshipAccessService.requirePermission(requesterId, targetId, 'write_calendar')
+   * 
+   * @example
+   * ```typescript
+   * // 1. Check permission first
+   * const accessService = new RelationshipAccessService(env.DB);
+   * await accessService.requirePermission(requesterId, targetUserId, 'write_calendar');
+   * 
+   * // 2. Get target user's access token
+   * const targetToken = await GoogleCalendarService.getOrganizerAccessToken(db, targetUserId, env);
+   * if (!targetToken) throw new Error('Target user has no linked Google Calendar');
+   * 
+   * // 3. Create event on target's calendar
+   * const calendarService = new GoogleCalendarService(targetToken, env);
+   * const event = await calendarService.createEventOnBehalf({
+   *   summary: 'Meeting',
+   *   start: '2024-01-15T10:00:00+09:00',
+   *   end: '2024-01-15T11:00:00+09:00',
+   *   onBehalfOf: requesterId,
+   * });
+   * ```
+   * 
+   * Phase D-1: This method is prepared for future proxy booking feature (R2).
+   * Currently no route calls this method - it will be used when proxy booking UI is implemented.
+   * 
+   * @param params Event parameters including onBehalfOf (requester user ID)
+   * @returns Created calendar event or null if failed
+   */
+  async createEventOnBehalf(params: CreateEventParams & {
+    /** User ID of the person requesting the proxy booking (for audit) */
+    onBehalfOf: string;
+  }): Promise<CalendarEvent | null> {
+    // Note: Permission check should happen BEFORE this method is called
+    // The caller is responsible for calling:
+    //   await relationshipAccess.requirePermission(onBehalfOf, targetUserId, 'write_calendar')
+    
+    console.log(`[GoogleCalendar] Creating event on behalf of user: ${params.onBehalfOf}`);
+    
+    // Use existing createEventWithMeet with extended description for audit
+    const auditDescription = params.description 
+      ? `${params.description}\n\n[代理予約: ${params.onBehalfOf}]`
+      : `[代理予約: ${params.onBehalfOf}]`;
+    
+    return this.createEventWithMeet({
+      ...params,
+      description: auditDescription,
+    });
   }
 
   /**
