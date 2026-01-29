@@ -27,11 +27,19 @@ export interface Thread {
   title: string;
   description?: string;
   status: ThreadStatus;
+  kind: ThreadKind;  // R1: 'external' (R0) or 'internal' (R1)
   created_at: string;
   updated_at: string;
 }
 
 export type ThreadStatus = 'draft' | 'active' | 'confirmed' | 'cancelled';
+
+/**
+ * Thread Kind - R1 support
+ * - external: R0 flow (/i/:token external invite)
+ * - internal: R1 flow (workmate app-internal scheduling)
+ */
+export type ThreadKind = 'external' | 'internal';
 
 export interface Slot {
   slot_id: string;
@@ -81,6 +89,7 @@ export interface ThreadStatus_API {
     title: string;
     description?: string;
     status: ThreadStatus;
+    kind?: ThreadKind;  // R1: 'external' (R0) or 'internal' (R1)
     mode?: string;
     created_at: string;
     updated_at: string;
