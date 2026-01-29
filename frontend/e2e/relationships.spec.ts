@@ -90,7 +90,7 @@ test.describe('D-1 Relationships E2E: 検索→申請→承認フロー', () => 
     }
   });
 
-  test('REL-1: RelationshipRequestPage でユーザー検索ができる', async ({ page, request }) => {
+  test('REL-1: RelationshipRequestPage でユーザー検索ができる', async ({ page }) => {
     // ユーザーA としてログイン
     await setAuthToken(page, fixture.user_a.token);
     
