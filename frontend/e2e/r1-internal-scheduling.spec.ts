@@ -282,14 +282,18 @@ test.describe('R1 Internal Scheduling E2E: prepare → inbox → respond → con
     // タイトルが表示されることを確認
     await expect(page.locator('text=E2E テスト')).toBeVisible({ timeout: 10000 });
     
-    // 候補日程が表示されることを確認
-    const slots = page.locator('[data-testid="slot-option"]').or(
+    // 候補日程が表示されることを確認（少なくとも1つの候補）
+    const slotsLocator = page.locator('[data-testid="slot-option"]').or(
       page.locator('.border-2').filter({ hasNot: page.locator('.bg-green-50') })
     );
     
-    // 少なくとも1つの候補が表示されているか、またはページ自体が表示されていることを確認
+    // ページタイトルまたは候補が表示されていることを確認
     const pageTitle = page.locator('h1');
     await expect(pageTitle).toBeVisible({ timeout: 10000 });
+    
+    // 候補の数をログ出力
+    const slotsCount = await slotsLocator.count();
+    console.log('[R1-E2E] R1-3: Slots count on page:', slotsCount);
     
     console.log('[R1-E2E] R1-3: Thread page opened successfully');
   });
