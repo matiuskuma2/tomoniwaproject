@@ -7,9 +7,15 @@
  * - createEventOnBehalf() allows writing to another user's calendar
  * - Requires write_calendar permission (family_can_write preset)
  * - Use with RelationshipAccessService.requirePermission() guard
+ * 
+ * For proxy booking (代理予約), use createProxyEvent() helper which:
+ * 1. Checks write_calendar permission
+ * 2. Gets target user's access token
+ * 3. Creates event on target's calendar
  */
 
 import type { Env } from '../../../../packages/shared/src/types/env';
+import { RelationshipAccessService } from './relationshipAccess';
 
 export interface CalendarEvent {
   id: string;
@@ -457,4 +463,127 @@ export class GoogleCalendarService {
       throw error;
     }
   }
+}
+
+// ============================================================
+// Phase D-1 ACCESS-3: Proxy Booking Helper (代理予約)
+// ============================================================
+
+/**
+ * Error type for proxy booking operations
+ */
+export class ProxyBookingError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'no_permission' | 'target_no_calendar' | 'create_failed',
+    public readonly status: number = 403
+  ) {
+    super(message);
+    this.name = 'ProxyBookingError';
+  }
+}
+
+/**
+ * Result of a successful proxy booking
+ */
+export interface ProxyBookingResult {
+  success: true;
+  event: CalendarEvent;
+  targetUserId: string;
+  requesterId: string;
+}
+
+/**
+ * Create a calendar event on behalf of another user (代理予約)
+ * 
+ * This is the main entry point for proxy booking. It:
+ * 1. Verifies write_calendar permission (requires family_can_write preset)
+ * 2. Gets target user's Google Calendar access token
+ * 3. Creates the event on target's calendar
+ * 
+ * @example
+ * ```typescript
+ * try {
+ *   const result = await createProxyEvent(env.DB, env, {
+ *     requesterId: currentUserId,
+ *     targetUserId: familyMemberId,
+ *     event: {
+ *       summary: 'Doctor Appointment',
+ *       start: '2024-01-15T10:00:00+09:00',
+ *       end: '2024-01-15T11:00:00+09:00',
+ *     },
+ *   });
+ *   console.log('Event created:', result.event.id);
+ * } catch (error) {
+ *   if (error instanceof ProxyBookingError) {
+ *     return c.json({ error: error.code, message: error.message }, error.status);
+ *   }
+ *   throw error;
+ * }
+ * ```
+ * 
+ * @param db - D1 database instance
+ * @param env - Environment bindings
+ * @param params - Proxy booking parameters
+ * @returns Created event details
+ * @throws ProxyBookingError if permission denied or calendar not linked
+ */
+export async function createProxyEvent(
+  db: D1Database,
+  env: Env,
+  params: {
+    requesterId: string;
+    targetUserId: string;
+    event: CreateEventParams;
+  }
+): Promise<ProxyBookingResult> {
+  const { requesterId, targetUserId, event } = params;
+
+  // 1. Check write_calendar permission
+  const accessService = new RelationshipAccessService(db);
+  
+  try {
+    await accessService.requirePermission(requesterId, targetUserId, 'write_calendar');
+  } catch (error) {
+    throw new ProxyBookingError(
+      'この相手のカレンダーに予定を書き込む権限がありません',
+      'no_permission',
+      403
+    );
+  }
+
+  // 2. Get target user's access token
+  const targetToken = await GoogleCalendarService.getOrganizerAccessToken(db, targetUserId, env);
+  
+  if (!targetToken) {
+    throw new ProxyBookingError(
+      '相手のGoogleカレンダーが連携されていません',
+      'target_no_calendar',
+      400
+    );
+  }
+
+  // 3. Create event on target's calendar
+  const calendarService = new GoogleCalendarService(targetToken, env);
+  const createdEvent = await calendarService.createEventOnBehalf({
+    ...event,
+    onBehalfOf: requesterId,
+  });
+
+  if (!createdEvent) {
+    throw new ProxyBookingError(
+      'カレンダーイベントの作成に失敗しました',
+      'create_failed',
+      500
+    );
+  }
+
+  console.log(`[ProxyBooking] Event created on behalf: requester=${requesterId}, target=${targetUserId}, event=${createdEvent.id}`);
+
+  return {
+    success: true,
+    event: createdEvent,
+    targetUserId,
+    requesterId,
+  };
 }
