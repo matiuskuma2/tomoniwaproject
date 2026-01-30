@@ -187,7 +187,7 @@ test.describe('1-to-N Security Tests (G1-PLAN)', () => {
     }
   });
   
-  test('期限切れトークンで /g/:token にアクセスすると「期限切れ」表示', async ({ page, request }) => {
+  test('期限切れトークンで /g/:token にアクセスすると「期限切れ」表示', async ({ page }) => {
     const apiBaseUrl = getApiBaseUrl();
     
     // deadline_hours を -1 に設定して期限切れの fixture を作成
