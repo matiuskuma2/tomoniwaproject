@@ -201,11 +201,12 @@ export function formatResolveContactMessage(result: ResolveContactResult): strin
     case 'resolved':
       return `${result.contact.display_name}さん（${result.contact.email}）を選択しました。`;
 
-    case 'needs_selection':
+    case 'needs_selection': {
       const candidateList = result.candidates
         .map((c, i) => `${i + 1}. ${c.display_name}${c.email ? ` (${c.email})` : ''}`)
         .join('\n');
       return `「${result.query_name}」に該当する連絡先が複数見つかりました。番号で選んでください：\n\n${candidateList}`;
+    }
 
     case 'not_found':
       if (result.reason === 'no_email') {
