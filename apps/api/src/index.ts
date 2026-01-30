@@ -46,6 +46,7 @@ import nlRouterRoutes from './routes/nlRouter';
 import nlPrefsRoutes from './routes/nlPrefs';
 import chatRoutes from './routes/chat';
 import oneOnOneRoutes from './routes/oneOnOne';
+import oneToManyRoutes from './routes/oneToMany';
 import relationshipsRoutes from './routes/relationships';
 import schedulingInternalRoutes from './routes/schedulingInternal';
 
@@ -292,6 +293,12 @@ app.route('/api/chat', chatRoutes);
 app.use('/api/one-on-one', requireAuth);
 app.use('/api/one-on-one/*', requireAuth);
 app.route('/api/one-on-one', oneOnOneRoutes);
+
+// 1対N 予定調整 API (G1-PLAN: Broadcast Scheduling)
+// POST /api/one-to-many/prepare
+app.use('/api/one-to-many', requireAuth);
+app.use('/api/one-to-many/*', requireAuth);
+app.route('/api/one-to-many', oneToManyRoutes);
 
 // Relationships API (Phase D-1 - 仕事仲間/家族の関係管理)
 app.use('/api/relationships', requireAuth);
