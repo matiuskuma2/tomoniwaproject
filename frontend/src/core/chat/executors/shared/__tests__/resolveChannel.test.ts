@@ -3,7 +3,7 @@
  * Phase 3: チャネル選択の決定ユーティリティのテスト
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   resolveChannel,
   resolveChannelFromChannels,
