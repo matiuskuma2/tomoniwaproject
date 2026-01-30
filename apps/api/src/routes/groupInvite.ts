@@ -359,6 +359,7 @@ function renderResponseForm(
         </div>
 
         <form action="/g/${token}/respond" method="POST" id="responseForm">
+          <input type="hidden" name="response" id="responseInput" value="">
           ${slots.length > 0 ? `
             <!-- 候補日時 -->
             <div class="mb-6">
@@ -369,13 +370,13 @@ function renderResponseForm(
 
           <!-- 回答ボタン -->
           <div class="space-y-3">
-            <button type="submit" name="response" value="ok" class="btn-primary w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg">
+            <button type="button" data-response="ok" class="btn-primary w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg response-btn">
               ✓ 参加可能
             </button>
-            <button type="submit" name="response" value="maybe" class="btn-maybe w-full py-3 rounded-xl text-white font-medium">
+            <button type="button" data-response="maybe" class="btn-maybe w-full py-3 rounded-xl text-white font-medium response-btn">
               🤔 未定（後で決める）
             </button>
-            <button type="submit" name="response" value="no" class="btn-secondary w-full py-3 rounded-xl text-white font-medium">
+            <button type="button" data-response="no" class="btn-secondary w-full py-3 rounded-xl text-white font-medium response-btn">
               ✕ 参加不可
             </button>
           </div>
@@ -399,14 +400,18 @@ function renderResponseForm(
           }
         });
 
-        // フォーム送信時のローディング
-        document.getElementById('responseForm').addEventListener('submit', function(e) {
-          const buttons = this.querySelectorAll('button[type="submit"]');
-          buttons.forEach(btn => {
-            btn.disabled = true;
-            if (btn.value === e.submitter?.value) {
-              btn.innerHTML = '<span class="spinner inline-block mr-2"></span>送信中...';
-            }
+        // 回答ボタンのクリックハンドラー
+        document.querySelectorAll('.response-btn').forEach(btn => {
+          btn.addEventListener('click', function() {
+            const responseValue = this.getAttribute('data-response');
+            document.getElementById('responseInput').value = responseValue;
+            
+            // ローディング表示
+            document.querySelectorAll('.response-btn').forEach(b => b.disabled = true);
+            this.innerHTML = '<span class="spinner inline-block mr-2"></span>送信中...';
+            
+            // フォーム送信
+            document.getElementById('responseForm').submit();
           });
         });
       </script>

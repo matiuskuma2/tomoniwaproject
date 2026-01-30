@@ -1388,16 +1388,256 @@ app.get('/health', (c) => {
       'POST /one-on-one-candidates',
       'POST /freebusy-context',
       'POST /open-slots',
+      'POST /one-to-many-candidates',
       'POST /users/pair',
       'POST /relationships',
       'DELETE /one-on-one/:token',
       'DELETE /freebusy-context/:token',
       'DELETE /open-slots/:token',
+      'DELETE /one-to-many/:threadId',
       'DELETE /users/pair',
       'DELETE /inbox/:userId',
       'DELETE /relationships'
     ]
   });
+});
+
+// ============================================================
+// G1: 1対N (Broadcast Scheduling) Fixtures
+// ============================================================
+
+/**
+ * Create 1-to-N Candidates Schedule Fixture
+ * 
+ * E2Eテスト用に 1対N scheduling_thread + scheduling_slots + thread_invites を作成
+ * 
+ * @route POST /test/fixtures/one-to-many-candidates
+ * @body {
+ *   organizer_user_id?: string,   // デフォルト: 自動生成 (e2e-organizer-xxx)
+ *   invitee_count?: number,       // デフォルト: 3
+ *   title?: string,               // デフォルト: "E2E 1対Nテスト"
+ *   slot_count?: number,          // デフォルト: 3
+ *   start_offset_hours?: number,  // デフォルト: 48
+ *   duration_minutes?: number,    // デフォルト: 60
+ *   deadline_hours?: number       // デフォルト: 72
+ * }
+ * @returns {
+ *   success: true,
+ *   thread_id: string,
+ *   organizer_user_id: string,
+ *   invites: Array<{ token: string, email: string, name: string }>,
+ *   slots: Array<{ slot_id: string, start_at: string, end_at: string }>,
+ *   group_policy: { mode: string, deadline_at: string, finalize_policy: string }
+ * }
+ */
+app.post('/one-to-many-candidates', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'one-to-many-candidates' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const {
+      organizer_user_id,
+      invitee_count = 3,
+      title = 'E2E 1対Nテスト',
+      slot_count = 3,
+      start_offset_hours = 48,
+      duration_minutes = 60,
+      deadline_hours = 72
+    } = body as {
+      organizer_user_id?: string;
+      invitee_count?: number;
+      title?: string;
+      slot_count?: number;
+      start_offset_hours?: number;
+      duration_minutes?: number;
+      deadline_hours?: number;
+    };
+
+    const now = new Date();
+    const nowISO = now.toISOString();
+    
+    // ========================================
+    // Organizer ユーザー作成（なければ作成）
+    // ========================================
+    const organizerId = organizer_user_id || `e2e-organizer-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    
+    // ユーザーが存在しなければ作成
+    const existingUser = await env.DB.prepare(`SELECT id FROM users WHERE id = ?`).bind(organizerId).first();
+    if (!existingUser) {
+      await env.DB.prepare(`
+        INSERT INTO users (id, email, display_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).bind(
+        organizerId,
+        `${organizerId}@e2e-test.example.com`,
+        'E2E Organizer',
+        nowISO,
+        nowISO
+      ).run();
+    }
+
+    // ========================================
+    // Thread 作成
+    // ========================================
+    const threadId = uuidv4();
+    const deadlineAt = new Date(now.getTime() + deadline_hours * 60 * 60 * 1000).toISOString();
+    
+    const groupPolicy = {
+      mode: 'candidates',
+      deadline_at: deadlineAt,
+      finalize_policy: 'organizer_decides',
+      auto_finalize: false,
+      max_reproposals: 2,
+      reproposal_count: 0
+    };
+
+    await env.DB.prepare(`
+      INSERT INTO scheduling_threads (
+        id, organizer_user_id, title, description, status, mode, kind, topology, group_policy_json, workspace_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'sent', 'group', 'external', 'one_to_many', ?, 'ws-default', ?, ?)
+    `).bind(
+      threadId,
+      organizerId,
+      title,
+      'E2Eテスト用の1対Nスケジュールです',
+      JSON.stringify(groupPolicy),
+      nowISO,
+      nowISO
+    ).run();
+
+    // ========================================
+    // Slots 作成
+    // ========================================
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0);
+
+    const createdSlots: Array<{ slot_id: string; start_at: string; end_at: string; label: string }> = [];
+    
+    for (let i = 0; i < slot_count; i++) {
+      const slotId = uuidv4();
+      const startAt = new Date(tomorrow.getTime() + (start_offset_hours + i * 24) * 60 * 60 * 1000);
+      const endAt = new Date(startAt.getTime() + duration_minutes * 60 * 1000);
+      const label = formatDateTimeJP(startAt.toISOString());
+      
+      await env.DB.prepare(`
+        INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label, created_at)
+        VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, ?)
+      `).bind(slotId, threadId, startAt.toISOString(), endAt.toISOString(), label, nowISO).run();
+      
+      createdSlots.push({
+        slot_id: slotId,
+        start_at: startAt.toISOString(),
+        end_at: endAt.toISOString(),
+        label
+      });
+    }
+
+    // ========================================
+    // Invites 作成
+    // ========================================
+    const createdInvites: Array<{ token: string; email: string; name: string; invite_id: string }> = [];
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    
+    for (let i = 0; i < invitee_count; i++) {
+      const inviteId = uuidv4();
+      const token = `e2e-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+      const email = `e2e-invitee-${i + 1}@e2e-test.example.com`;
+      const name = `E2Eテスト参加者${i + 1}`;
+      // Cloudflare Workers compatible invitee key generation
+      const encoder = new TextEncoder();
+      const data = encoder.encode(email.toLowerCase());
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const inviteeKey = `e:${hashArray.slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+      
+      await env.DB.prepare(`
+        INSERT INTO thread_invites (
+          id, thread_id, token, email, candidate_name, candidate_reason,
+          invitee_key, status, expires_at, channel_type, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'email', ?)
+      `).bind(
+        inviteId,
+        threadId,
+        token,
+        email,
+        name,
+        'E2E 1対Nテスト用の招待',
+        inviteeKey,
+        expiresAt,
+        nowISO
+      ).run();
+      
+      createdInvites.push({ token, email, name, invite_id: inviteId });
+    }
+
+    log.debug('E2E 1-to-N candidates fixture created', { 
+      threadId, 
+      organizerId,
+      slot_count: createdSlots.length, 
+      invitee_count: createdInvites.length 
+    });
+
+    return c.json({
+      success: true,
+      thread_id: threadId,
+      organizer_user_id: organizerId,
+      invites: createdInvites,
+      slots: createdSlots,
+      group_policy: groupPolicy,
+      deadline_at: deadlineAt
+    }, 201);
+
+  } catch (error) {
+    log.error('Failed to create E2E 1-to-N candidates fixture', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * Delete 1-to-N Thread Fixture
+ * 
+ * @route DELETE /test/fixtures/one-to-many/:threadId
+ */
+app.delete('/one-to-many/:threadId', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'delete-one-to-many' });
+
+  if (env.ENVIRONMENT === 'production') {
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  const threadId = c.req.param('threadId');
+  
+  try {
+    // CASCADE により関連データも削除される
+    await env.DB.prepare(`DELETE FROM scheduling_threads WHERE id = ?`).bind(threadId).run();
+    
+    log.debug('E2E 1-to-N fixture deleted', { threadId });
+    
+    return c.json({ success: true, deleted_thread_id: threadId });
+  } catch (error) {
+    log.error('Failed to delete E2E 1-to-N fixture', { 
+      threadId,
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 export default app;
