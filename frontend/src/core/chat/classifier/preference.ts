@@ -2,16 +2,82 @@
  * classifier/preference.ts
  * P3-PREF3: スケジュール好み設定の分類
  * PREF-SET-1: AIフォールバック対応
+ * PR-INTENT-1: 予定調整文脈の除外ガード追加
  * 
  * - preference.set: 好み設定（自然文から）
  *   - params.parsed_prefs がある場合: ルール抽出成功
  *   - params.needs_ai_extraction がある場合: AI抽出が必要
  * - preference.show: 好み表示
  * - preference.clear: 好みクリア
+ * 
+ * 注意: 「予定調整したい」等の1対1調整文脈は oneOnOne classifier に譲る
  */
 
 import type { IntentResult, IntentContext, ClassifierFn } from './types';
 import type { PendingState } from '../pendingTypes';
+
+// ============================================================
+// PR-INTENT-1: 予定調整文脈の除外ガード
+// ============================================================
+
+/**
+ * oneOnOne classifier の TRIGGER_WORDS と同期
+ * これらが含まれていて、かつ人物パターンがある場合は preference ではなく oneOnOne に譲る
+ */
+const SCHEDULING_TRIGGER_WORDS = [
+  '予定調整',
+  '日程調整',
+  'スケジュール調整',
+  '打ち合わせ',
+  'ミーティング',
+  '会議',
+  '面談',
+  '相談',
+];
+
+/**
+ * 人物パターン（「〇〇さんと」「〇〇くんに」等）
+ */
+const PERSON_PATTERN = /(.+?)(さん|くん|氏|様)\s*(と|に|へ)/;
+
+/**
+ * メールアドレスパターン
+ */
+const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+
+/**
+ * 予定調整文脈かどうかを判定
+ * true の場合は preference ではなく oneOnOne に譲るべき
+ * 
+ * 条件:
+ * - SCHEDULING_TRIGGER_WORDS のいずれかを含む
+ * - かつ、人物パターンまたはメールアドレスを含む
+ * 
+ * 例（true = oneOnOne に譲る）:
+ * - 「大島くんと予定調整したい」
+ * - 「田中さんと打ち合わせしたい」
+ * - 「test@example.com と会議したい」
+ * 
+ * 例（false = preference で処理）:
+ * - 「午前にしたい」（人物なし）
+ * - 「好みを設定したい」（TRIGGER_WORDS なし）
+ */
+function shouldDeferToSchedulingIntent(normalizedInput: string): boolean {
+  // 1. SCHEDULING_TRIGGER_WORDS のいずれかを含むか
+  const hasSchedulingTrigger = SCHEDULING_TRIGGER_WORDS.some(word => 
+    normalizedInput.includes(word)
+  );
+  
+  if (!hasSchedulingTrigger) {
+    return false;
+  }
+  
+  // 2. 人物パターンまたはメールアドレスを含むか
+  const hasPerson = PERSON_PATTERN.test(normalizedInput);
+  const hasEmail = EMAIL_PATTERN.test(normalizedInput);
+  
+  return hasPerson || hasEmail;
+}
 
 /**
  * 自然文から好みルールを抽出する
@@ -193,6 +259,14 @@ export const classifyPreference: ClassifierFn = (
   _context: IntentContext | undefined,
   _activePending: PendingState | null
 ): IntentResult | null => {
+  // ============================================================
+  // PR-INTENT-1: 予定調整文脈の除外ガード
+  // 「大島くんと予定調整したい」等は oneOnOne に譲る
+  // ============================================================
+  if (shouldDeferToSchedulingIntent(normalizedInput)) {
+    return null;
+  }
+
   // ============================================================
   // preference.show - 好み表示
   // Keywords: 好み見せて、設定見せて、好み確認
