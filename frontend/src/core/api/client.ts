@@ -61,7 +61,19 @@ async function request<T>(
       error: 'Unknown error',
       message: response.statusText,
     }));
-    throw new Error(errorData.message || errorData.error);
+    // ⚠️ エラーメッセージ抽出: ネストされた error オブジェクトも処理
+    // バックエンド形式: { success: false, error: { code: '...', message: '...' } }
+    let errorMessage: string;
+    if (errorData.message && typeof errorData.message === 'string') {
+      errorMessage = errorData.message;
+    } else if (errorData.error && typeof errorData.error === 'object' && 'message' in errorData.error) {
+      errorMessage = (errorData.error as { message: string }).message;
+    } else if (typeof errorData.error === 'string') {
+      errorMessage = errorData.error;
+    } else {
+      errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMessage);
   }
 
   // Parse response
@@ -105,3 +117,37 @@ export const api = {
 // Export API Base URL for OAuth redirects
 // ============================================================
 export { API_BASE_URL };
+
+// ============================================================
+// Error Utilities
+// ============================================================
+
+/**
+ * Extract readable error message from any error type
+ * Handles: Error, string, { message }, { error: { message } }, etc.
+ */
+export function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object') {
+    // { message: string }
+    if ('message' in error && typeof (error as { message: unknown }).message === 'string') {
+      return (error as { message: string }).message;
+    }
+    // { error: { message: string } }
+    if ('error' in error) {
+      const nested = (error as { error: unknown }).error;
+      if (nested && typeof nested === 'object' && 'message' in nested) {
+        return (nested as { message: string }).message;
+      }
+      if (typeof nested === 'string') {
+        return nested;
+      }
+    }
+  }
+  return '不明なエラーが発生しました';
+}

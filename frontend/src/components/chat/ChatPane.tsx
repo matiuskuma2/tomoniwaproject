@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
+import { extractErrorMessage } from '../../core/api/client';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
@@ -244,7 +245,7 @@ export function ChatPane({
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'assistant',
-        content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+        content: `❌ エラーが発生しました: ${extractErrorMessage(error)}`,
         timestamp: new Date(),
       };
       // Phase P0-5: threadId が無い場合は 'temp' を使う

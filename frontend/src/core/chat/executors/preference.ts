@@ -12,6 +12,7 @@
 
 import { usersMeApi, type SchedulePreferences, type TimeWindow } from '../../api/usersMe';
 import { nlPrefsApi } from '../../api/nlPrefs';
+import { extractErrorMessage } from '../../api/client';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult, ExecutionContext } from './types';
 import { mergePreferences } from '../classifier/preference';
@@ -135,7 +136,7 @@ export async function executePreferenceSet(intentResult: IntentResult): Promise<
     console.error('[preference.set] Error:', error);
     return {
       success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      message: `❌ エラーが発生しました: ${extractErrorMessage(error)}`,
     };
   }
 }
@@ -213,7 +214,7 @@ async function executePreferenceSetWithAi(originalText: string): Promise<Executi
     console.error('[preference.set.ai] Error:', error);
     return {
       success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      message: `❌ エラーが発生しました: ${extractErrorMessage(error)}`,
     };
   }
 }
@@ -266,7 +267,7 @@ export async function executePreferenceSetConfirm(context?: ExecutionContext): P
     console.error('[preference.set.confirm] Error:', error);
     return {
       success: false,
-      message: `❌ エラーが発生しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      message: `❌ エラーが発生しました: ${extractErrorMessage(error)}`,
     };
   }
 }
