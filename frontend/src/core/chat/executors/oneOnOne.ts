@@ -305,7 +305,7 @@ async function resolveContactForOneOnOne(
     case 'resolved':
       return { status: 'resolved', contact: result.contact };
 
-    case 'needs_selection':
+    case 'needs_selection': {
       // pending.contact.select を生成
       const pendingState: PendingState = {
         kind: 'pending.contact.select',
@@ -321,6 +321,7 @@ async function resolveContactForOneOnOne(
         pendingState,
         message: formatResolveContactMessage(result),
       };
+    }
 
     case 'not_found':
       return {
