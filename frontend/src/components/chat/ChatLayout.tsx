@@ -89,7 +89,9 @@ export function ChatLayout() {
   };
 
   // Get current thread's messages
-  const currentMessages = threadId ? (messagesByThreadId[threadId] || []) : [];
+  // FIX: threadId=null の場合は 'temp' キーからメッセージを取得
+  // (ChatPane は threadId || 'temp' でメッセージを保存するため)
+  const currentMessages = messagesByThreadId[threadId || 'temp'] || [];
 
   return (
     <div className="h-screen flex flex-col">
