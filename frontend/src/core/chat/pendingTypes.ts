@@ -15,6 +15,7 @@
 export type PendingKind =
   | 'pending.action'           // Beta A: send/add_invites/add_slots
   | 'pending.contact.select'   // Phase 2: 連絡先選択待ち
+  | 'pending.channel.select'   // Phase 3: チャネル選択待ち
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
@@ -135,6 +136,23 @@ export type PendingState =
       query_name: string;                // 元の検索名（「大島くん」など）
       intent_to_resume: string;          // 選択後に再実行する intent
       original_params: Record<string, unknown>;  // 元の params
+    })
+
+  // Phase 3: チャネル選択待ち（複数チャネルが同条件で並ぶ時）
+  | (PendingBase & {
+      kind: 'pending.channel.select';
+      candidates: Array<{
+        type: 'email' | 'slack' | 'chatwork' | 'line' | 'phone';
+        value: string;
+        display_label: string;
+        is_primary: boolean;
+        verified: boolean;
+      }>;
+      contact_id: string;                 // 対象の連絡先ID
+      contact_name: string;               // 対象の連絡先名
+      reason: string;                     // 選択が必要な理由
+      intent_to_resume: string;           // 選択後に再実行する intent
+      original_params: Record<string, unknown>;  // 元の params
     });
 
 // ============================================================
@@ -199,6 +217,10 @@ export function isPendingContactSelect(pending: PendingState | null): pending is
   return pending?.kind === 'pending.contact.select';
 }
 
+export function isPendingChannelSelect(pending: PendingState | null): pending is PendingState & { kind: 'pending.channel.select' } {
+  return pending?.kind === 'pending.channel.select';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -207,6 +229,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
   return [
     'pending.action',
     'pending.contact.select',  // Phase 2
+    'pending.channel.select',  // Phase 3
     'remind.pending',
     'remind.need_response',
     'remind.responded',
@@ -245,6 +268,8 @@ export function describePending(pending: PendingState | null): string {
       return `AI確認待ち (${pending.targetIntent})`;
     case 'pending.contact.select':
       return `連絡先選択待ち (「${pending.query_name}」${pending.candidates.length}件)`;
+    case 'pending.channel.select':
+      return `チャネル選択待ち (${pending.contact_name}、${pending.candidates.length}件)`;
     default:
       return `不明な状態`;
   }
