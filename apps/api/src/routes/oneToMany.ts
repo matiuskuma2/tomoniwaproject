@@ -148,8 +148,8 @@ app.post('/prepare', async (c) => {
       for (const slot of body.slots) {
         const slotId = uuidv4();
         await env.DB.prepare(`
-          INSERT INTO scheduling_slots (id, thread_id, start_time, end_time, label, created_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
+          INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label, created_at)
+          VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, datetime('now'))
         `).bind(slotId, thread.id, slot.start_at, slot.end_at, slot.label || null).run();
       }
     }
@@ -276,7 +276,7 @@ app.get('/:id', async (c) => {
 
     // スロット取得
     const { results: slots } = await env.DB.prepare(`
-      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_time ASC
+      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_at ASC
     `).bind(threadId).all();
 
     // 招待者取得
@@ -654,7 +654,7 @@ app.post('/:id/finalize', async (c) => {
 
     // スロット存在確認
     const slot = await env.DB.prepare(`
-      SELECT * FROM scheduling_slots WHERE id = ? AND thread_id = ?
+      SELECT * FROM scheduling_slots WHERE slot_id = ? AND thread_id = ?
     `).bind(body.selected_slot_id, threadId).first<any>();
 
     if (!slot) {
@@ -662,11 +662,10 @@ app.post('/:id/finalize', async (c) => {
     }
 
     // 確定記録
-    const finalizeId = uuidv4();
     await env.DB.prepare(`
-      INSERT INTO thread_finalize (id, thread_id, selected_slot_id, finalized_by_user_id, reason, finalized_at, auto_finalized, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'), 0, datetime('now'))
-    `).bind(finalizeId, threadId, body.selected_slot_id, userId, body.reason || 'manual').run();
+      INSERT OR REPLACE INTO thread_finalize (thread_id, final_slot_id, finalize_policy, finalized_by_user_id, finalized_at, created_at, updated_at)
+      VALUES (?, ?, 'ORGANIZER_DECIDES', ?, datetime('now'), datetime('now'), datetime('now'))
+    `).bind(threadId, body.selected_slot_id, userId).run();
 
     // ステータス更新
     await oneToManyRepo.updateStatus(threadId, 'confirmed');
@@ -795,8 +794,8 @@ app.post('/:id/repropose', async (c) => {
     for (const slot of body.new_slots) {
       const slotId = uuidv4();
       await env.DB.prepare(`
-        INSERT INTO scheduling_slots (id, thread_id, start_time, end_time, label, created_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone, label, created_at)
+        VALUES (?, ?, ?, ?, 'Asia/Tokyo', ?, datetime('now'))
       `).bind(slotId, threadId, slot.start_at, slot.end_at, slot.label || null).run();
     }
 

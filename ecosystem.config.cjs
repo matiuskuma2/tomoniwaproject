@@ -4,7 +4,7 @@ module.exports = {
       name: 'webapp',
       script: 'npx',
       args: 'wrangler dev apps/api/src/index.ts --local --ip 0.0.0.0 --port 3000',
-      cwd: '/home/user/webapp',
+      cwd: '/home/user/tomoniwaproject',
       env: {
         NODE_ENV: 'development',
         PORT: 3000,

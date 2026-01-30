@@ -224,7 +224,7 @@ app.get('/:token', async (c) => {
 
     // スロットを取得
     const { results: slots } = await env.DB.prepare(`
-      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_time ASC
+      SELECT * FROM scheduling_slots WHERE thread_id = ? ORDER BY start_at ASC
     `).bind(thread.id).all<any>();
 
     const groupPolicy = thread.group_policy_json ? JSON.parse(thread.group_policy_json) : null;
@@ -319,13 +319,13 @@ function renderResponseForm(
   const slotsHtml = slots.map((slot, index) => `
     <label class="slot-card block border-2 border-gray-200 rounded-xl p-4 cursor-pointer mb-3">
       <div class="flex items-center">
-        <input type="radio" name="selected_slot_id" value="${slot.id}" class="mr-3 w-5 h-5 text-blue-600" ${index === 0 ? 'checked' : ''}>
+        <input type="radio" name="selected_slot_id" value="${slot.slot_id}" class="mr-3 w-5 h-5 text-blue-600" ${index === 0 ? 'checked' : ''}>
         <div class="flex-1">
           <div class="font-medium text-gray-800">
-            ${formatDateTimeJP(slot.start_time)}
+            ${formatDateTimeJP(slot.start_at)}
           </div>
           <div class="text-sm text-gray-500">
-            〜 ${formatTimeJP(slot.end_time)}
+            〜 ${formatTimeJP(slot.end_at)}
           </div>
           ${slot.label ? `<div class="text-xs text-gray-400 mt-1">${slot.label}</div>` : ''}
         </div>
