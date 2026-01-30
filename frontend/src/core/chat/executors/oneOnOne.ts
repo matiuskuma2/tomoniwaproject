@@ -5,6 +5,7 @@
  * v1.2: Phase B-2 freebusy から候補生成
  * v1.3: Phase B-4 Open Slots（TimeRex型公開枠）
  * v1.4: Phase 2 連絡先解決統合（resolveContact）
+ * v1.5: Phase 3 チャネル解決統合（resolveChannel）
  * 
  * ユーザーが「Aさんと来週木曜17時から1時間打ち合わせ」と言うと:
  * 1. classifyOneOnOne で Intent 判定
@@ -34,6 +35,8 @@ import { log } from '../../platform';
 import { getToken } from '../../auth';
 import { resolveContact, formatResolveContactMessage } from './shared/resolveContact';
 import type { ResolvedContact } from './shared/resolveContact';
+import { resolveChannel, formatResolveChannelMessage } from './shared/resolveChannel';
+import type { ResolvedChannel } from './shared/resolveChannel';
 
 // ============================================================
 // Types
@@ -285,6 +288,17 @@ type ContactResolutionResult =
   | { status: 'error'; message: string };
 
 /**
+ * チャネル解決結果の型
+ * - resolved: チャネルが確定 → API 呼び出しへ進む
+ * - pending: 選択待ち → pending.channel.select を返す
+ * - error: エラー → エラーメッセージを返す
+ */
+type ChannelResolutionResult =
+  | { status: 'resolved'; channel: ResolvedChannel }
+  | { status: 'pending'; pendingState: PendingState; message: string }
+  | { status: 'error'; message: string };
+
+/**
  * person パラメータから連絡先を解決する
  * 
  * @param person - { name?, email? }
@@ -333,6 +347,59 @@ async function resolveContactForOneOnOne(
       return {
         status: 'error',
         message: result.reason,
+      };
+  }
+}
+
+/**
+ * Phase 3: 連絡先からチャネルを解決する
+ * 
+ * @param contact - 解決済みの連絡先情報
+ * @param intentToResume - 選択後に再実行する intent
+ * @param originalParams - 元の params（pending に保存）
+ * @returns ChannelResolutionResult
+ */
+function resolveChannelForOneOnOne(
+  contact: ResolvedContact,
+  intentToResume: string,
+  originalParams: Record<string, unknown>
+): ChannelResolutionResult {
+  const result = resolveChannel({
+    id: contact.contact_id || '',
+    email: contact.email,
+    display_name: contact.display_name,
+  });
+
+  log.debug('[OneOnOne] resolveChannel result', { result });
+
+  switch (result.type) {
+    case 'resolved':
+      return { status: 'resolved', channel: result.channel };
+
+    case 'needs_selection': {
+      // pending.channel.select を生成
+      const pendingState: PendingState = {
+        kind: 'pending.channel.select',
+        threadId: '__global__',
+        createdAt: Date.now(),
+        candidates: result.candidates,
+        contact_id: contact.contact_id || '',
+        contact_name: contact.display_name,
+        reason: result.reason,
+        intent_to_resume: intentToResume,
+        original_params: originalParams,
+      };
+      return {
+        status: 'pending',
+        pendingState,
+        message: formatResolveChannelMessage(result),
+      };
+    }
+
+    case 'not_available':
+      return {
+        status: 'error',
+        message: formatResolveChannelMessage(result),
       };
   }
 }
@@ -521,6 +588,34 @@ export async function executeOneOnOneFixed(
     // 連絡先が解決された
     const resolvedContact = contactResolution.contact;
 
+    // Phase 3: チャネル解決
+    const channelResolution = resolveChannelForOneOnOne(
+      resolvedContact,
+      'schedule.1on1.fixed',
+      params
+    );
+
+    if (channelResolution.status === 'pending') {
+      return {
+        success: true,
+        message: channelResolution.message,
+        data: {
+          kind: 'channel.select.pending',
+          payload: channelResolution.pendingState,
+        } as unknown as ExecutionResultData,
+      };
+    }
+
+    if (channelResolution.status === 'error') {
+      return {
+        success: false,
+        message: channelResolution.message,
+      };
+    }
+
+    const resolvedChannel = channelResolution.channel;
+    log.debug('[OneOnOne] Resolved channel', { channel: resolvedChannel });
+
     // API リクエストを組み立て
     const request: OneOnOnePrepareRequest = {
       invitee: {
@@ -534,11 +629,11 @@ export async function executeOneOnOneFixed(
       },
       title: params.title || '打ち合わせ',
       message_hint: params.rawInput,
-      // email があるので email モード
-      send_via: 'email',
+      // Phase 3: 解決されたチャネルに基づいて send_via を決定
+      send_via: resolvedChannel.type === 'email' ? 'email' : 'share_link',
     };
 
-    log.debug('[OneOnOne] Calling API with resolved contact', { request, resolvedContact });
+    log.debug('[OneOnOne] Calling API with resolved contact and channel', { request, resolvedContact, resolvedChannel });
 
     // API 呼び出し
     const response = await callOneOnOnePrepareApi(request, token);
@@ -689,6 +784,34 @@ export async function executeOneOnOneCandidates(
 
     const resolvedContact = contactResolution.contact;
 
+    // Phase 3: チャネル解決
+    const channelResolution = resolveChannelForOneOnOne(
+      resolvedContact,
+      'schedule.1on1.candidates3',
+      params
+    );
+
+    if (channelResolution.status === 'pending') {
+      return {
+        success: true,
+        message: channelResolution.message,
+        data: {
+          kind: 'channel.select.pending',
+          payload: channelResolution.pendingState,
+        } as unknown as ExecutionResultData,
+      };
+    }
+
+    if (channelResolution.status === 'error') {
+      return {
+        success: false,
+        message: channelResolution.message,
+      };
+    }
+
+    const resolvedChannel = channelResolution.channel;
+    log.debug('[OneOnOne] Resolved channel', { channel: resolvedChannel });
+
     // API リクエストを組み立て
     const request: OneOnOneCandidatesPrepareRequest = {
       invitee: {
@@ -699,10 +822,10 @@ export async function executeOneOnOneCandidates(
       slots: params.slots,
       title: params.title || '打ち合わせ',
       message_hint: params.rawInput,
-      send_via: 'email',
+      send_via: resolvedChannel.type === 'email' ? 'email' : 'share_link',
     };
 
-    log.debug('[OneOnOne] Calling candidates API with resolved contact', { request });
+    log.debug('[OneOnOne] Calling candidates API with resolved contact and channel', { request, resolvedChannel });
 
     // API 呼び出し
     const response = await callOneOnOneCandidatesPrepareApi(request, token);
@@ -825,6 +948,34 @@ export async function executeOneOnOneFreebusy(
 
     const resolvedContact = contactResolution.contact;
 
+    // Phase 3: チャネル解決
+    const channelResolution = resolveChannelForOneOnOne(
+      resolvedContact,
+      'schedule.1on1.freebusy',
+      params
+    );
+
+    if (channelResolution.status === 'pending') {
+      return {
+        success: true,
+        message: channelResolution.message,
+        data: {
+          kind: 'channel.select.pending',
+          payload: channelResolution.pendingState,
+        } as unknown as ExecutionResultData,
+      };
+    }
+
+    if (channelResolution.status === 'error') {
+      return {
+        success: false,
+        message: channelResolution.message,
+      };
+    }
+
+    const resolvedChannel = channelResolution.channel;
+    log.debug('[OneOnOne] Resolved channel', { channel: resolvedChannel });
+
     // API リクエストを組み立て
     const request: OneOnOneFreebusyPrepareRequest = {
       invitee: {
@@ -836,10 +987,10 @@ export async function executeOneOnOneFreebusy(
       candidate_count: 3,
       title: params.title || '打ち合わせ',
       message_hint: params.rawInput,
-      send_via: 'email',
+      send_via: resolvedChannel.type === 'email' ? 'email' : 'share_link',
     };
 
-    log.debug('[OneOnOne] Calling freebusy API with resolved contact', { request });
+    log.debug('[OneOnOne] Calling freebusy API with resolved contact and channel', { request, resolvedChannel });
 
     // API 呼び出し
     const response = await callOneOnOneFreebusyPrepareApi(request, token);
@@ -970,6 +1121,34 @@ export async function executeOneOnOneOpenSlots(
 
     const resolvedContact = contactResolution.contact;
 
+    // Phase 3: チャネル解決
+    const channelResolution = resolveChannelForOneOnOne(
+      resolvedContact,
+      'schedule.1on1.open_slots',
+      params
+    );
+
+    if (channelResolution.status === 'pending') {
+      return {
+        success: true,
+        message: channelResolution.message,
+        data: {
+          kind: 'channel.select.pending',
+          payload: channelResolution.pendingState,
+        } as unknown as ExecutionResultData,
+      };
+    }
+
+    if (channelResolution.status === 'error') {
+      return {
+        success: false,
+        message: channelResolution.message,
+      };
+    }
+
+    const resolvedChannel = channelResolution.channel;
+    log.debug('[OneOnOne] Resolved channel', { channel: resolvedChannel });
+
     // API リクエストを組み立て
     const request: OneOnOneOpenSlotsPrepareRequest = {
       invitee: {
@@ -980,11 +1159,11 @@ export async function executeOneOnOneOpenSlots(
       constraints: params.constraints,
       title: params.title || '打ち合わせ',
       message_hint: params.rawInput,
-      send_via: 'email',
+      send_via: resolvedChannel.type === 'email' ? 'email' : 'share_link',
       expires_in_days: params.expires_in_days || 14,
     };
 
-    log.debug('[OneOnOne] Calling open-slots API with resolved contact', { request });
+    log.debug('[OneOnOne] Calling open-slots API with resolved contact and channel', { request, resolvedChannel });
 
     // API 呼び出し
     const response = await callOneOnOneOpenSlotsPrepareApi(request, token);
