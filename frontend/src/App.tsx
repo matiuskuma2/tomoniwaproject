@@ -10,6 +10,9 @@ import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
 import { RelationshipRequestPage } from './pages/RelationshipRequestPage';
 import { SchedulingInternalThreadPage } from './pages/SchedulingInternalThreadPage';
+import { GroupListPage } from './pages/GroupListPage';
+import { GroupNewPage } from './pages/GroupNewPage';
+import { GroupThreadPage } from './pages/GroupThreadPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
 import WorkspaceNotificationsPage from './pages/WorkspaceNotificationsPage';
@@ -137,6 +140,32 @@ function App() {
           element={
             <ProtectedRoute>
               <SchedulingInternalThreadPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* G1: Group Scheduling (1対N) */}
+        <Route
+          path="/group"
+          element={
+            <ProtectedRoute>
+              <GroupListPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/group/new"
+          element={
+            <ProtectedRoute>
+              <GroupNewPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/group/:threadId"
+          element={
+            <ProtectedRoute>
+              <GroupThreadPage />
             </ProtectedRoute>
           }
         />
