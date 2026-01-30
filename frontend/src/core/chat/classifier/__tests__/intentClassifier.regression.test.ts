@@ -290,4 +290,97 @@ describe('TD-003 regression: intent classification', () => {
       expect(r.needsClarification?.field).toBe('threadId');
     });
   });
+
+  // ============================================================
+  // PR-INTENT-1: preference vs oneOnOne の境界ケース
+  // ============================================================
+  describe('PR-INTENT-1: preference vs oneOnOne boundary', () => {
+    // === oneOnOne に行くべきケース ===
+    describe('should route to oneOnOne (NOT preference)', () => {
+      it('「大島くんと予定調整したい」-> schedule.1on1.* (NOT preference.set)', () => {
+        const r = classifyIntent('大島くんと予定調整したい', ctxNoThread());
+        expect(r.intent).not.toBe('preference.set');
+        // oneOnOne に行くが、日時が不足しているので clarification が出る可能性
+        expect(r.intent.startsWith('schedule.1on1')).toBe(true);
+      });
+
+      it('「田中さんと打ち合わせしたい」-> schedule.1on1.* (NOT preference.set)', () => {
+        const r = classifyIntent('田中さんと打ち合わせしたい', ctxNoThread());
+        expect(r.intent).not.toBe('preference.set');
+        expect(r.intent.startsWith('schedule.1on1')).toBe(true);
+      });
+
+      it('「山田さんとミーティングしたいな」-> schedule.1on1.* (NOT preference.set)', () => {
+        const r = classifyIntent('山田さんとミーティングしたいな', ctxNoThread());
+        expect(r.intent).not.toBe('preference.set');
+        expect(r.intent.startsWith('schedule.1on1')).toBe(true);
+      });
+
+      it('「佐藤氏と会議したい」-> schedule.1on1.* (NOT preference.set)', () => {
+        const r = classifyIntent('佐藤氏と会議したい', ctxNoThread());
+        expect(r.intent).not.toBe('preference.set');
+        expect(r.intent.startsWith('schedule.1on1')).toBe(true);
+      });
+
+      it('「test@example.com と日程調整したい」-> schedule.1on1.* (NOT preference.set)', () => {
+        const r = classifyIntent('test@example.com と日程調整したい', ctxNoThread());
+        expect(r.intent).not.toBe('preference.set');
+        expect(r.intent.startsWith('schedule.1on1')).toBe(true);
+      });
+
+      it('「大島くんと来週木曜17時から面談したい」-> schedule.1on1.fixed', () => {
+        const r = classifyIntent('大島くんと来週木曜17時から面談したい', ctxNoThread());
+        expect(r.intent).toBe('schedule.1on1.fixed');
+        expect(r.params.person?.name).toBe('大島');
+      });
+    });
+
+    // === preference に行くべきケース ===
+    describe('should route to preference (NOT oneOnOne)', () => {
+      it('「午前にしたい」-> preference.set (人物なし)', () => {
+        const r = classifyIntent('午前にしたい', ctxNoThread());
+        // preference.set または unknown（AI抽出が必要）
+        expect(r.intent).not.toMatch(/schedule\.1on1/);
+      });
+
+      it('「平日14時以降がいい」-> preference.set', () => {
+        const r = classifyIntent('平日14時以降がいい', ctxNoThread());
+        expect(r.intent).toBe('preference.set');
+      });
+
+      it('「土日は避けたい」-> preference.set', () => {
+        const r = classifyIntent('土日は避けたい', ctxNoThread());
+        expect(r.intent).toBe('preference.set');
+      });
+
+      it('「18時までにしたい」-> preference.set (人物なし、時間のみ)', () => {
+        const r = classifyIntent('18時までにしたい', ctxNoThread());
+        // preference.set（人物パターンなし、SCHEDULING_TRIGGER_WORDS なし）
+        expect(r.intent).not.toMatch(/schedule\.1on1/);
+      });
+
+      it('「好みを見せて」-> preference.show', () => {
+        const r = classifyIntent('好みを見せて', ctxNoThread());
+        expect(r.intent).toBe('preference.show');
+      });
+
+      it('「設定をクリア」-> preference.clear', () => {
+        const r = classifyIntent('設定をクリア', ctxNoThread());
+        expect(r.intent).toBe('preference.clear');
+      });
+    });
+
+    // === エッジケース（lists に行くべき） ===
+    describe('should route to lists (NOT preference)', () => {
+      it('「リストを作りたい」-> list.create (NOT preference.set)', () => {
+        const r = classifyIntent('リストを作りたい', ctxNoThread());
+        expect(r.intent).toBe('list.create');
+      });
+
+      it('「営業部リストを作って」-> list.create', () => {
+        const r = classifyIntent('営業部リストを作って', ctxNoThread());
+        expect(r.intent).toBe('list.create');
+      });
+    });
+  });
 });
