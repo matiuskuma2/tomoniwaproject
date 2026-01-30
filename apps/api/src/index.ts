@@ -47,6 +47,7 @@ import nlPrefsRoutes from './routes/nlPrefs';
 import chatRoutes from './routes/chat';
 import oneOnOneRoutes from './routes/oneOnOne';
 import oneToManyRoutes from './routes/oneToMany';
+import groupInviteRoutes from './routes/groupInvite';
 import relationshipsRoutes from './routes/relationships';
 import schedulingInternalRoutes from './routes/schedulingInternal';
 
@@ -192,6 +193,9 @@ app.route('/api/otp', otpRoutes);
 
 // External Invite Routes (Ticket 10 - Public, no auth required)
 app.route('/i', inviteRoutes);
+
+// Group Invite Routes (G1 - 1対N参加者向け, Public, no auth required)
+app.route('/g', groupInviteRoutes);
 
 // Open Slots Routes (Phase B-4 - Public, TimeRex型の公開枠選択)
 app.route('/open', openSlotsRoutes);
