@@ -1449,7 +1449,8 @@ app.post('/one-to-many-candidates', async (c) => {
       slot_count = 3,
       start_offset_hours = 48,
       duration_minutes = 60,
-      deadline_hours = 72
+      deadline_hours = 72,
+      mode = 'candidates'  // 'candidates' | 'open_slots'
     } = body as {
       organizer_user_id?: string;
       invitee_count?: number;
@@ -1458,6 +1459,7 @@ app.post('/one-to-many-candidates', async (c) => {
       start_offset_hours?: number;
       duration_minutes?: number;
       deadline_hours?: number;
+      mode?: 'candidates' | 'open_slots';
     };
 
     const now = new Date();
@@ -1490,7 +1492,7 @@ app.post('/one-to-many-candidates', async (c) => {
     const deadlineAt = new Date(now.getTime() + deadline_hours * 60 * 60 * 1000).toISOString();
     
     const groupPolicy = {
-      mode: 'candidates',
+      mode: mode,  // 'candidates' or 'open_slots'
       deadline_at: deadlineAt,
       finalize_policy: 'organizer_decides',
       auto_finalize: false,
