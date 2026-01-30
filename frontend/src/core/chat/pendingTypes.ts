@@ -14,6 +14,7 @@
 
 export type PendingKind =
   | 'pending.action'           // Beta A: send/add_invites/add_slots
+  | 'pending.contact.select'   // Phase 2: 連絡先選択待ち
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
@@ -121,6 +122,19 @@ export type PendingState =
       params: Record<string, unknown>;  // intentに渡すparams
       sideEffect: 'none' | 'read' | 'write_local' | 'write_external';
       confirmationPrompt: string;       // 確認メッセージ
+    })
+
+  // Phase 2: 連絡先選択待ち（名前から複数候補が見つかった時）
+  | (PendingBase & {
+      kind: 'pending.contact.select';
+      candidates: Array<{
+        contact_id: string;
+        display_name: string;
+        email?: string;
+      }>;
+      query_name: string;                // 元の検索名（「大島くん」など）
+      intent_to_resume: string;          // 選択後に再実行する intent
+      original_params: Record<string, unknown>;  // 元の params
     });
 
 // ============================================================
@@ -181,6 +195,10 @@ export function isPendingAiConfirm(pending: PendingState | null): pending is Pen
   return pending?.kind === 'ai.confirm';
 }
 
+export function isPendingContactSelect(pending: PendingState | null): pending is PendingState & { kind: 'pending.contact.select' } {
+  return pending?.kind === 'pending.contact.select';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -188,6 +206,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
   if (!pending) return false;
   return [
     'pending.action',
+    'pending.contact.select',  // Phase 2
     'remind.pending',
     'remind.need_response',
     'remind.responded',
@@ -224,6 +243,8 @@ export function describePending(pending: PendingState | null): string {
       return `再調整待ち (${pending.participants.length}名)`;
     case 'ai.confirm':
       return `AI確認待ち (${pending.targetIntent})`;
+    case 'pending.contact.select':
+      return `連絡先選択待ち (「${pending.query_name}」${pending.candidates.length}件)`;
     default:
       return `不明な状態`;
   }
