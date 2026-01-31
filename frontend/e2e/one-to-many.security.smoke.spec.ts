@@ -1,5 +1,5 @@
 /**
- * one-to-many.security.local.spec.ts
+ * one-to-many.security.smoke.spec.ts
  * G1 E2E Security Tests - Local Execution (PR-G1-E2E-3)
  * 
  * DoD:
@@ -13,7 +13,7 @@
  * 8. 期限切れトークンのハンドリング
  * 
  * 実行方法:
- * E2E_API_URL=http://localhost:3000 npx playwright test one-to-many.security.local.spec.ts
+ * E2E_API_URL=http://localhost:3000 npx playwright test one-to-many.security.smoke.spec.ts
  */
 
 import { test, expect, APIRequestContext } from '@playwright/test';

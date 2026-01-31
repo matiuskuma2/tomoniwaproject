@@ -1,5 +1,5 @@
 /**
- * one-to-many-open-slots.local.spec.ts
+ * one-to-many-open-slots.smoke.spec.ts
  * PR-G1-E2E-2 + PR-G1-OPEN-SLOTS-LOCK: 1対N Open Slots（申込式）× 参加者5人をローカルで検証
  *
  * DoD:
@@ -12,7 +12,7 @@
  *  7) 本番ガード：fixture は 403、API は 401
  *  8) [NEW] 先着制：同じ枠に2人目が OK → 「枠が埋まっています」エラー
  * 
- * 実行: E2E_API_URL=http://localhost:3000 npx playwright test one-to-many-open-slots.local.spec.ts
+ * 実行: E2E_API_URL=http://localhost:3000 npx playwright test one-to-many-open-slots.smoke.spec.ts
  */
 
 import { test, expect } from '@playwright/test';
