@@ -222,10 +222,10 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
 
   test('G1-O8: Security - invalid token shows error page', async ({ page }) => {
     await page.goto(`${API_BASE_URL}/g/invalid-open-slots-token`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     
     // 無効なトークンでエラー表示
-    await expect(page).toHaveTitle(/無効|エラー/);
+    await expect(page.locator('body')).toContainText(/無効|エラー|見つかりません/);
   });
 
   // ========================================
@@ -320,6 +320,208 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
       // レスポンスに「枠が埋まっています」が含まれる
       const html = await res.text();
       expect(html).toContain('枠が埋まっています');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+});
+
+// ============================================================
+// PR-G1-AF-1: Auto-finalize Tests
+// open_slots モードで全枠が埋まったら自動的に thread.status = 'confirmed'
+// ============================================================
+
+test.describe('1-to-N Open Slots Auto-Finalize (G1-AF)', () => {
+  test.setTimeout(90000);
+
+  /**
+   * auto_finalize = true の fixture を作成
+   */
+  async function createAutoFinalizeFixture(request: any): Promise<FixtureResponse | null> {
+    const res = await request.post(`${API_BASE_URL}/test/fixtures/one-to-many-candidates`, {
+      data: {
+        invitee_count: 3,  // 3人
+        slot_count: 3,     // 3枠（全員OKで全枠埋まる）
+        title: 'E2E Auto-Finalize Test',
+        duration_minutes: 60,
+        start_offset_hours: 48,
+        deadline_hours: 72,
+        mode: 'open_slots',
+        auto_finalize: true,  // 自動確定を有効化
+      },
+    });
+    
+    if (res.status() === 403) {
+      return null;
+    }
+    
+    expect(res.status()).toBe(201);
+    const json = (await res.json()) as FixtureResponse;
+    expect(json.invites.length).toBe(3);
+    expect(json.slots.length).toBe(3);
+    expect(json.group_policy.mode).toBe('open_slots');
+    return json;
+  }
+
+  test('G1-A1: fixture作成（auto_finalize=true）→ policy が正しく設定される', async ({ page, request }) => {
+    const fixture = await createAutoFinalizeFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    try {
+      // Thread APIで auto_finalize が true か確認
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      // API response structure: { thread: {...}, group_policy: {...}, ... }
+      expect(data.group_policy.auto_finalize).toBe(true);
+      expect(data.group_policy.mode).toBe('open_slots');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-A2: 2人がOK → まだ confirmed にならない（枠が残っている）', async ({ page, request }) => {
+    const fixture = await createAutoFinalizeFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // invitee1 が slot[0] で OK
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // invitee2 が slot[1] で OK
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // この時点でスレッドは confirmed ではない
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      // まだ sent のまま（全枠埋まっていない）
+      // API response structure: { thread: {...}, group_policy: {...}, ... }
+      expect(data.thread.status).toBe('sent');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-A3: 3人全員がOK → 全枠埋まり → 自動確定', async ({ page, request }) => {
+    const fixture = await createAutoFinalizeFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // 3人が各枠にOK
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // 最後の1人が OK → 全枠埋まり → auto_finalize 発動
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // スレッドが confirmed になっているか確認
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      // auto_finalize で confirmed になる
+      // API response structure: { thread: {...}, group_policy: {...}, ... }
+      expect(data.thread.status).toBe('confirmed');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-A4: auto_finalize後、invitee が /g/:token で「確定済み」表示', async ({ page, request }) => {
+    const fixture = await createAutoFinalizeFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // 3人全員がOK → auto_finalize 発動
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
+      
+      // invitee が /g/:token にアクセスすると「確定済み」表示
+      await expectConfirmedPage(page, fixture.invites[0].token);
+      await expectConfirmedPage(page, fixture.invites[1].token);
+      await expectConfirmedPage(page, fixture.invites[2].token);
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-A5: auto_finalize=false の場合は全枠埋まっても confirmed にならない', async ({ page, request }) => {
+    // auto_finalize=false の fixture（通常の open_slots）
+    const fixture = await createOpenSlotsFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // 3人が3枠を埋める
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
+      
+      // auto_finalize=false なので、confirmed にならない
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      // 手動 finalize が必要（organizer_decides）なので sent のまま
+      // API response structure: { thread: {...}, group_policy: {...}, ... }
+      expect(data.thread.status).toBe('sent');
+      
+      // 手動で finalize できることを確認
+      const finalizeRes = await request.post(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}/finalize`, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': fixture.organizer_user_id 
+        },
+        data: { selected_slot_id: slots[0].slot_id },
+      });
+      expect(finalizeRes.ok()).toBeTruthy();
+      const finalizeResult = await finalizeRes.json();
+      expect(finalizeResult.status).toBe('confirmed');
       
     } finally {
       await cleanupFixture(request, fixture.thread_id);

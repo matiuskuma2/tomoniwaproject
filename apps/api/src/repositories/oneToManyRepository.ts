@@ -487,6 +487,118 @@ export class OneToManyRepository {
   }
 
   /**
+   * open_slots モードで全枠が埋まったかチェック（auto_finalize 用）
+   * 
+   * @param threadId スレッドID
+   * @returns { allSlotsFilled: boolean; totalSlots: number; filledSlots: number }
+   */
+  async checkAutoFinalizeOpenSlots(threadId: string): Promise<{
+    shouldAutoFinalize: boolean;
+    allSlotsFilled: boolean;
+    totalSlots: number;
+    filledSlots: number;
+    reason: string;
+  }> {
+    // スレッドと policy を取得
+    const thread = await this.getById(threadId);
+    if (!thread || !thread.group_policy_json) {
+      return { 
+        shouldAutoFinalize: false, 
+        allSlotsFilled: false, 
+        totalSlots: 0, 
+        filledSlots: 0, 
+        reason: 'thread_not_found' 
+      };
+    }
+
+    const policy: GroupPolicy = JSON.parse(thread.group_policy_json);
+
+    // open_slots モードでない、または auto_finalize=false の場合は対象外
+    if (policy.mode !== 'open_slots' || !policy.auto_finalize) {
+      return { 
+        shouldAutoFinalize: false, 
+        allSlotsFilled: false, 
+        totalSlots: 0, 
+        filledSlots: 0, 
+        reason: policy.mode !== 'open_slots' 
+          ? 'not_open_slots_mode' 
+          : 'auto_finalize_disabled' 
+      };
+    }
+
+    // すでに confirmed の場合は対象外
+    if (thread.status === 'confirmed') {
+      return { 
+        shouldAutoFinalize: false, 
+        allSlotsFilled: true, 
+        totalSlots: 0, 
+        filledSlots: 0, 
+        reason: 'already_confirmed' 
+      };
+    }
+
+    // 全スロットを取得
+    const { results: slots } = await this.db.prepare(`
+      SELECT slot_id FROM scheduling_slots WHERE thread_id = ?
+    `).bind(threadId).all<{ slot_id: string }>();
+
+    const totalSlots = slots?.length || 0;
+    if (totalSlots === 0) {
+      return { 
+        shouldAutoFinalize: false, 
+        allSlotsFilled: false, 
+        totalSlots: 0, 
+        filledSlots: 0, 
+        reason: 'no_slots' 
+      };
+    }
+
+    // ロック済みスロット（OK 回答あり）を取得
+    const lockedSlotIds = await this.getLockedSlotIds(threadId);
+    const filledSlots = lockedSlotIds.length;
+
+    const allSlotsFilled = filledSlots >= totalSlots;
+
+    return {
+      shouldAutoFinalize: allSlotsFilled,
+      allSlotsFilled,
+      totalSlots,
+      filledSlots,
+      reason: allSlotsFilled ? 'all_slots_filled' : `slots_remaining: ${totalSlots - filledSlots}`,
+    };
+  }
+
+  /**
+   * スレッドを confirmed に更新（CAS: 競合防止）
+   * 
+   * 同時に複数リクエストが最後の枠を埋めるレースを防ぐため、
+   * status != 'confirmed' の条件付きで更新する
+   * 
+   * @param threadId スレッドID
+   * @returns { success: boolean; alreadyConfirmed: boolean }
+   */
+  async tryFinalizeIfNotConfirmed(threadId: string): Promise<{
+    success: boolean;
+    alreadyConfirmed: boolean;
+  }> {
+    const now = new Date().toISOString();
+
+    // CAS 更新: status が confirmed でない場合のみ更新
+    const result = await this.db.prepare(`
+      UPDATE scheduling_threads 
+      SET status = 'confirmed', updated_at = ?
+      WHERE id = ? AND status != 'confirmed'
+    `).bind(now, threadId).run();
+
+    // changes が 1 なら更新成功（このリクエストで確定）
+    // changes が 0 なら既に別リクエストで確定済み
+    const success = (result.meta?.changes || 0) === 1;
+    const alreadyConfirmed = !success;
+
+    return { success, alreadyConfirmed };
+  }
+
+  /**
    * 再提案カウント増加
    */
   async incrementReproposalCount(threadId: string): Promise<{ success: boolean; current: number; max: number }> {
