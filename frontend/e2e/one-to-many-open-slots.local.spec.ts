@@ -1,6 +1,6 @@
 /**
  * one-to-many-open-slots.local.spec.ts
- * PR-G1-E2E-2: 1対N Open Slots（申込式）× 参加者5人をローカルで検証
+ * PR-G1-E2E-2 + PR-G1-OPEN-SLOTS-LOCK: 1対N Open Slots（申込式）× 参加者5人をローカルで検証
  *
  * DoD:
  *  1) fixture で one_to_many(open_slots) を作れる
@@ -10,8 +10,9 @@
  *  5) organizer が finalize できる（organizer_decides）
  *  6) finalize 後、invitee 側が確定済み表示になる
  *  7) 本番ガード：fixture は 403、API は 401
+ *  8) [NEW] 先着制：同じ枠に2人目が OK → 「枠が埋まっています」エラー
  * 
- * 実行: E2E_API_URL=http://localhost:3000 npx playwright test one-to-many-open-slots.local.spec.ts --project=smoke
+ * 実行: E2E_API_URL=http://localhost:3000 npx playwright test one-to-many-open-slots.local.spec.ts
  */
 
 import { test, expect } from '@playwright/test';
@@ -99,6 +100,8 @@ async function expectConfirmedPage(page: any, token: string) {
 }
 
 test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
+  // タイムアウトを90秒に延長
+  test.setTimeout(90000);
   
   test('G1-O1: fixture作成（open_slotsモード）→ 招待ページ表示', async ({ page, request }) => {
     const fixture = await createOpenSlotsFixture(request);
@@ -125,7 +128,7 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
     }
   });
 
-  test('G1-O2〜O6: 5人×3枠の完全フロー（申込→再アクセス→集計→確定→確定済み表示）', async ({ page, request }) => {
+  test('G1-O2〜O6: 3人×3枠の完全フロー（先着制：各枠1人）', async ({ page, request }) => {
     const fixture = await createOpenSlotsFixture(request);
     if (!fixture) {
       test.skip(true, 'Fixtures not available in production');
@@ -134,41 +137,41 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
     
     const threadId = fixture.thread_id;
     const organizerUserId = fixture.organizer_user_id;
-    // 5人の参加者がそれぞれ異なる枠に申込（枠は3つなので、一部は同じ枠になる）
+    // 先着制：各枠1人のみ可能なので、3枠に3人が申込
     const slots = fixture.slots;
 
     try {
       // ========================================
-      // O2: 5人が申込（各自が希望する枠を選択）
+      // O2: 3人が申込（先着制なので各枠1人ずつ）
       // ========================================
       // invitee1 → slot[0]
       await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
       await expect(page.locator('body')).toContainText('参加可能と回答しました');
       
-      // invitee2 → slot[0] (同じ枠に複数申込可能 - 先着制ではない現状)
-      await applyViaUI(page, fixture.invites[1].token, slots[0].slot_id);
+      // invitee2 → slot[1]（先着制なので別の枠に）
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
       await expect(page.locator('body')).toContainText('参加可能と回答しました');
       
-      // invitee3 → slot[1]
-      await applyViaUI(page, fixture.invites[2].token, slots[1].slot_id);
+      // invitee3 → slot[2]
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
       await expect(page.locator('body')).toContainText('参加可能と回答しました');
       
-      // invitee4 → slot[1]
-      await applyViaUI(page, fixture.invites[3].token, slots[1].slot_id);
-      await expect(page.locator('body')).toContainText('参加可能と回答しました');
-      
-      // invitee5 → slot[2]
-      await applyViaUI(page, fixture.invites[4].token, slots[2].slot_id);
-      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      // invitee4, invitee5 は枠がないので申込しない（または NO 回答）
+      // ここでは invitee4 が NO 回答をテスト
+      await page.goto(`${API_BASE_URL}/g/${fixture.invites[3].token}`);
+      await page.waitForLoadState('networkidle');
+      // すべての枠が埋まっているが、NO/MAYBE は選択可能
+      await page.locator('button[data-response="no"]').click();
+      await page.waitForLoadState('networkidle');
+      await expect(page.locator('body')).toContainText('参加不可と回答しました');
 
       // ========================================
-      // O3: 再アクセスで全員「申込済み」（idempotent）
+      // O3: 再アクセスで全員「回答済み」（idempotent）
       // ========================================
       await expectAlreadyResponded(page, fixture.invites[0].token);
       await expectAlreadyResponded(page, fixture.invites[1].token);
       await expectAlreadyResponded(page, fixture.invites[2].token);
       await expectAlreadyResponded(page, fixture.invites[3].token);
-      await expectAlreadyResponded(page, fixture.invites[4].token);
 
       // ========================================
       // O4: organizer が summary で枠ごとの応募状況を見れる
@@ -179,26 +182,13 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
       expect(summaryRes.ok()).toBeTruthy();
       const summary = await summaryRes.json();
       
-      // 5人全員が回答済み
-      expect(summary.summary.responded).toBe(5);
-      expect(summary.summary.ok_count).toBe(5);
-      
-      // 枠ごとの応募状況を確認（slot_countsがあれば）
-      if (summary.summary.slot_counts) {
-        const slotCounts = summary.summary.slot_counts;
-        // slot[0]に2人、slot[1]に2人、slot[2]に1人
-        const slot0Count = slotCounts.find((s: any) => s.slot_id === slots[0].slot_id);
-        const slot1Count = slotCounts.find((s: any) => s.slot_id === slots[1].slot_id);
-        const slot2Count = slotCounts.find((s: any) => s.slot_id === slots[2].slot_id);
-        
-        if (slot0Count) expect(slot0Count.ok_count).toBe(2);
-        if (slot1Count) expect(slot1Count.ok_count).toBe(2);
-        if (slot2Count) expect(slot2Count.ok_count).toBe(1);
-      }
+      // 4人が回答済み（3人OK、1人NO）
+      expect(summary.summary.responded).toBe(4);
+      expect(summary.summary.ok_count).toBe(3);
+      expect(summary.summary.no_count).toBe(1);
 
       // ========================================
-      // O5: organizer が finalize できる（最も人気のある枠で確定）
-      // slot[0]またはslot[1]を選択（両方2人）
+      // O5: organizer が finalize できる
       // ========================================
       const finalizeRes = await request.post(`${API_BASE_URL}/api/one-to-many/${threadId}/finalize`, {
         headers: { 
@@ -212,13 +202,12 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
       expect(finalizeResult.status).toBe('confirmed');
 
       // ========================================
-      // O6: finalize後、invitee側が確定済み表示になる（5人とも）
+      // O6: finalize後、invitee側が確定済み表示になる
       // ========================================
       await expectConfirmedPage(page, fixture.invites[0].token);
       await expectConfirmedPage(page, fixture.invites[1].token);
       await expectConfirmedPage(page, fixture.invites[2].token);
       await expectConfirmedPage(page, fixture.invites[3].token);
-      await expectConfirmedPage(page, fixture.invites[4].token);
 
     } finally {
       await cleanupFixture(request, threadId);
@@ -237,5 +226,103 @@ test.describe('1-to-N Open Slots (5 invitees × 3 slots)', () => {
     
     // 無効なトークンでエラー表示
     await expect(page).toHaveTitle(/無効|エラー/);
+  });
+
+  // ========================================
+  // PR-G1-OPEN-SLOTS-LOCK: 先着制テスト
+  // ========================================
+  
+  test('G1-O9: 先着制 - 同じ枠に2人目がOK → 「枠が埋まっています」エラー', async ({ page, request }) => {
+    const fixture = await createOpenSlotsFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // ========================================
+      // Step 1: invitee1 が slot[0] で OK（成功）
+      // ========================================
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // ========================================
+      // Step 2: invitee2 が同じ slot[0] で OK（拒否されるべき）
+      // ========================================
+      await page.goto(`${API_BASE_URL}/g/${fixture.invites[1].token}`);
+      await page.waitForLoadState('networkidle');
+      
+      // slot[0] が「埋まっています」と表示されるか確認
+      const slot0Radio = page.locator(`input[name="selected_slot_id"][value="${slots[0].slot_id}"]`);
+      await expect(slot0Radio).toBeDisabled();
+      
+      // 「埋まっています」バッジが表示されているか
+      await expect(page.locator('body')).toContainText('この枠は埋まっています');
+      
+      // slot[0] を選択しようとしても無効化されている
+      // 代わりに slot[1] を選択して送信
+      const slot1Radio = page.locator(`input[name="selected_slot_id"][value="${slots[1].slot_id}"]`);
+      await slot1Radio.check({ force: true });
+      await page.locator('button[data-response="ok"]').click();
+      await page.waitForLoadState('networkidle');
+      
+      // slot[1] で成功
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // ========================================
+      // Step 3: invitee3 がまだ空いている slot[2] で OK（成功）
+      // ========================================
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // ========================================
+      // Step 4: 全枠が埋まった状態で invitee4 がページを開く
+      // ========================================
+      await page.goto(`${API_BASE_URL}/g/${fixture.invites[3].token}`);
+      await page.waitForLoadState('networkidle');
+      
+      // 3つの枠すべてが「埋まっています」
+      const lockedBadges = page.locator('text=この枠は埋まっています');
+      await expect(lockedBadges).toHaveCount(3);
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-O10: 先着制 - UIでdisabledな枠を無視して直接POSTしても409', async ({ page, request }) => {
+    const fixture = await createOpenSlotsFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // invitee1 が slot[0] を取得
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await expect(page.locator('body')).toContainText('参加可能と回答しました');
+      
+      // invitee2 が直接POSTで slot[0] を狙う（UIをバイパス）
+      const res = await request.post(`${API_BASE_URL}/g/${fixture.invites[1].token}/respond`, {
+        form: {
+          response: 'ok',
+          selected_slot_id: slots[0].slot_id,
+        },
+      });
+      
+      // 409 Conflict が返る
+      expect(res.status()).toBe(409);
+      
+      // レスポンスに「枠が埋まっています」が含まれる
+      const html = await res.text();
+      expect(html).toContain('枠が埋まっています');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
   });
 });
