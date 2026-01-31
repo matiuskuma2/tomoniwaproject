@@ -110,13 +110,12 @@ export default defineConfig({
 
   // Smoke Test 用: ローカルサーバーを起動
   // NOTE: E2E_BASE_URL が外部URL（127.0.0.1/localhost 以外）の場合は webServer を無効化
-  // NOTE: E2E_API_URL が設定されている場合もwebServer を無効化（APIサーバーを直接使用）
+  // NOTE: E2E_API_URL は API サーバー専用。フロントエンドの webServer は別途起動する
   webServer: (() => {
     const baseUrl = process.env.E2E_BASE_URL || '';
-    const apiUrl = process.env.E2E_API_URL || '';
     const isExternalUrl = baseUrl && !baseUrl.includes('127.0.0.1') && !baseUrl.includes('localhost');
-    // E2E_API_URL が設定されている場合は webServer を起動しない（APIサーバーを直接使用）
-    if (isExternalUrl || apiUrl) {
+    // 外部 URL を使用する場合のみ webServer を無効化
+    if (isExternalUrl) {
       return undefined; // 外部サーバーを使用
     }
     return {
