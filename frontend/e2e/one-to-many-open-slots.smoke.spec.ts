@@ -364,7 +364,7 @@ test.describe('1-to-N Open Slots Auto-Finalize (G1-AF)', () => {
     return json;
   }
 
-  test('G1-A1: fixture作成（auto_finalize=true）→ policy が正しく設定される', async ({ page, request }) => {
+  test('G1-A1: fixture作成（auto_finalize=true）→ policy が正しく設定される', async ({ request }) => {
     const fixture = await createAutoFinalizeFixture(request);
     if (!fixture) {
       test.skip(true, 'Fixtures not available in production');
