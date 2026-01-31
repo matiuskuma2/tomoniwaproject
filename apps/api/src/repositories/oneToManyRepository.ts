@@ -455,6 +455,38 @@ export class OneToManyRepository {
   }
 
   /**
+   * 特定のスロットがロック済み（OK 回答あり）かどうかをチェック
+   * open_slots モードでの先着制に使用
+   * 
+   * @param threadId スレッドID
+   * @param slotId チェックするスロットID
+   * @returns ロック済みの場合は invitee_key、未ロックなら null
+   */
+  async isSlotLocked(threadId: string, slotId: string): Promise<string | null> {
+    const result = await this.db.prepare(`
+      SELECT invitee_key FROM thread_responses 
+      WHERE thread_id = ? AND selected_slot_id = ? AND response = 'ok'
+      LIMIT 1
+    `).bind(threadId, slotId).first<{ invitee_key: string }>();
+    return result?.invitee_key || null;
+  }
+
+  /**
+   * スレッドのロック済みスロット一覧を取得
+   * open_slots モードでの UI 表示に使用
+   * 
+   * @param threadId スレッドID
+   * @returns ロック済みスロットIDの配列
+   */
+  async getLockedSlotIds(threadId: string): Promise<string[]> {
+    const { results } = await this.db.prepare(`
+      SELECT DISTINCT selected_slot_id FROM thread_responses 
+      WHERE thread_id = ? AND response = 'ok' AND selected_slot_id IS NOT NULL
+    `).bind(threadId).all<{ selected_slot_id: string }>();
+    return results?.map(r => r.selected_slot_id) || [];
+  }
+
+  /**
    * 再提案カウント増加
    */
   async incrementReproposalCount(threadId: string): Promise<{ success: boolean; current: number; max: number }> {

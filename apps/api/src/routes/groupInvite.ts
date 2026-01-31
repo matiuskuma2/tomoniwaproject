@@ -176,6 +176,24 @@ function successPage(response: 'ok' | 'no' | 'maybe', threadTitle: string): stri
   `;
 }
 
+function slotTakenPage(threadTitle: string, token: string): string {
+  return `
+    ${getHtmlHead('枠が埋まっています')}
+    <body class="bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center fade-in">
+        <div class="text-6xl mb-4">😔</div>
+        <h1 class="text-2xl font-bold text-amber-600 mb-4">この枠は埋まっています</h1>
+        <p class="text-gray-700 mb-6">「${threadTitle}」の選択した枠は他の方が先に予約されました。</p>
+        <p class="text-gray-600 mb-6">別の日時枠を選んで再度お申し込みください。</p>
+        <a href="/g/${token}" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-colors">
+          日時枠を選び直す
+        </a>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 // ============================================================
 // GET /g/:token - 回答フォーム表示
 // ============================================================
@@ -229,13 +247,20 @@ app.get('/:token', async (c) => {
 
     const groupPolicy = thread.group_policy_json ? JSON.parse(thread.group_policy_json) : null;
 
+    // open_slots モードの場合、ロック済み枠を取得
+    let lockedSlotIds: string[] = [];
+    if (groupPolicy?.mode === 'open_slots') {
+      lockedSlotIds = await oneToManyRepo.getLockedSlotIds(thread.id);
+    }
+
     // 回答フォームを表示
     return c.html(renderResponseForm(
       thread,
       invite,
       slots || [],
       groupPolicy,
-      token
+      token,
+      lockedSlotIds
     ));
   } catch (error) {
     log.error('Error in GET /g/:token', error);
@@ -279,6 +304,18 @@ app.post('/:token/respond', async (c) => {
 
     // 回答を登録
     const inviteeKey = invite.invitee_key || `e:${token.substring(0, 16)}`;
+
+    // open_slots モード + OK 回答の場合、枠ロックをチェック
+    const groupPolicy = thread.group_policy_json ? JSON.parse(thread.group_policy_json) : null;
+    if (groupPolicy?.mode === 'open_slots' && response === 'ok' && selectedSlotId) {
+      const lockedBy = await oneToManyRepo.isSlotLocked(thread.id, selectedSlotId);
+      if (lockedBy && lockedBy !== inviteeKey) {
+        // 他の人が既にこの枠を取得済み
+        log.warn('Slot already taken', { threadId: thread.id, slotId: selectedSlotId, lockedBy, attemptedBy: inviteeKey });
+        return c.html(slotTakenPage(thread.title || '予定調整', token), 409);
+      }
+    }
+
     await oneToManyRepo.addResponse({
       thread_id: thread.id,
       invitee_key: inviteeKey,
@@ -309,29 +346,62 @@ function renderResponseForm(
   invite: any,
   slots: any[],
   groupPolicy: any,
-  token: string
+  token: string,
+  lockedSlotIds: string[] = []
 ): string {
   const mode = groupPolicy?.mode || 'candidates';
+  const isOpenSlots = mode === 'open_slots';
   const deadline = groupPolicy?.deadline_at 
     ? formatDateTimeJP(groupPolicy.deadline_at)
     : null;
 
-  const slotsHtml = slots.map((slot, index) => `
-    <label class="slot-card block border-2 border-gray-200 rounded-xl p-4 cursor-pointer mb-3">
-      <div class="flex items-center">
-        <input type="radio" name="selected_slot_id" value="${slot.slot_id}" class="mr-3 w-5 h-5 text-blue-600" ${index === 0 ? 'checked' : ''}>
-        <div class="flex-1">
-          <div class="font-medium text-gray-800">
-            ${formatDateTimeJP(slot.start_at)}
+  // 利用可能なスロット（ロックされていないもの）のみ選択可能
+  const availableSlots = slots.filter(slot => !lockedSlotIds.includes(slot.slot_id));
+  const firstAvailableIndex = slots.findIndex(slot => !lockedSlotIds.includes(slot.slot_id));
+
+  const slotsHtml = slots.map((slot, index) => {
+    const isLocked = lockedSlotIds.includes(slot.slot_id);
+    const isFirstAvailable = index === firstAvailableIndex;
+    
+    if (isLocked) {
+      // ロック済み枠（disabled）
+      return `
+        <div class="slot-card block border-2 border-gray-200 rounded-xl p-4 mb-3 bg-gray-100 opacity-60">
+          <div class="flex items-center">
+            <input type="radio" name="selected_slot_id" value="${slot.slot_id}" class="mr-3 w-5 h-5 text-gray-400" disabled>
+            <div class="flex-1">
+              <div class="font-medium text-gray-500">
+                ${formatDateTimeJP(slot.start_at)}
+              </div>
+              <div class="text-sm text-gray-400">
+                〜 ${formatTimeJP(slot.end_at)}
+              </div>
+              <div class="text-xs text-red-500 mt-1 font-medium">🔒 この枠は埋まっています</div>
+            </div>
           </div>
-          <div class="text-sm text-gray-500">
-            〜 ${formatTimeJP(slot.end_at)}
-          </div>
-          ${slot.label ? `<div class="text-xs text-gray-400 mt-1">${slot.label}</div>` : ''}
         </div>
-      </div>
-    </label>
-  `).join('');
+      `;
+    } else {
+      // 利用可能な枠
+      return `
+        <label class="slot-card block border-2 border-gray-200 rounded-xl p-4 cursor-pointer mb-3">
+          <div class="flex items-center">
+            <input type="radio" name="selected_slot_id" value="${slot.slot_id}" class="mr-3 w-5 h-5 text-blue-600" ${isFirstAvailable ? 'checked' : ''}>
+            <div class="flex-1">
+              <div class="font-medium text-gray-800">
+                ${formatDateTimeJP(slot.start_at)}
+              </div>
+              <div class="text-sm text-gray-500">
+                〜 ${formatTimeJP(slot.end_at)}
+              </div>
+              ${slot.label ? `<div class="text-xs text-gray-400 mt-1">${slot.label}</div>` : ''}
+              ${isOpenSlots ? `<div class="text-xs text-green-600 mt-1">✓ 申込可能</div>` : ''}
+            </div>
+          </div>
+        </label>
+      `;
+    }
+  }).join('');
 
   return `
     ${getHtmlHead('日程調整への回答')}
