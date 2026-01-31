@@ -120,6 +120,28 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+
+      # === G1 API Server Setup ===
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Setup D1 database
+        run: npx wrangler d1 migrations apply webapp-production --local
+
+      - name: Start API server
+        run: |
+          npx wrangler dev --local --port 3000 &
+          API_PID=$!
+          echo "API_PID=$API_PID" >> $GITHUB_ENV
+          echo "Waiting for API server to start..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:3000/health > /dev/null 2>&1; then
+              echo "API server is ready"
+              break
+            fi
+            sleep 1
+          done
+      # === End G1 API Server Setup ===
       
       # Playwright の webServer 設定が自動的にサーバーを起動
       - name: Run E2E Smoke tests
@@ -128,6 +150,7 @@ jobs:
         env:
           CI: true
           E2E_BASE_URL: http://127.0.0.1:4173
+          E2E_API_URL: http://127.0.0.1:3000
       
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -182,3 +205,4 @@ jobs:
           path: frontend/e2e-report/
           retention-days: 14
 # Authenticated E2E trigger: 20260119-121127
+# G1 API Server: Added for 1-to-N E2E tests
