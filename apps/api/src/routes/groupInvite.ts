@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import { OneToManyRepository } from '../repositories/oneToManyRepository';
 import { ThreadsRepository } from '../repositories/threadsRepository';
+import { InboxRepository } from '../repositories/inboxRepository';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { createLogger } from '../utils/logger';
 
@@ -347,7 +348,31 @@ app.post('/:token/respond', async (c) => {
             filledSlots: autoFinalizeResult.filledSlots,
             triggeredBy: inviteeKey,
           });
-          // TODO: organizer への通知（inbox）を追加
+          
+          // organizer への通知（inbox）
+          try {
+            const inboxRepo = new InboxRepository(env.DB);
+            await inboxRepo.create({
+              user_id: thread.organizer_user_id,
+              type: 'scheduling_request_confirmed',
+              title: '日程が自動確定しました',
+              message: `「${thread.title || '予定調整'}」の全枠が埋まり、自動的に確定されました。`,
+              action_type: 'view_thread',
+              action_target_id: thread.id,
+              action_url: `/one-to-many/${thread.id}`,
+              priority: 'high',
+            });
+            log.info('Sent auto-finalize notification to organizer', {
+              threadId: thread.id,
+              organizerId: thread.organizer_user_id,
+            });
+          } catch (notifyError) {
+            // 通知失敗はログのみ（確定処理は成功しているので続行）
+            log.warn('Failed to send auto-finalize notification', {
+              threadId: thread.id,
+              error: notifyError,
+            });
+          }
         } else {
           log.info('Thread already confirmed by another request', { threadId: thread.id });
         }

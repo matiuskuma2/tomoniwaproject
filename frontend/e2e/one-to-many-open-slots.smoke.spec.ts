@@ -459,6 +459,42 @@ test.describe('1-to-N Open Slots Auto-Finalize (G1-AF)', () => {
     }
   });
 
+  test('G1-A3.5: auto_finalize成功後、organizer の inbox に通知が届く', async ({ page, request }) => {
+    const fixture = await createAutoFinalizeFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+    
+    const slots = fixture.slots;
+    
+    try {
+      // 3人が各枠にOK → auto_finalize 発動
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await applyViaUI(page, fixture.invites[1].token, slots[1].slot_id);
+      await applyViaUI(page, fixture.invites[2].token, slots[2].slot_id);
+      
+      // organizer の inbox を確認
+      const inboxRes = await request.get(`${API_BASE_URL}/api/inbox`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(inboxRes.ok()).toBeTruthy();
+      const inboxData = await inboxRes.json();
+      
+      // scheduling_request_confirmed タイプの通知が存在することを確認
+      const confirmNotification = inboxData.items?.find(
+        (item: any) => item.type === 'scheduling_request_confirmed' && item.action_target_id === fixture.thread_id
+      );
+      
+      expect(confirmNotification).toBeDefined();
+      expect(confirmNotification.title).toContain('自動確定');
+      expect(confirmNotification.priority).toBe('high');
+      
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
   test('G1-A4: auto_finalize後、invitee が /g/:token で「確定済み」表示', async ({ page, request }) => {
     const fixture = await createAutoFinalizeFixture(request);
     if (!fixture) {
