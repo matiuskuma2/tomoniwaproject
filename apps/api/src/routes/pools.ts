@@ -20,7 +20,8 @@ import { Hono } from 'hono';
 import { getTenant } from '../utils/workspaceContext';
 import type { Env } from '../../../../packages/shared/src/types/env';
 import { PoolsRepository } from '../repositories/poolsRepository';
-import type { PoolSlotStatus } from '../../../../packages/shared/src/types/poolBooking';
+import { InboxRepository } from '../repositories/inboxRepository';
+import type { PoolSlotStatus, PoolBooking, Pool, PoolSlot } from '../../../../packages/shared/src/types/poolBooking';
 
 type Variables = {
   userId?: string;
@@ -37,6 +38,92 @@ function isWorkspaceAdmin(ownerUserId: string, userId: string): boolean {
   // MVP: 作成者 = 管理者として扱う
   // 将来: workspace_members.role == 'admin' などで判定
   return true; // MVP では全員が自分の workspace では admin
+}
+
+// ============================================================
+// Helper: Send booking notifications
+// ============================================================
+
+/**
+ * 予約成立時の通知を送信
+ * - 担当者向け: pool_booking_assigned
+ * - 管理者向け: pool_booking_created
+ * 
+ * 通知失敗時はログのみ（booking自体は成立）
+ */
+async function sendBookingNotifications(
+  inboxRepo: InboxRepository,
+  pool: Pool,
+  slot: PoolSlot,
+  booking: PoolBooking,
+  requesterUserId: string
+): Promise<void> {
+  const slotLabel = slot.label || formatSlotTime(slot.start_at, slot.end_at);
+  
+  try {
+    // 1. 担当者への通知 (pool_booking_assigned)
+    await inboxRepo.create({
+      user_id: booking.assignee_user_id,
+      type: 'pool_booking_assigned',
+      title: '新しい予約が割り当てられました',
+      message: `プール: ${pool.name}\n枠: ${slotLabel}\n申込者: ${requesterUserId}`,
+      action_type: 'view_booking',
+      action_target_id: booking.id,
+      action_url: `/pools/${pool.id}/bookings/${booking.id}`,
+      priority: 'high',
+    });
+    console.log(`[Pools] Notification sent to assignee: ${booking.assignee_user_id}`);
+  } catch (error) {
+    // 通知失敗はログのみ（booking 成立には影響しない）
+    console.error('[Pools] Failed to send assignee notification:', error);
+  }
+
+  try {
+    // 2. 管理者（Pool オーナー）への通知 (pool_booking_created)
+    // 担当者と管理者が同じ場合はスキップ
+    if (pool.owner_user_id !== booking.assignee_user_id) {
+      await inboxRepo.create({
+        user_id: pool.owner_user_id,
+        type: 'pool_booking_created',
+        title: '予約が成立しました',
+        message: `プール: ${pool.name}\n枠: ${slotLabel}\n担当: ${booking.assignee_user_id}\n申込者: ${requesterUserId}`,
+        action_type: 'view_booking',
+        action_target_id: booking.id,
+        action_url: `/pools/${pool.id}/bookings/${booking.id}`,
+        priority: 'normal',
+      });
+      console.log(`[Pools] Notification sent to owner: ${pool.owner_user_id}`);
+    }
+  } catch (error) {
+    // 通知失敗はログのみ（booking 成立には影響しない）
+    console.error('[Pools] Failed to send owner notification:', error);
+  }
+}
+
+/**
+ * スロット時間のフォーマット（簡易）
+ */
+function formatSlotTime(startAt: string, endAt: string): string {
+  try {
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+    const dateStr = start.toLocaleDateString('ja-JP', { 
+      month: 'numeric', 
+      day: 'numeric',
+      weekday: 'short'
+    });
+    const startTime = start.toLocaleTimeString('ja-JP', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    const endTime = end.toLocaleTimeString('ja-JP', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    return `${dateStr} ${startTime}〜${endTime}`;
+  } catch {
+    return `${startAt} - ${endAt}`;
+  }
 }
 
 // ============================================================
@@ -695,6 +782,7 @@ app.post('/:id/book', async (c) => {
     }
 
     const repo = new PoolsRepository(env.DB);
+    const inboxRepo = new InboxRepository(env.DB);
 
     // Execute booking flow: Reserve → Assign
     const result = await repo.bookSlot(
@@ -739,6 +827,16 @@ app.post('/:id/book', async (c) => {
     const booking = result.booking!;
 
     console.log(`[Pools] Slot booked: pool=${poolId}, slot=${body.slot_id}, assignee=${booking.assignee_user_id}, requester=${userId}`);
+
+    // Send notifications (fire-and-forget, errors are logged but don't fail the booking)
+    const pool = await repo.getPoolById(workspaceId, poolId);
+    const slot = await repo.getSlotById(workspaceId, body.slot_id);
+    
+    if (pool && slot) {
+      // Don't await - notifications are sent in background
+      sendBookingNotifications(inboxRepo, pool, slot, booking, userId)
+        .catch(err => console.error('[Pools] Notification error (non-fatal):', err));
+    }
 
     return c.json({
       booking_id: booking.id,
