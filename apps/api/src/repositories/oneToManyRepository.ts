@@ -57,7 +57,7 @@ export interface OneToManyThread {
   organizer_user_id: string;
   title: string | null;
   description: string | null;
-  status: 'draft' | 'sent' | 'confirmed' | 'cancelled';
+  status: 'draft' | 'sent' | 'confirmed' | 'cancelled' | 'failed';
   mode: 'one_on_one' | 'group' | 'public';
   kind: 'external' | 'internal';
   topology: 'one_on_one' | 'one_to_many';
@@ -247,7 +247,7 @@ export class OneToManyRepository {
   /**
    * ステータス更新
    */
-  async updateStatus(threadId: string, status: 'draft' | 'sent' | 'confirmed' | 'cancelled'): Promise<void> {
+  async updateStatus(threadId: string, status: 'draft' | 'sent' | 'confirmed' | 'cancelled' | 'failed'): Promise<void> {
     await this.db.prepare(`
       UPDATE scheduling_threads 
       SET status = ?, updated_at = datetime('now')
@@ -622,5 +622,160 @@ export class OneToManyRepository {
     `).bind(JSON.stringify(policy), threadId).run();
 
     return { success: true, current: newCount, max: policy.max_reproposals };
+  }
+
+  // ============================================================
+  // PR-G1-DEADLINE: deadline 到達時の自動処理
+  // ============================================================
+
+  /**
+   * deadline を過ぎたスレッドを取得
+   * 
+   * @param now 現在時刻（ISO8601）
+   * @param limit 取得件数
+   */
+  async listDeadlineDueThreads(now: string, limit = 100): Promise<OneToManyThread[]> {
+    const result = await this.db.prepare(`
+      SELECT 
+        id, organizer_user_id, title, description, status, mode, kind, topology, group_policy_json, created_at, updated_at
+      FROM scheduling_threads
+      WHERE topology = 'one_to_many'
+        AND status = 'sent'
+        AND group_policy_json IS NOT NULL
+      ORDER BY created_at ASC
+      LIMIT ?
+    `).bind(limit).all<OneToManyThread>();
+
+    // JSON内の deadline_at でフィルタ
+    const dueThreads = (result.results || []).filter(thread => {
+      if (!thread.group_policy_json) return false;
+      try {
+        const policy: GroupPolicy = JSON.parse(thread.group_policy_json);
+        return policy.deadline_at && policy.deadline_at <= now;
+      } catch {
+        return false;
+      }
+    });
+
+    return dueThreads;
+  }
+
+  /**
+   * 最適なスロットを計算（candidates: 最多票、open_slots: 最初に埋まったもの）
+   * 
+   * tie-break: 開始時刻が早いもの
+   */
+  async computeBestSlotForDeadline(threadId: string, mode: OneToManyMode): Promise<{
+    slotId: string | null;
+    reason: string;
+  }> {
+    if (mode === 'open_slots') {
+      // open_slots: ロック済みの中で最も早いstart_atのもの
+      const lockedSlotIds = await this.getLockedSlotIds(threadId);
+      if (lockedSlotIds.length === 0) {
+        return { slotId: null, reason: 'no_locked_slots' };
+      }
+
+      // ロック済みスロットの中で最も早いstart_atのものを選択
+      const placeholders = lockedSlotIds.map(() => '?').join(', ');
+      const slot = await this.db.prepare(`
+        SELECT slot_id FROM scheduling_slots
+        WHERE slot_id IN (${placeholders})
+        ORDER BY start_at ASC
+        LIMIT 1
+      `).bind(...lockedSlotIds).first<{ slot_id: string }>();
+
+      return { slotId: slot?.slot_id || null, reason: 'earliest_locked_slot' };
+    }
+
+    // candidates: OK票が最多のスロット（tie-break: start_atが早いもの）
+    const summary = await this.getResponseSummary(threadId);
+    if (summary.ok_count === 0) {
+      return { slotId: null, reason: 'no_ok_responses' };
+    }
+
+    // OK票数が最多のスロットを特定
+    let maxOk = 0;
+    let bestSlotIds: string[] = [];
+    for (const slot of summary.by_slot) {
+      if (slot.ok_count > maxOk) {
+        maxOk = slot.ok_count;
+        bestSlotIds = [slot.slot_id];
+      } else if (slot.ok_count === maxOk && slot.ok_count > 0) {
+        bestSlotIds.push(slot.slot_id);
+      }
+    }
+
+    if (bestSlotIds.length === 0) {
+      return { slotId: null, reason: 'no_ok_responses' };
+    }
+
+    // tie-break: start_at が最も早いもの
+    if (bestSlotIds.length === 1) {
+      return { slotId: bestSlotIds[0], reason: 'most_ok_votes' };
+    }
+
+    const placeholders = bestSlotIds.map(() => '?').join(', ');
+    const earliest = await this.db.prepare(`
+      SELECT slot_id FROM scheduling_slots
+      WHERE slot_id IN (${placeholders})
+      ORDER BY start_at ASC
+      LIMIT 1
+    `).bind(...bestSlotIds).first<{ slot_id: string }>();
+
+    return { slotId: earliest?.slot_id || bestSlotIds[0], reason: 'most_ok_votes_earliest' };
+  }
+
+  /**
+   * スレッドを failed に更新（CAS: 競合防止）
+   */
+  async tryMarkFailed(threadId: string, reason?: string): Promise<{
+    success: boolean;
+    alreadyProcessed: boolean;
+  }> {
+    const now = new Date().toISOString();
+
+    // CAS 更新: status が sent の場合のみ更新
+    const result = await this.db.prepare(`
+      UPDATE scheduling_threads 
+      SET status = 'failed', updated_at = ?
+      WHERE id = ? AND status = 'sent'
+    `).bind(now, threadId).run();
+
+    const success = (result.meta?.changes || 0) === 1;
+    return { success, alreadyProcessed: !success };
+  }
+
+  /**
+   * スレッドを confirmed に更新し、確定スロットを記録（CAS: 競合防止）
+   */
+  async tryConfirmWithSlot(threadId: string, selectedSlotId: string): Promise<{
+    success: boolean;
+    alreadyProcessed: boolean;
+  }> {
+    const now = new Date().toISOString();
+
+    // CAS 更新: status が sent の場合のみ更新
+    const result = await this.db.prepare(`
+      UPDATE scheduling_threads 
+      SET status = 'confirmed', updated_at = ?
+      WHERE id = ? AND status = 'sent'
+    `).bind(now, threadId).run();
+
+    const success = (result.meta?.changes || 0) === 1;
+    
+    // 確定スロットを thread_finalize に記録（成功時のみ）
+    if (success && selectedSlotId) {
+      try {
+        await this.db.prepare(`
+          INSERT INTO thread_finalize (id, thread_id, selected_slot_id, created_at)
+          VALUES (?, ?, ?, ?)
+        `).bind(crypto.randomUUID(), threadId, selectedSlotId, now).run();
+      } catch {
+        // thread_finalize が存在しない場合は無視
+      }
+    }
+
+    return { success, alreadyProcessed: !success };
   }
 }

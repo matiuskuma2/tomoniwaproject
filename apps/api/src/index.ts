@@ -60,6 +60,7 @@ import { requireAuth, requireAdmin, type Variables } from './middleware/auth';
 // Scheduled Tasks
 import { pruneAuditLogs } from './scheduled/pruneAuditLogs';
 import { processReminders } from './scheduled/processReminders';
+import { processDeadlines } from './scheduled/processDeadlines';
 
 // Queue Consumer
 import emailConsumer from './queue/emailConsumer';
@@ -415,6 +416,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
           log.info('Reminder processing completed', result);
         } catch (error) {
           log.error('Reminder processing failed', { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
+      })()
+    );
+    
+    // PR-G1-DEADLINE: 1対 N deadline 到達処理
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const result = await processDeadlines(env);
+          log.info('Deadline processing completed', result);
+        } catch (error) {
+          log.error('Deadline processing failed', { 
             error: error instanceof Error ? error.message : String(error) 
           });
         }
