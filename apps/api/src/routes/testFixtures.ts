@@ -1450,7 +1450,8 @@ app.post('/one-to-many-candidates', async (c) => {
       start_offset_hours = 48,
       duration_minutes = 60,
       deadline_hours = 72,
-      mode = 'candidates'  // 'candidates' | 'open_slots'
+      mode = 'candidates',  // 'candidates' | 'open_slots'
+      auto_finalize = false  // auto_finalize: true で全枠埋まりで自動確定（open_slots のみ有効）
     } = body as {
       organizer_user_id?: string;
       invitee_count?: number;
@@ -1460,6 +1461,7 @@ app.post('/one-to-many-candidates', async (c) => {
       duration_minutes?: number;
       deadline_hours?: number;
       mode?: 'candidates' | 'open_slots';
+      auto_finalize?: boolean;
     };
 
     const now = new Date();
@@ -1494,8 +1496,8 @@ app.post('/one-to-many-candidates', async (c) => {
     const groupPolicy = {
       mode: mode,  // 'candidates' or 'open_slots'
       deadline_at: deadlineAt,
-      finalize_policy: 'organizer_decides',
-      auto_finalize: false,
+      finalize_policy: auto_finalize ? 'quorum' : 'organizer_decides',
+      auto_finalize: auto_finalize,
       max_reproposals: 2,
       reproposal_count: 0
     };

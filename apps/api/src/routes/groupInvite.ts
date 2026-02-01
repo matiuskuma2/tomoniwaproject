@@ -330,6 +330,30 @@ app.post('/:token/respond', async (c) => {
 
     log.info('Group invite response recorded', { threadId: thread.id, inviteeKey, response });
 
+    // ============================================================
+    // auto_finalize チェック（open_slots + OK 回答の場合）
+    // ============================================================
+    if (groupPolicy?.mode === 'open_slots' && groupPolicy?.auto_finalize && response === 'ok') {
+      const autoFinalizeResult = await oneToManyRepo.checkAutoFinalizeOpenSlots(thread.id);
+      
+      if (autoFinalizeResult.shouldAutoFinalize) {
+        // 全枠が埋まった → 自動確定（CAS で競合防止）
+        const finalizeResult = await oneToManyRepo.tryFinalizeIfNotConfirmed(thread.id);
+        
+        if (finalizeResult.success) {
+          log.info('Auto-finalized thread (all slots filled)', { 
+            threadId: thread.id, 
+            totalSlots: autoFinalizeResult.totalSlots,
+            filledSlots: autoFinalizeResult.filledSlots,
+            triggeredBy: inviteeKey,
+          });
+          // TODO: organizer への通知（inbox）を追加
+        } else {
+          log.info('Thread already confirmed by another request', { threadId: thread.id });
+        }
+      }
+    }
+
     return c.html(successPage(response, thread.title || '予定調整'));
   } catch (error) {
     log.error('Error in POST /g/:token/respond', error);
