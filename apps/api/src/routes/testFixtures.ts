@@ -1451,7 +1451,9 @@ app.post('/one-to-many-candidates', async (c) => {
       duration_minutes = 60,
       deadline_hours = 72,
       mode = 'candidates',  // 'candidates' | 'open_slots'
-      auto_finalize = false  // auto_finalize: true で全枠埋まりで自動確定（open_slots のみ有効）
+      auto_finalize = false,  // auto_finalize: true で全枠埋まりで自動確定（open_slots のみ有効）
+      finalize_policy,  // PR-G1-DEADLINE: 成立条件を指定可能に
+      quorum_count,     // PR-G1-DEADLINE: quorum の場合の定足数
     } = body as {
       organizer_user_id?: string;
       invitee_count?: number;
@@ -1462,6 +1464,8 @@ app.post('/one-to-many-candidates', async (c) => {
       deadline_hours?: number;
       mode?: 'candidates' | 'open_slots';
       auto_finalize?: boolean;
+      finalize_policy?: 'organizer_decides' | 'quorum' | 'required_people' | 'all_required';
+      quorum_count?: number;
     };
 
     const now = new Date();
@@ -1493,14 +1497,22 @@ app.post('/one-to-many-candidates', async (c) => {
     const threadId = uuidv4();
     const deadlineAt = new Date(now.getTime() + deadline_hours * 60 * 60 * 1000).toISOString();
     
-    const groupPolicy = {
+    // PR-G1-DEADLINE: finalize_policy をパラメータで指定可能に
+    const resolvedFinalizePolicy = finalize_policy || (auto_finalize ? 'quorum' : 'organizer_decides');
+    
+    const groupPolicy: Record<string, any> = {
       mode: mode,  // 'candidates' or 'open_slots'
       deadline_at: deadlineAt,
-      finalize_policy: auto_finalize ? 'quorum' : 'organizer_decides',
+      finalize_policy: resolvedFinalizePolicy,
       auto_finalize: auto_finalize,
       max_reproposals: 2,
       reproposal_count: 0
     };
+    
+    // quorum の場合は quorum_count を追加
+    if (resolvedFinalizePolicy === 'quorum' && quorum_count) {
+      groupPolicy.quorum_count = quorum_count;
+    }
 
     await env.DB.prepare(`
       INSERT INTO scheduling_threads (
@@ -1635,6 +1647,43 @@ app.delete('/one-to-many/:threadId', async (c) => {
   } catch (error) {
     log.error('Failed to delete E2E 1-to-N fixture', { 
       threadId,
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * PR-G1-DEADLINE: Process Deadlines (internal endpoint for E2E testing)
+ * 
+ * E2E テスト用に deadline 処理を手動でトリガー
+ * 
+ * @route POST /test/fixtures/cron/process-deadlines
+ */
+app.post('/cron/process-deadlines', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'process-deadlines' });
+
+  if (env.ENVIRONMENT === 'production') {
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    // 動的インポートで processDeadlines を呼び出し
+    const { processDeadlines } = await import('../scheduled/processDeadlines');
+    const result = await processDeadlines(env);
+    
+    log.info('Manual deadline processing completed', result);
+    
+    return c.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    log.error('Manual deadline processing failed', { 
       error: error instanceof Error ? error.message : String(error) 
     });
     return c.json({ 

@@ -564,3 +564,161 @@ test.describe('1-to-N Open Slots Auto-Finalize (G1-AF)', () => {
     }
   });
 });
+
+// ============================================================
+// PR-G1-DEADLINE: Deadline 到達時の自動処理テスト
+// ============================================================
+
+test.describe('1-to-N Deadline Processing (G1-DEADLINE)', () => {
+
+  /**
+   * deadline が過去の fixture を作成（締切切れ状態）
+   */
+  async function createExpiredDeadlineFixture(request: any) {
+    const res = await request.post(`${API_BASE_URL}/test/fixtures/one-to-many-candidates`, {
+      data: {
+        invitee_count: 3,
+        slot_count: 3,
+        title: 'Deadline Test - Expired',
+        duration_minutes: 60,
+        start_offset_hours: 48,
+        deadline_hours: -1, // 過去 = 締切切れ
+        mode: 'candidates',
+        finalize_policy: 'organizer_decides', // organizer_decides → failed になる
+      },
+    });
+
+    if (res.status() === 403) {
+      return null; // Production
+    }
+    
+    expect(res.status()).toBe(201);
+    return res.json();
+  }
+
+  /**
+   * quorum policy で deadline 過去の fixture を作成
+   */
+  async function createExpiredQuorumFixture(request: any) {
+    const res = await request.post(`${API_BASE_URL}/test/fixtures/one-to-many-candidates`, {
+      data: {
+        invitee_count: 3,
+        slot_count: 3,
+        title: 'Deadline Test - Quorum',
+        duration_minutes: 60,
+        start_offset_hours: 48,
+        deadline_hours: -1, // 過去 = 締切切れ
+        mode: 'candidates',
+        finalize_policy: 'quorum',
+        quorum_count: 2, // 2人 OK で成立
+      },
+    });
+
+    if (res.status() === 403) {
+      return null; // Production
+    }
+    
+    expect(res.status()).toBe(201);
+    return res.json();
+  }
+
+  /**
+   * processDeadlines を手動でトリガー
+   */
+  async function triggerDeadlineProcessing(request: any) {
+    const res = await request.post(`${API_BASE_URL}/test/fixtures/cron/process-deadlines`);
+    if (res.status() === 403) {
+      return null;
+    }
+    expect(res.ok()).toBeTruthy();
+    return res.json();
+  }
+
+  test('G1-D1: organizer_decides + deadline 到達 → failed になる', async ({ request }) => {
+    const fixture = await createExpiredDeadlineFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+
+    try {
+      // 回答なしで deadline 処理をトリガー
+      const cronResult = await triggerDeadlineProcessing(request);
+      expect(cronResult).not.toBeNull();
+      expect(cronResult.processed).toBeGreaterThanOrEqual(1);
+      
+      // スレッドが failed になっているか確認
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      expect(data.thread.status).toBe('failed');
+
+      // organizer の inbox に通知が届いているか確認
+      const inboxRes = await request.get(`${API_BASE_URL}/api/inbox`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(inboxRes.ok()).toBeTruthy();
+      const inboxData = await inboxRes.json();
+      
+      const deadlineNotification = inboxData.items?.find(
+        (item: any) => item.type === 'scheduling_deadline_failed' && item.action_target_id === fixture.thread_id
+      );
+      
+      expect(deadlineNotification).toBeDefined();
+      expect(deadlineNotification.title).toContain('不成立');
+
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+
+  test('G1-D2: quorum + 回答あり + deadline 到達 → confirmed になる', async ({ page, request }) => {
+    const fixture = await createExpiredQuorumFixture(request);
+    if (!fixture) {
+      test.skip(true, 'Fixtures not available in production');
+      return;
+    }
+
+    const slots = fixture.slots;
+
+    try {
+      // 2人が OK 回答（quorum_count=2 を満たす）
+      await applyViaUI(page, fixture.invites[0].token, slots[0].slot_id);
+      await applyViaUI(page, fixture.invites[1].token, slots[0].slot_id); // 同じスロットに投票
+      
+      // deadline 処理をトリガー
+      const cronResult = await triggerDeadlineProcessing(request);
+      expect(cronResult).not.toBeNull();
+      expect(cronResult.processed).toBeGreaterThanOrEqual(1);
+      
+      // スレッドが confirmed になっているか確認
+      const res = await request.get(`${API_BASE_URL}/api/one-to-many/${fixture.thread_id}`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(res.ok()).toBeTruthy();
+      const data = await res.json();
+      
+      expect(data.thread.status).toBe('confirmed');
+
+      // organizer の inbox に確定通知が届いているか確認
+      const inboxRes = await request.get(`${API_BASE_URL}/api/inbox`, {
+        headers: { 'x-user-id': fixture.organizer_user_id },
+      });
+      expect(inboxRes.ok()).toBeTruthy();
+      const inboxData = await inboxRes.json();
+      
+      const confirmNotification = inboxData.items?.find(
+        (item: any) => item.type === 'scheduling_deadline_confirmed' && item.action_target_id === fixture.thread_id
+      );
+      
+      expect(confirmNotification).toBeDefined();
+      expect(confirmNotification.title).toContain('確定');
+
+    } finally {
+      await cleanupFixture(request, fixture.thread_id);
+    }
+  });
+});
