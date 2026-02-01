@@ -29,6 +29,12 @@ export interface Pool {
   is_active: 0 | 1;
   assignment_policy: PoolAssignmentPolicy;
   slot_capacity: number;
+  /**
+   * Round-robin state (MVP)
+   * - null: no assignment yet (first assignment will pick first member)
+   * - otherwise: last assigned pool_member.id
+   */
+  last_assigned_member_id: string | null;
   created_at: string;
   updated_at: string;
 }
