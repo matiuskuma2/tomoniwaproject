@@ -13,6 +13,7 @@
  * - POST /api/pools/:id/slots: 枠作成
  * - GET /api/pools/:id/slots: 枠一覧
  * - DELETE /api/pools/:id/slots/:slotId: 枠削除
+ * - POST /api/pools/:id/book: 予約（Reserve → Assign）
  */
 
 import { Hono } from 'hono';
@@ -640,6 +641,173 @@ app.delete('/:id/slots/:slotId', async (c) => {
     return c.json(
       {
         error: 'Failed to delete slot',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+// ============================================================
+// Booking (Reserve → Assign)
+// ============================================================
+
+/**
+ * POST /api/pools/:id/book
+ * Book a slot (Reserve → Assign flow)
+ * 
+ * Body:
+ * - slot_id: string (required)
+ * - note?: string (optional)
+ * 
+ * Returns:
+ * - booking_id: string
+ * - pool_id: string
+ * - slot_id: string
+ * - assignee_user_id: string
+ * - status: 'confirmed'
+ * 
+ * Error codes:
+ * - 409 SLOT_TAKEN: Slot already reserved/booked by another user
+ * - 409 NO_MEMBER_AVAILABLE: No active members in pool
+ * - 404 SLOT_NOT_FOUND: Slot does not exist or is not open
+ * - 404 POOL_NOT_FOUND: Pool does not exist
+ */
+app.post('/:id/book', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const poolId = c.req.param('id');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId } = getTenant(c);
+
+  try {
+    const body = await c.req.json<{
+      slot_id: string;
+      note?: string;
+    }>();
+
+    if (!body.slot_id) {
+      return c.json({ error: 'slot_id is required', code: 'INVALID_REQUEST' }, 400);
+    }
+
+    const repo = new PoolsRepository(env.DB);
+
+    // Execute booking flow: Reserve → Assign
+    const result = await repo.bookSlot(
+      workspaceId,
+      poolId,
+      body.slot_id,
+      userId,
+      body.note
+    );
+
+    if (!result.success) {
+      // Map error codes to HTTP status
+      switch (result.error) {
+        case 'SLOT_TAKEN':
+          return c.json({ 
+            error: 'Slot is already reserved or booked', 
+            code: 'SLOT_TAKEN' 
+          }, 409);
+        case 'NO_MEMBER_AVAILABLE':
+          return c.json({ 
+            error: 'No members available for assignment', 
+            code: 'NO_MEMBER_AVAILABLE' 
+          }, 409);
+        case 'SLOT_NOT_FOUND':
+          return c.json({ 
+            error: 'Slot not found or not open', 
+            code: 'SLOT_NOT_FOUND' 
+          }, 404);
+        case 'POOL_NOT_FOUND':
+          return c.json({ 
+            error: 'Pool not found', 
+            code: 'POOL_NOT_FOUND' 
+          }, 404);
+        default:
+          return c.json({ 
+            error: 'Booking failed', 
+            code: result.error || 'UNKNOWN_ERROR' 
+          }, 500);
+      }
+    }
+
+    const booking = result.booking!;
+
+    console.log(`[Pools] Slot booked: pool=${poolId}, slot=${body.slot_id}, assignee=${booking.assignee_user_id}, requester=${userId}`);
+
+    return c.json({
+      booking_id: booking.id,
+      pool_id: booking.pool_id,
+      slot_id: booking.slot_id,
+      assignee_user_id: booking.assignee_user_id,
+      status: booking.status,
+    }, 201);
+
+  } catch (error) {
+    console.error('[Pools] Error booking slot:', error);
+    return c.json(
+      {
+        error: 'Failed to book slot',
+        code: 'INTERNAL_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/pools/:id/bookings
+ * Get bookings for a pool (optional: filter by slot)
+ */
+app.get('/:id/bookings', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const poolId = c.req.param('id');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId } = getTenant(c);
+
+  try {
+    const repo = new PoolsRepository(env.DB);
+    const pool = await repo.getPoolById(workspaceId, poolId);
+
+    if (!pool) {
+      return c.json({ error: 'Pool not found' }, 404);
+    }
+
+    const query = c.req.query();
+    
+    // Get bookings - for now just get all by iterating slots
+    // TODO: Add getBookingsByPool method for better performance
+    const { slots } = await repo.getSlotsByPool(workspaceId, poolId, { limit: 1000 });
+    
+    const bookings: any[] = [];
+    for (const slot of slots) {
+      if (slot.status === 'booked') {
+        const slotBookings = await repo.getBookingsBySlot(workspaceId, slot.id);
+        bookings.push(...slotBookings);
+      }
+    }
+
+    return c.json({ 
+      bookings, 
+      count: bookings.length,
+      pool_id: poolId,
+    });
+  } catch (error) {
+    console.error('[Pools] Error listing bookings:', error);
+    return c.json(
+      {
+        error: 'Failed to list bookings',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       500
