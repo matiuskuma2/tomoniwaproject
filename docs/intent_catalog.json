@@ -985,6 +985,211 @@
       "executor": "fallback.unknown",
       "api": null,
       "notes": "CONV-1以降でnlRouterに渡される"
+    },
+
+    {
+      "intent": "pool_booking.create",
+      "category": "pool_booking.manage",
+      "description": "予約受付グループを作成し公開リンクを発行（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "name": { "type": "string", "required": true, "description": "Pool名（例: 営業チーム打ち合わせ）" },
+        "members": { "type": "array", "required": true, "items": { "type": "string" }, "description": "担当メンバー" },
+        "slot_config": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "start_date": { "type": "string", "format": "date" },
+            "end_date": { "type": "string", "format": "date" },
+            "business_hours": { "type": "object" },
+            "slot_duration_minutes": { "type": "integer", "default": 60 },
+            "timezone": { "type": "string", "default": "Asia/Tokyo" }
+          }
+        }
+      },
+      "executor": "pool_booking.create",
+      "api": ["POST /api/pools", "POST /api/pools/:id/members", "POST /api/pools/:id/slots"],
+      "examples": [
+        "営業チームで予約受付を始めたい",
+        "打ち合わせの予約受付を作って",
+        "チームへの予約ができるようにして"
+      ],
+      "notes": "G2-A: Pool Booking MVP. Poolを作成し、メンバーを追加し、公開枠を生成する。"
+    },
+    {
+      "intent": "pool_booking.book",
+      "category": "pool_booking.apply",
+      "description": "Poolの空き枠から予約を申し込む（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "pool_id": { "type": "string", "required": true, "description": "予約先Pool" },
+        "slot_id": { "type": "string", "required": true, "description": "選択した枠" },
+        "note": { "type": "string", "optional": true, "description": "申込時のメッセージ" }
+      },
+      "executor": "pool_booking.book",
+      "api": "POST /api/pools/:poolId/book",
+      "examples": [
+        "営業チームと打ち合わせしたい",
+        "相談の予約をしたい",
+        "空いてる枠で予約したい"
+      ],
+      "notes": "G2-A: Reserve → Assign (round-robin) で担当者を自動割当。"
+    },
+    {
+      "intent": "pool_booking.view_assigned",
+      "category": "pool_booking.read",
+      "description": "自分に割り当てられた予約を確認（G2-A）",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "booking_id": { "type": "string", "optional": true, "description": "特定の予約ID" },
+        "filter": { "type": "string", "enum": ["upcoming", "past", "all"], "default": "upcoming" }
+      },
+      "executor": "pool_booking.view_assigned",
+      "api": "GET /api/inbox?type=pool_booking_assigned",
+      "examples": [
+        "割り当てられた予約を見せて",
+        "今日の予約は？",
+        "自分の担当予約を確認"
+      ]
+    },
+    {
+      "intent": "pool_booking.rebook",
+      "category": "pool_booking.apply",
+      "description": "過去に利用したPoolから再予約（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "pool_id": { "type": "string", "optional": true, "description": "Pool ID（省略時は履歴から推測）" },
+        "slot_id": { "type": "string", "required": true },
+        "note": { "type": "string", "optional": true }
+      },
+      "executor": "pool_booking.rebook",
+      "api": "POST /api/pools/:poolId/book",
+      "examples": [
+        "前回と同じところで予約したい",
+        "また営業チームに予約したい",
+        "リピート予約して"
+      ]
+    },
+    {
+      "intent": "pool_booking.notify_availability",
+      "category": "pool_booking.subscribe",
+      "description": "空き枠が追加されたら通知を受け取る（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "pool_id": { "type": "string", "required": true }
+      },
+      "executor": "pool_booking.notify_availability",
+      "api": "POST /api/pools/:id/watchers",
+      "examples": [
+        "空きが出たら教えて",
+        "枠が追加されたら通知して"
+      ],
+      "notes": "要API追加: POST /api/pools/:id/watchers"
+    },
+    {
+      "intent": "pool_booking.manage_members",
+      "category": "pool_booking.manage",
+      "description": "Poolのメンバーを追加/削除（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "pool_id": { "type": "string", "required": true },
+        "action": { "type": "string", "enum": ["add", "remove"], "required": true },
+        "user_id": { "type": "string", "required": true }
+      },
+      "executor": "pool_booking.manage_members",
+      "api": ["POST /api/pools/:id/members", "DELETE /api/pools/:id/members/:memberId"],
+      "examples": [
+        "営業チームに田中さんを追加して",
+        "佐藤さんを担当から外して"
+      ]
+    },
+    {
+      "intent": "pool_booking.cancel",
+      "category": "pool_booking.manage",
+      "description": "予約をキャンセル（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "この予約をキャンセルしますか？",
+      "topology": "N:1",
+      "params_schema": {
+        "booking_id": { "type": "string", "required": true },
+        "reason": { "type": "string", "optional": true }
+      },
+      "executor": "pool_booking.cancel",
+      "api": "PATCH /api/pools/:poolId/bookings/:bookingId/cancel",
+      "examples": [
+        "予約をキャンセルしたい",
+        "2/3の予約を取り消して"
+      ],
+      "notes": "要API追加: PATCH /api/pools/:poolId/bookings/:bookingId/cancel"
+    },
+    {
+      "intent": "pool_booking.reassign",
+      "category": "pool_booking.manage",
+      "description": "予約の担当者を変更（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "担当者を変更しますか？",
+      "topology": "N:1",
+      "params_schema": {
+        "booking_id": { "type": "string", "required": true },
+        "new_assignee_user_id": { "type": "string", "required": true }
+      },
+      "executor": "pool_booking.reassign",
+      "api": "PATCH /api/pools/:poolId/bookings/:bookingId/reassign",
+      "examples": [
+        "担当を田中さんに変更して",
+        "予約の担当者を佐藤さんに"
+      ],
+      "notes": "要API追加: PATCH /api/pools/:poolId/bookings/:bookingId/reassign"
+    },
+    {
+      "intent": "pool_booking.pause",
+      "category": "pool_booking.manage",
+      "description": "Poolの予約受付を一時停止/再開（G2-A）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "予約受付を一時停止しますか？",
+      "topology": "N:1",
+      "params_schema": {
+        "pool_id": { "type": "string", "required": true },
+        "action": { "type": "string", "enum": ["pause", "resume"], "required": true }
+      },
+      "executor": "pool_booking.pause",
+      "api": "PATCH /api/pools/:id",
+      "examples": [
+        "予約受付を止めて",
+        "受付を再開して"
+      ]
+    },
+    {
+      "intent": "pool_booking.select_pool",
+      "category": "pool_booking.read",
+      "description": "複数のPoolから選択（G2-A）",
+      "side_effect": "read",
+      "requires_confirmation": false,
+      "topology": "N:1",
+      "params_schema": {
+        "query": { "type": "string", "optional": true, "description": "検索キーワード" }
+      },
+      "executor": "pool_booking.select_pool",
+      "api": "GET /api/pools",
+      "examples": [
+        "予約できるところを見せて",
+        "どこに予約できる？"
+      ]
     }
   ],
 
@@ -1002,6 +1207,10 @@
     "schedule.reschedule": "再調整",
     "preference": "好み設定",
     "list": "リスト管理",
+    "pool_booking.manage": "予約受付管理（G2-A: Pool作成/メンバー/停止）",
+    "pool_booking.apply": "予約申込（G2-A）",
+    "pool_booking.read": "予約参照（G2-A）",
+    "pool_booking.subscribe": "通知登録（G2-A）",
     "fallback": "フォールバック"
   }
 }
