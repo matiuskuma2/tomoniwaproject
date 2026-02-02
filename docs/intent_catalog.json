@@ -1190,6 +1190,236 @@
         "予約できるところを見せて",
         "どこに予約できる？"
       ]
+    },
+
+    {
+      "intent": "contact.import.business_card",
+      "category": "contact.import",
+      "description": "名刺画像から連絡先を登録（D0-1）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "この方を仕事仲間として登録しますか？",
+      "params_schema": {
+        "image_url": { "type": "string", "required": true, "description": "名刺画像URL" },
+        "relation_type": { "type": "string", "enum": ["workmate", "stranger"], "default": "workmate" }
+      },
+      "executor": "contact.import.business_card",
+      "api": "POST /api/contacts/import/business-card",
+      "examples": [
+        "この名刺の人を登録して",
+        "名刺を読み込んで"
+      ],
+      "notes": "D0: 名刺OCR → contacts登録 → workmate申請"
+    },
+    {
+      "intent": "contact.import.csv",
+      "category": "contact.import",
+      "description": "CSVから一括登録（D0-5）",
+      "side_effect": "write_external",
+      "requires_confirmation": true,
+      "confirmation_prompt": "全員に招待を送りますか？",
+      "params_schema": {
+        "file_url": { "type": "string", "required": true, "description": "CSVファイルURL" },
+        "send_invite": { "type": "boolean", "default": true }
+      },
+      "executor": "contact.import.csv",
+      "api": "POST /api/contacts/import/csv",
+      "examples": [
+        "このCSVを登録して",
+        "名簿を一括登録したい"
+      ],
+      "notes": "D0: CSV一括登録。重複チェック + 招待送信"
+    },
+    {
+      "intent": "contact.import.pdf",
+      "category": "contact.import",
+      "description": "PDF台帳から登録（D0-6）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "params_schema": {
+        "file_url": { "type": "string", "required": true, "description": "PDFファイルURL" }
+      },
+      "executor": "contact.import.pdf",
+      "api": "POST /api/contacts/import/pdf",
+      "examples": [
+        "このPDFを登録して",
+        "台帳を取り込みたい"
+      ],
+      "notes": "D0: PDF OCR → 名寄せチェック → pending.contact.select"
+    },
+    {
+      "intent": "contact.import.text",
+      "category": "contact.import",
+      "description": "テキストから連絡先を抽出（D0-7）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "params_schema": {
+        "raw_text": { "type": "string", "required": true, "description": "貼り付けテキスト" },
+        "send_invite": { "type": "boolean", "default": true }
+      },
+      "executor": "contact.import.text",
+      "api": "POST /api/contacts/import/text",
+      "examples": [
+        "山田 yamada@a.com を登録して",
+        "このメアドを登録"
+      ],
+      "notes": "D0: 最軽量パターン。テキストから名前+メールを抽出"
+    },
+    {
+      "intent": "contact.import.email",
+      "category": "contact.import",
+      "description": "メールアドレスから登録＋招待（D0-4）",
+      "side_effect": "write_external",
+      "requires_confirmation": true,
+      "confirmation_prompt": "招待メールを送りますか？",
+      "params_schema": {
+        "email": { "type": "string", "format": "email", "required": true },
+        "name": { "type": "string", "optional": true },
+        "send_invite": { "type": "boolean", "default": true }
+      },
+      "executor": "contact.import.email",
+      "api": "POST /api/contacts",
+      "examples": [
+        "suzuki@example.com を登録して",
+        "このメールの人を追加"
+      ],
+      "notes": "D0: ユーザー検索 → 存在すればworkmate申請、なければ招待メール"
+    },
+    {
+      "intent": "relation.request.workmate",
+      "category": "relation.request",
+      "description": "仕事仲間の申請（D0-1,3,4）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "target_user_id": { "type": "string", "required": true, "description": "申請先ユーザーID" }
+      },
+      "executor": "relation.request.workmate",
+      "api": "POST /api/relations/request",
+      "examples": [
+        "田中さんと仕事仲間になりたい",
+        "この人と連携したい"
+      ],
+      "notes": "D0: workmate申請 → inbox通知 → 相手承諾待ち"
+    },
+    {
+      "intent": "relation.request.qr",
+      "category": "relation.request",
+      "description": "QRコードから関係申請（D0-2）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "target_user_id": { "type": "string", "required": true },
+        "relation_type": { "type": "string", "enum": ["workmate", "stranger"], "required": true }
+      },
+      "executor": "relation.request.qr",
+      "api": "POST /api/relations/request",
+      "notes": "D0: QR読み取り → 即申請。アプリ同士で会った場合"
+    },
+    {
+      "intent": "relation.request.by_id",
+      "category": "relation.request",
+      "description": "ユーザーIDで関係申請（D0-3）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "target_handle": { "type": "string", "required": true, "description": "ユーザーID（@なし）" },
+        "relation_type": { "type": "string", "enum": ["workmate", "stranger"], "default": "workmate" }
+      },
+      "executor": "relation.request.by_id",
+      "api": "POST /api/relations/request",
+      "examples": [
+        "id: tanaka に申請して",
+        "@sato_planner と仕事仲間に"
+      ],
+      "notes": "D0: Slack感覚でID指定"
+    },
+    {
+      "intent": "relation.approve",
+      "category": "relation.respond",
+      "description": "関係申請を承諾（D0-9）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "request_id": { "type": "string", "required": true, "description": "申請ID" }
+      },
+      "executor": "relation.approve",
+      "api": "PATCH /api/relations/requests/:id/approve",
+      "examples": [
+        "承諾する",
+        "仕事仲間になる"
+      ],
+      "notes": "D0: 承諾 → relations INSERT → 双方に通知"
+    },
+    {
+      "intent": "relation.decline",
+      "category": "relation.respond",
+      "description": "関係申請を拒否（D0-11）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "request_id": { "type": "string", "required": true, "description": "申請ID" }
+      },
+      "executor": "relation.decline",
+      "api": "PATCH /api/relations/requests/:id/decline",
+      "examples": [
+        "拒否する",
+        "この申請はお断り"
+      ],
+      "notes": "D0: 静かに拒否。相手には「保留中」と表示"
+    },
+    {
+      "intent": "relation.block",
+      "category": "relation.respond",
+      "description": "ユーザーをブロック（D0-11）",
+      "side_effect": "write_local",
+      "requires_confirmation": true,
+      "confirmation_prompt": "この方をブロックしますか？今後の申請も届かなくなります。",
+      "params_schema": {
+        "target_user_id": { "type": "string", "required": true, "description": "ブロック対象ユーザーID" }
+      },
+      "executor": "relation.block",
+      "api": "POST /api/relations/block",
+      "examples": [
+        "この人をブロック",
+        "もう連絡こないようにして"
+      ],
+      "notes": "D0: ブロック → 以降の申請を永久拒否（解除可能）"
+    },
+    {
+      "intent": "relation.upgrade",
+      "category": "relation.request",
+      "description": "stranger から workmate への昇格（D0-12）",
+      "side_effect": "write_local",
+      "requires_confirmation": false,
+      "params_schema": {
+        "target_user_id": { "type": "string", "required": true }
+      },
+      "executor": "relation.upgrade",
+      "api": "POST /api/relations/upgrade",
+      "examples": [
+        "この人を仕事仲間にする",
+        "関係をアップグレード"
+      ],
+      "notes": "D0: 3回以上やり取り後のレコメンド昇格"
+    },
+    {
+      "intent": "invite.app.send",
+      "category": "invite.app",
+      "description": "アプリ招待を送信（D0-8）",
+      "side_effect": "write_external",
+      "requires_confirmation": false,
+      "params_schema": {
+        "email": { "type": "string", "format": "email", "required": true },
+        "message": { "type": "string", "optional": true, "description": "招待メッセージ" }
+      },
+      "executor": "invite.app.send",
+      "api": "POST /api/invites/app",
+      "examples": [
+        "この人をアプリに誘いたい",
+        "招待リンクを送って"
+      ],
+      "notes": "D0: 予定調整とは別レーンで「アプリに誘う」"
     }
   ],
 
@@ -1211,6 +1441,10 @@
     "pool_booking.apply": "予約申込（G2-A）",
     "pool_booking.read": "予約参照（G2-A）",
     "pool_booking.subscribe": "通知登録（G2-A）",
+    "contact.import": "連絡先登録（D0: 名刺/CSV/PDF/テキスト/メール）",
+    "relation.request": "関係申請（D0: workmate/QR/ID）",
+    "relation.respond": "関係応答（D0: 承諾/拒否/ブロック）",
+    "invite.app": "アプリ招待（D0: 予定調整とは別）",
     "fallback": "フォールバック"
   }
 }
