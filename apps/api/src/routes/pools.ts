@@ -913,4 +913,330 @@ app.get('/:id/bookings', async (c) => {
   }
 });
 
+// ============================================================
+// Public Link
+// ============================================================
+
+/**
+ * GET /api/pools/:id/public-link
+ * Get or generate public booking link for a pool
+ */
+app.get('/:id/public-link', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const poolId = c.req.param('id');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    const repo = new PoolsRepository(env.DB);
+    const pool = await repo.getPoolById(workspaceId, poolId);
+
+    if (!pool) {
+      return c.json({ error: 'Pool not found', code: 'POOL_NOT_FOUND' }, 404);
+    }
+
+    // Check ownership
+    if (pool.owner_user_id !== ownerUserId) {
+      return c.json({ error: 'Forbidden: not pool owner' }, 403);
+    }
+
+    // Get or generate public link token
+    let token = (pool as any).public_link_token;
+    
+    if (!token) {
+      // Generate new token (UUID without dashes for cleaner URLs)
+      const { v4: uuidv4 } = await import('uuid');
+      token = uuidv4().replace(/-/g, '');
+      
+      // Save token to database
+      await env.DB.prepare(`
+        UPDATE pools SET public_link_token = ?, updated_at = datetime('now')
+        WHERE id = ? AND workspace_id = ?
+      `).bind(token, poolId, workspaceId).run();
+    }
+
+    // Construct public URL (base URL would come from environment in production)
+    const baseUrl = env.PUBLIC_URL || 'https://tomoniwao.com';
+    const publicUrl = `${baseUrl}/book/${token}`;
+
+    console.log(`[Pools] Public link generated for pool ${poolId}: ${token}`);
+
+    return c.json({
+      pool_id: poolId,
+      pool_name: pool.name,
+      public_link_token: token,
+      public_url: publicUrl,
+      is_active: pool.is_active === 1,
+    });
+  } catch (error) {
+    console.error('[Pools] Error generating public link:', error);
+    return c.json(
+      {
+        error: 'Failed to generate public link',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/pools/:id/public-link/regenerate
+ * Regenerate public booking link (invalidates old link)
+ */
+app.post('/:id/public-link/regenerate', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const poolId = c.req.param('id');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    const repo = new PoolsRepository(env.DB);
+    const pool = await repo.getPoolById(workspaceId, poolId);
+
+    if (!pool) {
+      return c.json({ error: 'Pool not found', code: 'POOL_NOT_FOUND' }, 404);
+    }
+
+    // Check ownership
+    if (pool.owner_user_id !== ownerUserId) {
+      return c.json({ error: 'Forbidden: not pool owner' }, 403);
+    }
+
+    // Generate new token
+    const { v4: uuidv4 } = await import('uuid');
+    const token = uuidv4().replace(/-/g, '');
+    
+    // Save new token
+    await env.DB.prepare(`
+      UPDATE pools SET public_link_token = ?, updated_at = datetime('now')
+      WHERE id = ? AND workspace_id = ?
+    `).bind(token, poolId, workspaceId).run();
+
+    const baseUrl = env.PUBLIC_URL || 'https://tomoniwao.com';
+    const publicUrl = `${baseUrl}/book/${token}`;
+
+    console.log(`[Pools] Public link regenerated for pool ${poolId}: ${token}`);
+
+    return c.json({
+      pool_id: poolId,
+      pool_name: pool.name,
+      public_link_token: token,
+      public_url: publicUrl,
+      message: '公開リンクを再生成しました。以前のリンクは無効になりました。',
+    });
+  } catch (error) {
+    console.error('[Pools] Error regenerating public link:', error);
+    return c.json(
+      {
+        error: 'Failed to regenerate public link',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+// ============================================================
+// Booking Cancel
+// ============================================================
+
+/**
+ * PATCH /api/pools/:poolId/bookings/:bookingId/cancel
+ * Cancel a booking
+ * 
+ * Body:
+ * - reason?: string (optional cancellation reason)
+ * 
+ * Returns:
+ * - success: true
+ * - booking: updated booking object
+ * 
+ * Side effects:
+ * - Updates booking status to 'cancelled'
+ * - Returns slot status to 'open' (so it can be rebooked)
+ * - Sends notification to assignee and requester
+ */
+app.patch('/:poolId/bookings/:bookingId/cancel', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const poolId = c.req.param('poolId');
+  const bookingId = c.req.param('bookingId');
+
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { workspaceId } = getTenant(c);
+
+  try {
+    const body: { reason?: string } = await c.req.json<{
+      reason?: string;
+    }>().catch(() => ({}));
+
+    const repo = new PoolsRepository(env.DB);
+    const inboxRepo = new InboxRepository(env.DB);
+
+    // Get pool
+    const pool = await repo.getPoolById(workspaceId, poolId);
+    if (!pool) {
+      return c.json({ error: 'Pool not found', code: 'POOL_NOT_FOUND' }, 404);
+    }
+
+    // Get booking
+    const booking = await env.DB.prepare(`
+      SELECT id, pool_id, slot_id, requester_user_id, assignee_user_id, status, note
+      FROM pool_bookings
+      WHERE id = ? AND pool_id = ? AND workspace_id = ?
+    `).bind(bookingId, poolId, workspaceId).first<{
+      id: string;
+      pool_id: string;
+      slot_id: string;
+      requester_user_id: string;
+      assignee_user_id: string;
+      status: string;
+      note: string | null;
+    }>();
+
+    if (!booking) {
+      return c.json({ error: 'Booking not found', code: 'BOOKING_NOT_FOUND' }, 404);
+    }
+
+    // Check if already cancelled
+    if (booking.status === 'cancelled') {
+      return c.json({ 
+        error: 'Booking already cancelled', 
+        code: 'ALREADY_CANCELLED' 
+      }, 400);
+    }
+
+    // Check authorization: only requester, assignee, or pool owner can cancel
+    const canCancel = 
+      userId === booking.requester_user_id ||
+      userId === booking.assignee_user_id ||
+      userId === pool.owner_user_id;
+
+    if (!canCancel) {
+      return c.json({ error: 'Not authorized to cancel this booking' }, 403);
+    }
+
+    // Get slot info for notification
+    const slot = await repo.getSlotById(workspaceId, booking.slot_id);
+    const slotLabel = slot ? formatSlotTime(slot.start_at, slot.end_at) : '日時不明';
+
+    // Update booking status to cancelled
+    await env.DB.prepare(`
+      UPDATE pool_bookings 
+      SET status = 'cancelled',
+          cancelled_at = datetime('now'),
+          cancelled_by = ?,
+          cancellation_reason = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(userId, body.reason || null, bookingId).run();
+
+    // Return slot to 'open' status
+    await env.DB.prepare(`
+      UPDATE pool_slots
+      SET status = 'open', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(booking.slot_id).run();
+
+    console.log(`[Pools] Booking cancelled: ${bookingId} by ${userId}`);
+
+    // Send notifications
+    const cancellerId = userId;
+    
+    // Notify assignee (if not the one who cancelled)
+    if (booking.assignee_user_id !== cancellerId) {
+      try {
+        await inboxRepo.create({
+          user_id: booking.assignee_user_id,
+          type: 'pool_booking_cancelled',
+          title: '予約がキャンセルされました',
+          message: `プール: ${pool.name}\n枠: ${slotLabel}\n理由: ${body.reason || '指定なし'}`,
+          action_type: 'view_pool',
+          action_target_id: poolId,
+          action_url: `/pools/${poolId}`,
+          priority: 'high',
+        });
+      } catch (e) {
+        console.error('[Pools] Failed to notify assignee:', e);
+      }
+    }
+
+    // Notify requester (if not the one who cancelled)
+    if (booking.requester_user_id !== cancellerId) {
+      try {
+        await inboxRepo.create({
+          user_id: booking.requester_user_id,
+          type: 'pool_booking_cancelled',
+          title: '予約がキャンセルされました',
+          message: `プール: ${pool.name}\n枠: ${slotLabel}\n理由: ${body.reason || '指定なし'}`,
+          action_type: 'view_pool',
+          action_target_id: poolId,
+          action_url: `/pools/${poolId}`,
+          priority: 'normal',
+        });
+      } catch (e) {
+        console.error('[Pools] Failed to notify requester:', e);
+      }
+    }
+
+    // Notify pool owner (if not the one who cancelled and not already notified)
+    if (pool.owner_user_id !== cancellerId && 
+        pool.owner_user_id !== booking.assignee_user_id &&
+        pool.owner_user_id !== booking.requester_user_id) {
+      try {
+        await inboxRepo.create({
+          user_id: pool.owner_user_id,
+          type: 'pool_booking_cancelled',
+          title: '予約がキャンセルされました',
+          message: `プール: ${pool.name}\n枠: ${slotLabel}\nキャンセル者: ${cancellerId}`,
+          action_type: 'view_pool',
+          action_target_id: poolId,
+          action_url: `/pools/${poolId}`,
+          priority: 'low',
+        });
+      } catch (e) {
+        console.error('[Pools] Failed to notify owner:', e);
+      }
+    }
+
+    return c.json({
+      success: true,
+      booking: {
+        id: bookingId,
+        pool_id: poolId,
+        slot_id: booking.slot_id,
+        status: 'cancelled',
+        cancelled_by: userId,
+        cancellation_reason: body.reason || null,
+      },
+      message: '予約をキャンセルしました',
+    });
+
+  } catch (error) {
+    console.error('[Pools] Error cancelling booking:', error);
+    return c.json(
+      {
+        error: 'Failed to cancel booking',
+        code: 'INTERNAL_ERROR',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
 export default app;
