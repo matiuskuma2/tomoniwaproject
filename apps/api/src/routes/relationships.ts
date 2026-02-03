@@ -893,4 +893,171 @@ relationships.get('/permissions/with/:targetUserId', async (c) => {
   });
 });
 
+// ============================================================
+// POST /api/relationships/block
+// Block a user (prevents future relationship requests)
+// ============================================================
+relationships.post('/block', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const logger = createLogger(env);
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  const body = await c.req.json<{
+    target_user_id: string;
+    reason?: string;
+  }>();
+  
+  const { target_user_id, reason } = body;
+  
+  if (!target_user_id) {
+    return c.json({ error: 'target_user_id is required' }, 400);
+  }
+  
+  // Cannot block yourself
+  if (target_user_id === userId) {
+    return c.json({ error: 'Cannot block yourself' }, 400);
+  }
+  
+  // Check if target user exists
+  const targetUser = await env.DB.prepare(`
+    SELECT id FROM users WHERE id = ?
+  `).bind(target_user_id).first();
+  
+  if (!targetUser) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  
+  // Check if already blocked
+  const existingBlock = await env.DB.prepare(`
+    SELECT id FROM blocks WHERE user_id = ? AND blocked_user_id = ?
+  `).bind(userId, target_user_id).first();
+  
+  if (existingBlock) {
+    return c.json({ 
+      error: 'User already blocked',
+      message: 'このユーザーは既にブロック済みです'
+    }, 409);
+  }
+  
+  // Get workspace_id from user context (simplified for MVP)
+  const userWorkspace = await env.DB.prepare(`
+    SELECT workspace_id FROM workspace_members WHERE user_id = ? LIMIT 1
+  `).bind(userId).first<{ workspace_id: string }>();
+  
+  const workspaceId = userWorkspace?.workspace_id || 'default';
+  
+  // Create block record
+  const blockId = uuidv4();
+  
+  await env.DB.prepare(`
+    INSERT INTO blocks (id, workspace_id, user_id, blocked_user_id, reason, created_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `).bind(blockId, workspaceId, userId, target_user_id, reason || null).run();
+  
+  // Decline any pending requests from the blocked user
+  await env.DB.prepare(`
+    UPDATE relationship_requests 
+    SET status = 'declined', responded_at = datetime('now')
+    WHERE inviter_user_id = ? AND invitee_user_id = ? AND status = 'pending'
+  `).bind(target_user_id, userId).run();
+  
+  logger.info('User blocked', {
+    user_id: userId,
+    blocked_user_id: target_user_id,
+    block_id: blockId,
+  });
+  
+  return c.json({
+    success: true,
+    block_id: blockId,
+    message: 'ユーザーをブロックしました',
+  });
+});
+
+// ============================================================
+// DELETE /api/relationships/block/:targetUserId
+// Unblock a user
+// ============================================================
+relationships.delete('/block/:targetUserId', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  const targetUserId = c.req.param('targetUserId');
+  const logger = createLogger(env);
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  // Delete block record
+  const result = await env.DB.prepare(`
+    DELETE FROM blocks WHERE user_id = ? AND blocked_user_id = ?
+  `).bind(userId, targetUserId).run();
+  
+  if (result.meta.changes === 0) {
+    return c.json({ error: 'Block not found' }, 404);
+  }
+  
+  logger.info('User unblocked', {
+    user_id: userId,
+    unblocked_user_id: targetUserId,
+  });
+  
+  return c.json({
+    success: true,
+    message: 'ブロックを解除しました',
+  });
+});
+
+// ============================================================
+// GET /api/relationships/blocked
+// List blocked users
+// ============================================================
+relationships.get('/blocked', async (c) => {
+  const { env } = c;
+  const userId = c.get('userId');
+  
+  if (!userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  const results = await env.DB.prepare(`
+    SELECT 
+      b.id as block_id,
+      b.blocked_user_id,
+      b.reason,
+      b.created_at,
+      u.display_name as blocked_user_name,
+      u.email as blocked_user_email
+    FROM blocks b
+    JOIN users u ON u.id = b.blocked_user_id
+    WHERE b.user_id = ?
+    ORDER BY b.created_at DESC
+  `).bind(userId).all<{
+    block_id: string;
+    blocked_user_id: string;
+    reason: string | null;
+    created_at: string;
+    blocked_user_name: string;
+    blocked_user_email: string;
+  }>();
+  
+  return c.json({
+    blocked_users: (results.results || []).map(r => ({
+      block_id: r.block_id,
+      user: {
+        id: r.blocked_user_id,
+        display_name: r.blocked_user_name,
+        email: r.blocked_user_email,
+      },
+      reason: r.reason,
+      created_at: r.created_at,
+    })),
+    count: results.results?.length || 0,
+  });
+});
+
 export default relationships;
