@@ -65,7 +65,7 @@ INSERT INTO pool_bookings_new (
 )
 SELECT 
     id, workspace_id, pool_id, slot_id, requester_user_id, assignee_user_id,
-    status, note, created_at, updated_at
+    status, requester_note, created_at, updated_at
 FROM pool_bookings;
 
 -- Step 3: Drop old table and rename new
