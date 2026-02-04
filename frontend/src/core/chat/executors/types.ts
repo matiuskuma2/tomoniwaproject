@@ -145,7 +145,32 @@ export type ExecutionResultData =
   | { kind: 'preference.set.confirmed'; payload: any }
   | { kind: 'preference.set.cancelled'; payload: {} }
   | { kind: 'preference.show'; payload: any }
-  | { kind: 'preference.clear'; payload: {} };
+  | { kind: 'preference.clear'; payload: {} }
+  // D0: 関係性管理 (仕事仲間申請/承諾/拒否)
+  | { kind: 'relation.request.sent'; payload: {
+      request_id: string;
+      invitee_id?: string;
+      invitee_email?: string;
+      invitee_name?: string;
+      requested_type: 'workmate' | 'family';
+      expires_at: string;
+    } }
+  | { kind: 'relation.request.candidates'; payload: {
+      candidates: Array<{
+        id: string;
+        email: string;
+        display_name: string;
+        can_request: boolean;
+      }>;
+      query_name: string;
+    } }
+  | { kind: 'relation.approved'; payload: {
+      relationship_id: string;
+      relation_type: string;
+    } }
+  | { kind: 'relation.declined'; payload: {
+      token: string;
+    } };
 
 export interface ExecutionResult {
   success: boolean;
