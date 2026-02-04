@@ -82,6 +82,10 @@ import {
   executeOneOnOneCandidates as executeOneOnOneCandidatesFromExecutors,
   // v1.2: Phase B-2 freebusy から候補生成
   executeOneOnOneFreebusy as executeOneOnOneFreebusyFromExecutors,
+  // D0: 関係性管理
+  executeRelationRequestWorkmate as executeRelationRequestWorkmateFromExecutors,
+  executeRelationApprove as executeRelationApproveFromExecutors,
+  executeRelationDecline as executeRelationDeclineFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -571,6 +575,16 @@ export async function executeIntent(
     // v1.2: Phase B-2 freebusy から候補生成
     case 'schedule.1on1.freebusy':
       return executeOneOnOneFreebusyFromExecutors(intentResult);
+    
+    // D0: 関係性管理（仕事仲間申請/承諾/拒否）
+    case 'relation.request.workmate':
+      return executeRelationRequestWorkmateFromExecutors(intentResult, context);
+    
+    case 'relation.approve':
+      return executeRelationApproveFromExecutors(intentResult, context);
+    
+    case 'relation.decline':
+      return executeRelationDeclineFromExecutors(intentResult, context);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）

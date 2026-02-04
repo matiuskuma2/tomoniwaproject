@@ -172,11 +172,25 @@ export async function executeRelationRequestWorkmate(
 
 /**
  * 複数候補がある場合の選択肢を構築
+ * 
+ * NOTE: 将来的には pending.contact.select を使用して
+ *       既存の候補選択 UI と連携することを推奨。
+ *       現状は needsClarification で会話を続ける方式。
  */
 function buildCandidateSelection(
   candidates: UserSearchResult[],
   queryName: string
 ): ExecutionResult {
+  // 申請可能な候補のみフィルタ
+  const requestableCandidates = candidates.filter(u => u.can_request);
+  
+  if (requestableCandidates.length === 0) {
+    return {
+      success: false,
+      message: `「${queryName}」で見つかった方は全員、既に仕事仲間か申請中です。`,
+    };
+  }
+  
   let message = `「${queryName}」で ${candidates.length} 名見つかりました。どなたに申請しますか？\n\n`;
   
   candidates.slice(0, 5).forEach((user, index) => {
