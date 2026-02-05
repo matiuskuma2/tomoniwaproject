@@ -14,7 +14,7 @@ import { getInbox, subscribeInbox, refreshInbox } from '../../core/cache';
 import type { InboxNotification } from '../../core/models';
 import { formatDateTimeForViewer } from '../../utils/datetime';
 import { useViewerTimezone } from '../../core/hooks/useViewerTimezone';
-import { relationshipsApi } from '../../core/api';
+import { relationshipsApi, inboxApi } from '../../core/api';
 import { invalidateRelationships } from '../../core/cache/relationshipsCache';
 
 // Inbox notification types for relationships
@@ -311,7 +311,20 @@ export function NotificationBell() {
   // Use helper for unread count calculation
   const unreadCount = notifications.filter(n => !isNotificationRead(n)).length;
 
-  const handleNotificationClick = (notification: InboxNotification) => {
+  const handleNotificationClick = async (notification: InboxNotification) => {
+    // NOTIFICATION_SYSTEM_PLAN.md: 既読ロジック修正
+    // クリック時に既読APIを呼ぶ
+    if (!isNotificationRead(notification)) {
+      try {
+        await inboxApi.markAsRead(notification.id);
+        // キャッシュを更新（UIに反映）
+        await refreshInbox();
+      } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+        // 既読失敗してもナビゲーションは続行
+      }
+    }
+
     // Get notification type (supports both new and legacy field names)
     const notificationType = getNotificationType(notification);
     
@@ -339,6 +352,7 @@ export function NotificationBell() {
     }
     
     // Relationship request: don't navigate (actions are inline)
+    // But still mark as read (done above)
     if (notificationType === INBOX_TYPE_RELATIONSHIP_REQUEST) {
       return;
     }
