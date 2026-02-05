@@ -227,6 +227,12 @@ export type ExecutionResultData =
       pool_id: string;
       pool_name: string;
       slots_count: number;
+    } }
+  | { kind: 'pool.needs_workmate'; payload: {
+      pool_name: string;
+      needs_workmate: Array<{ name: string; email?: string }>;
+      already_workmate: Array<{ user_id: string; display_name: string }>;
+      not_found: string[];
     } };
 
 export interface ExecutionResult {

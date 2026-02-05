@@ -331,6 +331,15 @@ function extractCreateParams(input: string, normalizedInput: string): Record<str
     params.range = 'next_week';
   } else if (/来月/.test(normalizedInput)) {
     params.range = 'next_month';
+  } else if (/今週/.test(normalizedInput)) {
+    params.range = 'this_week';
+  }
+  
+  // 時間帯抽出（10-18、10時〜18時など）
+  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:\-]?[-〜~](\d{1,2})時?/);
+  if (timeRangeMatch) {
+    params.start_hour = parseInt(timeRangeMatch[1], 10);
+    params.end_hour = parseInt(timeRangeMatch[2], 10);
   }
   
   return params;
