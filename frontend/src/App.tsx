@@ -5,8 +5,8 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ThreadCreatePage } from './pages/ThreadCreatePage';
 import { ThreadDetailPage } from './pages/ThreadDetailPage';
-import { ContactsPage } from './pages/ContactsPage';
-import { ListsPage } from './pages/ListsPage';
+// Legacy: import { ContactsPage } from './pages/ContactsPage';
+// Legacy: import { ListsPage } from './pages/ListsPage';
 import { ChatPage } from './pages/ChatPage';
 import { RelationshipRequestPage } from './pages/RelationshipRequestPage';
 import { SchedulingInternalThreadPage } from './pages/SchedulingInternalThreadPage';
@@ -16,6 +16,7 @@ import { GroupThreadPage } from './pages/GroupThreadPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
 import WorkspaceNotificationsPage from './pages/WorkspaceNotificationsPage';
+import { PeopleHubPage } from './pages/PeopleHubPage';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -60,28 +61,24 @@ function App() {
             </ProtectedRoute>
           }
         />
+        {/* P1: People Hub - 連絡先/リスト/つながりの統合UI */}
         <Route
-          path="/contacts"
+          path="/people"
           element={
             <ProtectedRoute>
-              <ContactsPage />
+              <PeopleHubPage />
             </ProtectedRoute>
           }
         />
-        {/* Phase D-1: Relationship Request */}
+        {/* Legacy routes: redirect to People Hub */}
+        <Route path="/contacts" element={<Navigate to="/people?tab=contacts" replace />} />
+        <Route path="/lists" element={<Navigate to="/people?tab=lists" replace />} />
+        {/* Phase D-1: Relationship Request (つながり申請の専用画面として維持) */}
         <Route
           path="/relationships/request"
           element={
             <ProtectedRoute>
               <RelationshipRequestPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/lists"
-          element={
-            <ProtectedRoute>
-              <ListsPage />
             </ProtectedRoute>
           }
         />

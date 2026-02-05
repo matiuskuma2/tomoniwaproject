@@ -148,16 +148,10 @@ export function ChatLayout() {
                       <span className="mr-2">💳</span>課金設定
                     </button>
                     <button
-                      onClick={() => { navigate('/contacts'); setSettingsOpen(false); }}
+                      onClick={() => { navigate('/people'); setSettingsOpen(false); }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      <span className="mr-2">📇</span>連絡先管理
-                    </button>
-                    <button
-                      onClick={() => { navigate('/lists'); setSettingsOpen(false); }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      <span className="mr-2">📋</span>リスト管理
+                      <span className="mr-2">👥</span>People Hub
                     </button>
                     <div className="border-t border-gray-100 my-1"></div>
                     <button
