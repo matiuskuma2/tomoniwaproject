@@ -170,6 +170,51 @@ export type ExecutionResultData =
     } }
   | { kind: 'relation.declined'; payload: {
       token: string;
+    } }
+  // G2-A: Pool Booking (予約システム)
+  | { kind: 'pool_booking.booked'; payload: {
+      booking_id: string;
+      pool_id: string;
+      pool_name: string;
+      slot_id: string;
+      slot_label: string;
+      slot_start_at: string;
+      slot_end_at: string;
+      assignee_user_id: string;
+      status: string;
+    } }
+  | { kind: 'pool_booking.cancelled'; payload: {
+      booking_id: string;
+      pool_id: string;
+      slot_id: string;
+      status: string;
+      cancelled_by: string;
+      cancellation_reason: string | null;
+    } }
+  | { kind: 'pool_booking.list'; payload: {
+      pool_id?: string;
+      pool_name?: string;
+      pools?: any[];
+      bookings: any[];
+    } }
+  | { kind: 'pool_booking.pool_candidates'; payload: {
+      candidates: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        is_active: boolean;
+      }>;
+      query_name: string;
+    } }
+  | { kind: 'pool_booking.slot_candidates'; payload: {
+      pool_name: string;
+      candidates: Array<{
+        id: string;
+        start_at: string;
+        end_at: string;
+        label: string;
+      }>;
+      query_label?: string;
     } };
 
 export interface ExecutionResult {

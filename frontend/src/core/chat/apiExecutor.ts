@@ -86,6 +86,10 @@ import {
   executeRelationRequestWorkmate as executeRelationRequestWorkmateFromExecutors,
   executeRelationApprove as executeRelationApproveFromExecutors,
   executeRelationDecline as executeRelationDeclineFromExecutors,
+  // G2-A: Pool Booking
+  executePoolBook as executePoolBookFromExecutors,
+  executePoolBookingCancel as executePoolBookingCancelFromExecutors,
+  executePoolBookingList as executePoolBookingListFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -585,6 +589,17 @@ export async function executeIntent(
     
     case 'relation.decline':
       return executeRelationDeclineFromExecutors(intentResult, context);
+    
+    // G2-A: Pool Booking（受付プール予約）
+    case 'pool_booking.book':
+      return executePoolBookFromExecutors(intentResult, context);
+    
+    case 'pool_booking.cancel':
+      return executePoolBookingCancelFromExecutors(intentResult, context);
+    
+    case 'pool_booking.list':
+    case 'pool_booking.slots':
+      return executePoolBookingListFromExecutors(intentResult, context);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）

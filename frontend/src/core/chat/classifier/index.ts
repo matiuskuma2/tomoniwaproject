@@ -28,6 +28,7 @@ import { classifyThread } from './thread';
 import { classifyPreference } from './preference';
 import { classifyOneOnOne } from './oneOnOne';
 import { classifyRelation } from './relation';  // D0: 関係性管理
+import { classifyPool } from './pool';          // G2-A: Pool Booking
 
 /**
  * 分類器チェーン（固定順序）
@@ -43,7 +44,8 @@ const classifierChain: ClassifierFn[] = [
   classifyPropose,          // 7. 候補提案系
   classifyRemind,           // 8. リマインド系
   classifyRelation,         // 9. D0: 関係性管理（仕事仲間申請）
-  classifyThread,           // 10. スレッド操作系
+  classifyPool,             // 10. G2-A: Pool Booking（予約）
+  classifyThread,           // 11. スレッド操作系
 ];
 
 /**

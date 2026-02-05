@@ -135,6 +135,13 @@ export {
   executeRelationDecline,
 } from './relation/requestWorkmate';
 
+// Pool Booking executors (G2-A: 受付プール予約)
+export {
+  executePoolBook,
+  executePoolBookingCancel,
+  executePoolBookingList,
+} from './pool/book';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';
