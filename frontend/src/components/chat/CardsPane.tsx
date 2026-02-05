@@ -26,8 +26,8 @@ import type {
 } from '../../core/models';
 
 // 段階的移行フラグ: true で ThreadCardsSwitch を使用
-// TODO: ExecutionResult型の統一後に true に切り替え
-const USE_THREAD_CARDS_SWITCH = false;
+// SSOT: topology/mode に基づいたカード分岐を有効化（2026-02-05）
+const USE_THREAD_CARDS_SWITCH = true;
 
 interface CardsPaneProps {
   status: ThreadStatus_API | null;
