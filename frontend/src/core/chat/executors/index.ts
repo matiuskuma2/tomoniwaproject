@@ -128,6 +128,13 @@ export {
   formatDateTimeJP,
 } from './oneOnOne';
 
+// Relation executors (D0: 仕事仲間申請/承諾/拒否)
+export {
+  executeRelationRequestWorkmate,
+  executeRelationApprove,
+  executeRelationDecline,
+} from './relation/requestWorkmate';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

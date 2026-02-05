@@ -27,6 +27,7 @@ import { classifyRemind } from './remind';
 import { classifyThread } from './thread';
 import { classifyPreference } from './preference';
 import { classifyOneOnOne } from './oneOnOne';
+import { classifyRelation } from './relation';  // D0: 関係性管理
 
 /**
  * 分類器チェーン（固定順序）
@@ -41,7 +42,8 @@ const classifierChain: ClassifierFn[] = [
   classifyOneOnOne,         // 6. v1.0: 1対1予定調整（固定日時）
   classifyPropose,          // 7. 候補提案系
   classifyRemind,           // 8. リマインド系
-  classifyThread,           // 9. スレッド操作系
+  classifyRelation,         // 9. D0: 関係性管理（仕事仲間申請）
+  classifyThread,           // 10. スレッド操作系
 ];
 
 /**

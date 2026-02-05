@@ -1047,42 +1047,20 @@ app.post('/users/pair', async (c) => {
     // デフォルトワークスペース
     const testWorkspaceId = 'test-workspace-e2e';
 
-    // ワークスペースが存在しない場合は作成
-    const existingWorkspace = await env.DB.prepare(
-      `SELECT id FROM workspaces WHERE id = ?`
-    ).bind(testWorkspaceId).first();
-    
-    if (!existingWorkspace) {
-      await env.DB.prepare(`
-        INSERT INTO workspaces (id, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?)
-      `).bind(testWorkspaceId, 'E2E Test Workspace', nowISO, nowISO).run();
-    }
-
     // ユーザーA作成
     await env.DB.prepare(`
-      INSERT INTO users (id, workspace_id, email, display_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(userAId, testWorkspaceId, userAEmail, userADisplayName, nowISO, nowISO).run();
+      INSERT INTO users (id, email, display_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(userAId, userAEmail, userADisplayName, nowISO, nowISO).run();
 
     // ユーザーB作成
     await env.DB.prepare(`
-      INSERT INTO users (id, workspace_id, email, display_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(userBId, testWorkspaceId, userBEmail, userBDisplayName, nowISO, nowISO).run();
-
-    // セッショントークンをsessionsテーブルに保存（1時間有効）
-    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
-    
-    await env.DB.prepare(`
-      INSERT INTO sessions (id, user_id, token, expires_at, created_at)
+      INSERT INTO users (id, email, display_name, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
-    `).bind(`sess-a-${Date.now()}`, userAId, userAToken, expiresAt, nowISO).run();
+    `).bind(userBId, userBEmail, userBDisplayName, nowISO, nowISO).run();
 
-    await env.DB.prepare(`
-      INSERT INTO sessions (id, user_id, token, expires_at, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).bind(`sess-b-${Date.now()}`, userBId, userBToken, expiresAt, nowISO).run();
+    // NOTE: Development モードでは x-user-id ヘッダーで認証できるので、
+    // token は user_id をそのまま返す（E2Eテスト用）
 
     log.debug('E2E user pair created', { 
       fixtureId, 
@@ -1097,13 +1075,13 @@ app.post('/users/pair', async (c) => {
         id: userAId,
         email: userAEmail,
         display_name: userADisplayName,
-        token: userAToken
+        token: userAId  // Development mode: x-user-id header で認証
       },
       user_b: {
         id: userBId,
         email: userBEmail,
         display_name: userBDisplayName,
-        token: userBToken
+        token: userBId  // Development mode: x-user-id header で認証
       }
     }, 201);
 

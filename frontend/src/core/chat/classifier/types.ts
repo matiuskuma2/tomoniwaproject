@@ -79,6 +79,10 @@ export type IntentType =
   | 'schedule.1on1.freebusy'   // v1.2: Phase B-2 主催者freebusy から候補生成
   // v1.3: Phase B-4 Open Slots（TimeRex型公開枠）
   | 'schedule.1on1.open_slots' // v1.3: Phase B-4 相手に選んでもらう公開枠
+  // D0: 関係性管理（仕事仲間申請/承諾/拒否）
+  | 'relation.request.workmate' // D0: 仕事仲間申請
+  | 'relation.approve'          // D0: 申請承諾
+  | 'relation.decline'          // D0: 申請拒否
   | 'unknown';
 
 export interface IntentResult {

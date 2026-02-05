@@ -39,4 +39,7 @@ export interface Env {
   // P2-E2: Twilio SMS
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
+  
+  // G2-A: Pool Booking Public URLs
+  PUBLIC_URL?: string;
 }

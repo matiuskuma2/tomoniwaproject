@@ -15,7 +15,8 @@
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 
 // API ベース URL
-const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:8787';
+// NOTE: Development 環境では port 3000 で wrangler が動作
+const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
 
 // フィクスチャで作成したユーザー情報
 interface UserInfo {
@@ -42,6 +43,7 @@ async function createUserPair(request: APIRequestContext): Promise<FixtureResult
     }
   });
   
+  // NOTE: Fixture API は 201 (Created) を返す
   expect(response.status()).toBe(201);
   return await response.json();
 }
@@ -215,6 +217,152 @@ test.describe('D-1 Relationships E2E: 検索→申請→承認フロー', () => 
     }
     
     console.log('[E2E] REL-5: Contacts page checked');
+  });
+});
+
+// ============================================================
+// D0-R1: API経由 workmate request → accept → relationship active
+// ============================================================
+test.describe.serial('D0-R1: workmate API flow (request → accept → active)', () => {
+  let fixture: FixtureResult;
+  
+  test.beforeAll(async ({ request }) => {
+    fixture = await createUserPair(request);
+    console.log('[D0-R1] Created user pair:', fixture.fixture_id);
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (fixture) {
+      // 関係をクリーンアップ（存在する場合）
+      try {
+        const relationshipsRes = await request.get(`${API_BASE_URL}/api/relationships`, {
+          headers: { 'x-user-id': fixture.user_a.id }
+        });
+        if (relationshipsRes.ok()) {
+          const data = await relationshipsRes.json();
+          const rel = data.items?.find((r: any) => 
+            r.other_user?.id === fixture.user_b.id
+          );
+          if (rel) {
+            await request.delete(`${API_BASE_URL}/api/relationships/${rel.id}`, {
+              headers: { 'x-user-id': fixture.user_a.id }
+            });
+          }
+        }
+      } catch (e) {
+        // ignore cleanup errors
+      }
+      
+      await cleanupUserPair(request, [fixture.user_a.id, fixture.user_b.id]);
+      console.log('[D0-R1] Cleaned up');
+    }
+  });
+
+  test('D0-R1-1: A から B へ workmate 申請を送信', async ({ request }) => {
+    // POST /api/relationships/request
+    // NOTE: Development mode では x-user-id ヘッダーで認証
+    const response = await request.post(`${API_BASE_URL}/api/relationships/request`, {
+      headers: { 'x-user-id': fixture.user_a.id },
+      data: {
+        invitee_identifier: fixture.user_b.email,
+        requested_type: 'workmate',
+        message: 'E2E test request'
+      }
+    });
+    
+    // NOTE: API は 200 を返す（201 ではなく）
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    
+    expect(data.success).toBe(true);
+    expect(data.request_id).toBeDefined();
+    expect(data.token).toBeDefined();
+    expect(data.invitee.id).toBe(fixture.user_b.id);
+    expect(data.requested_type).toBe('workmate');
+    
+    // token を保存（次のテストで使用）
+    (fixture as any).request_token = data.token;
+    
+    console.log('[D0-R1-1] Request sent, token:', data.token);
+  });
+
+  test('D0-R1-2: B の pending requests に申請が表示される', async ({ request }) => {
+    // GET /api/relationships/pending
+    const response = await request.get(`${API_BASE_URL}/api/relationships/pending`, {
+      headers: { 'x-user-id': fixture.user_b.id }
+    });
+    
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    
+    // received に A からの申請がある
+    expect(data.received).toBeDefined();
+    const fromA = data.received.find((r: any) => r.inviter?.id === fixture.user_a.id);
+    expect(fromA).toBeDefined();
+    expect(fromA.requested_type).toBe('workmate');
+    
+    console.log('[D0-R1-2] Pending request found');
+  });
+
+  test('D0-R1-3: B が申請を承諾', async ({ request }) => {
+    const token = (fixture as any).request_token;
+    expect(token).toBeDefined();
+    
+    // POST /api/relationships/:token/accept
+    const response = await request.post(`${API_BASE_URL}/api/relationships/${token}/accept`, {
+      headers: { 'x-user-id': fixture.user_b.id },
+      data: {}
+    });
+    
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    
+    expect(data.success).toBe(true);
+    expect(data.relationship_id).toBeDefined();
+    expect(data.relation_type).toBe('workmate');
+    
+    // relationship_id を保存
+    (fixture as any).relationship_id = data.relationship_id;
+    
+    console.log('[D0-R1-3] Request accepted, relationship_id:', data.relationship_id);
+  });
+
+  test('D0-R1-4: A の relationships に B が workmate として表示される', async ({ request }) => {
+    // GET /api/relationships
+    const response = await request.get(`${API_BASE_URL}/api/relationships`, {
+      headers: { 'x-user-id': fixture.user_a.id }
+    });
+    
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    
+    expect(data.items).toBeDefined();
+    const relationWithB = data.items.find((r: any) => r.other_user?.id === fixture.user_b.id);
+    
+    expect(relationWithB).toBeDefined();
+    expect(relationWithB.relation_type).toBe('workmate');
+    expect(relationWithB.status).toBe('active');
+    
+    console.log('[D0-R1-4] Relationship verified: workmate, active');
+  });
+
+  test('D0-R1-5: B の relationships にも A が workmate として表示される', async ({ request }) => {
+    // GET /api/relationships
+    const response = await request.get(`${API_BASE_URL}/api/relationships`, {
+      headers: { 'x-user-id': fixture.user_b.id }
+    });
+    
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    
+    expect(data.items).toBeDefined();
+    const relationWithA = data.items.find((r: any) => r.other_user?.id === fixture.user_a.id);
+    
+    expect(relationWithA).toBeDefined();
+    expect(relationWithA.relation_type).toBe('workmate');
+    expect(relationWithA.status).toBe('active');
+    
+    console.log('[D0-R1-5] Both sides verified');
   });
 });
 
