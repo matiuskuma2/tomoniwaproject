@@ -16,6 +16,8 @@ export type PendingKind =
   | 'pending.action'           // Beta A: send/add_invites/add_slots
   | 'pending.contact.select'   // Phase 2: 連絡先選択待ち
   | 'pending.channel.select'   // Phase 3: チャネル選択待ち
+  | 'pending.pool.create'      // G2-A: Pool作成確認待ち
+  | 'pending.pool.member_select' // G2-A: Pool作成時のメンバー選択待ち
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
@@ -125,6 +127,38 @@ export type PendingState =
       confirmationPrompt: string;       // 確認メッセージ
     })
 
+  // G2-A: Pool作成確認待ち
+  | (PendingBase & {
+      kind: 'pending.pool.create';
+      draft: {
+        pool_name: string;
+        description?: string;
+        members: Array<{ user_id: string; display_name: string; email?: string }>;
+        slot_config?: {
+          range?: 'this_week' | 'next_week' | 'next_month';
+          start_hour?: number;
+          end_hour?: number;
+          duration_minutes?: number;
+        };
+      };
+    })
+
+  // G2-A: Pool作成時のメンバー選択待ち（同名が複数いる場合）
+  | (PendingBase & {
+      kind: 'pending.pool.member_select';
+      query_name: string;
+      candidates: Array<{
+        id: string;
+        display_name: string;
+        email: string;
+        is_workmate: boolean;
+      }>;
+      resolved_members: Array<{ user_id: string; display_name: string; email?: string }>;
+      remaining_names: string[];
+      draft_pool_name: string;
+      original_params: Record<string, unknown>;
+    })
+
   // Phase 2: 連絡先選択待ち（名前から複数候補が見つかった時）
   | (PendingBase & {
       kind: 'pending.contact.select';
@@ -221,6 +255,14 @@ export function isPendingChannelSelect(pending: PendingState | null): pending is
   return pending?.kind === 'pending.channel.select';
 }
 
+export function isPendingPoolCreate(pending: PendingState | null): pending is PendingState & { kind: 'pending.pool.create' } {
+  return pending?.kind === 'pending.pool.create';
+}
+
+export function isPendingPoolMemberSelect(pending: PendingState | null): pending is PendingState & { kind: 'pending.pool.member_select' } {
+  return pending?.kind === 'pending.pool.member_select';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -230,6 +272,8 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'pending.action',
     'pending.contact.select',  // Phase 2
     'pending.channel.select',  // Phase 3
+    'pending.pool.create',     // G2-A
+    'pending.pool.member_select', // G2-A
     'remind.pending',
     'remind.need_response',
     'remind.responded',
@@ -270,6 +314,10 @@ export function describePending(pending: PendingState | null): string {
       return `連絡先選択待ち (「${pending.query_name}」${pending.candidates.length}件)`;
     case 'pending.channel.select':
       return `チャネル選択待ち (${pending.contact_name}、${pending.candidates.length}件)`;
+    case 'pending.pool.create':
+      return `プール作成確認待ち (${pending.draft.pool_name})`;
+    case 'pending.pool.member_select':
+      return `メンバー選択待ち (「${pending.query_name}」${pending.candidates.length}件)`;
     default:
       return `不明な状態`;
   }

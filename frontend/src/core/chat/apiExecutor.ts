@@ -93,7 +93,12 @@ import {
   // G2-A: Pool Management
   executePoolCreate as executePoolCreateFromExecutors,
   executePoolAddSlots as executePoolAddSlotsFromExecutors,
+  executePoolCreateFinalize,
+  executePoolCreateCancel,
+  executePoolMemberSelected,
 } from './executors';
+import type { PoolCreateDraft } from './executors/pool/create';
+import type { PendingState } from './pendingTypes';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
 // P3-PREF: 好み設定 executor (PREF-SET-1: AI確認フロー追加)
@@ -610,6 +615,15 @@ export async function executeIntent(
     case 'pool_booking.slots':
       return executePoolBookingListFromExecutors(intentResult, context);
     
+    case 'pool_booking.create_confirm':
+      return executePoolCreateConfirmFromExecutors(intentResult, context);
+    
+    case 'pool_booking.create_cancel':
+      return executePoolCreateCancelFromExecutors();
+    
+    case 'pool_booking.member_selected':
+      return executePoolMemberSelectedFromExecutors(intentResult, context);
+    
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）
       return executeUnknownWithNlRouter(intentResult, context);
@@ -620,6 +634,45 @@ export async function executeIntent(
         message: 'この機能はまだ実装されていません。',
       };
   }
+}
+
+// ============================================================
+// G2-A: Pool Create confirm/cancel/member_selected helpers
+// ============================================================
+
+async function executePoolCreateConfirmFromExecutors(
+  intentResult: IntentResult,
+  _context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const draft = intentResult.params.draft as PoolCreateDraft;
+  if (!draft) {
+    return {
+      success: false,
+      message: '確認中のプール作成がありません。',
+    };
+  }
+  return executePoolCreateFinalize(draft, _context);
+}
+
+function executePoolCreateCancelFromExecutors(): ExecutionResult {
+  return executePoolCreateCancel();
+}
+
+async function executePoolMemberSelectedFromExecutors(
+  intentResult: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const selectedMemberId = intentResult.params.selected_member_id as string;
+  const pending = intentResult.params.pending as PendingState & { kind: 'pending.pool.member_select' };
+  
+  if (!selectedMemberId || !pending) {
+    return {
+      success: false,
+      message: '選択されたメンバー情報がありません。',
+    };
+  }
+  
+  return executePoolMemberSelected(selectedMemberId, pending, context);
 }
 
 // ============================================================

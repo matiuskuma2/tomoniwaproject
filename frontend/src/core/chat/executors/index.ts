@@ -146,6 +146,10 @@ export {
 export {
   executePoolCreate,
   executePoolAddSlots,
+  executePoolCreateFinalize,
+  executePoolCreateCancel,
+  executePoolMemberSelected,
+  type PoolCreateDraft,
 } from './pool/create';
 
 // Shared utilities

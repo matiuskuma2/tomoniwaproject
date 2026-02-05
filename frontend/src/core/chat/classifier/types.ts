@@ -90,6 +90,9 @@ export type IntentType =
   | 'pool_booking.cancel'       // G2-A: 予約キャンセル
   | 'pool_booking.list'         // G2-A: 予約一覧
   | 'pool_booking.slots'        // G2-A: 空き枠確認
+  | 'pool_booking.create_confirm' // G2-A: プール作成確認
+  | 'pool_booking.create_cancel'  // G2-A: プール作成キャンセル
+  | 'pool_booking.member_selected' // G2-A: メンバー選択完了
   | 'unknown';
 
 export interface IntentResult {

@@ -11,18 +11,19 @@
  * 処理フロー:
  * 1. メンバー名 → relationshipsApi.search → user_id + workmate状態を解決
  * 2. workmate関係チェック（なければ relation.request.workmate を案内）
- * 3. slot_config を確認
- * 4. POST /api/pools (プール作成)
- * 5. POST /api/pools/:id/members (workmate成立済みのみ追加)
- * 6. POST /api/pools/:id/slots (枠作成)
- * 7. GET /api/pools/:id/public-link (公開リンク発行)
+ * 3. 複数候補がいる場合 → pending.pool.member_select で選択要求
+ * 4. 問題なければ draft を作成 → pending.pool.create で確認要求
+ * 5. 「はい」で実作成（executePoolCreateFinalize）
  * 
  * 制約:
  * - workmate関係がないとメンバーに追加できない（D0前提）
+ * - 複数候補は自動選択しない（事故防止）
+ * - Pool作成前に必ず確認（confirm 1回挟む）
  */
 
 import { poolsApi } from '../../../api/pools';
 import { relationshipsApi, type UserSearchResult } from '../../../api/relationships';
+import type { PendingState } from '../../pendingTypes';
 import type { IntentResult } from '../../classifier/types';
 import type { ExecutionResult, ExecutionContext } from '../types';
 
@@ -39,6 +40,8 @@ interface CreatePoolParams {
   range?: string;
   start_hour?: number;
   end_hour?: number;
+  // pending.pool.member_select から来た場合
+  selected_member_id?: string;
 }
 
 interface MemberResolution {
@@ -49,6 +52,8 @@ interface MemberResolution {
   is_workmate: boolean;
   can_request: boolean;
   error?: string;
+  // 複数候補がある場合
+  candidates?: UserSearchResult[];
 }
 
 interface SlotConfig {
@@ -58,21 +63,29 @@ interface SlotConfig {
   end_hour: number;
 }
 
+export interface PoolCreateDraft {
+  pool_name: string;
+  description?: string;
+  members: Array<{ user_id: string; display_name: string; email?: string }>;
+  slot_config?: SlotConfig;
+}
+
 // ============================================================
 // Main Executor
 // ============================================================
 
 /**
- * プール作成 executor
+ * プール作成 executor (Step 1: ドラフト生成 → pending 返却)
  * 
  * チーム指定あり版:
  * - メンバー名から relationshipsApi.search で解決
  * - workmate関係チェック
- * - 確認フロー付き
+ * - 複数候補は pending.pool.member_select で選択要求
+ * - 問題なければ pending.pool.create で確認要求
  */
 export async function executePoolCreate(
   intentResult: IntentResult,
-  _context?: ExecutionContext
+  context?: ExecutionContext
 ): Promise<ExecutionResult> {
   const params = intentResult.params as CreatePoolParams;
   
@@ -89,18 +102,29 @@ export async function executePoolCreate(
   }
   
   // -------------------- 2. メンバー解決 --------------------
-  const workmateMembers: MemberResolution[] = [];
+  const workmateMembers: Array<{ user_id: string; display_name: string; email?: string }> = [];
   const needsWorkmateRequest: MemberResolution[] = [];
   const notFoundMembers: string[] = [];
+  const needsSelection: { name: string; candidates: UserSearchResult[] }[] = [];
   
   if (params.member_names && params.member_names.length > 0) {
     for (const name of params.member_names) {
       const resolution = await resolveMemberViaSearch(name);
       
-      if (resolution.error || !resolution.user_id) {
+      // 複数候補がある場合 → 選択要求
+      if (resolution.candidates && resolution.candidates.length > 1) {
+        needsSelection.push({
+          name,
+          candidates: resolution.candidates,
+        });
+      } else if (resolution.error || !resolution.user_id) {
         notFoundMembers.push(name);
       } else if (resolution.is_workmate) {
-        workmateMembers.push(resolution);
+        workmateMembers.push({
+          user_id: resolution.user_id,
+          display_name: resolution.display_name,
+          email: resolution.email,
+        });
       } else if (resolution.can_request) {
         // 連絡先は見つかったがworkmateではない
         needsWorkmateRequest.push(resolution);
@@ -111,7 +135,45 @@ export async function executePoolCreate(
     }
   }
   
-  // -------------------- 3. workmate未成立者への対応 --------------------
+  // -------------------- 3. 複数候補 → 選択要求 --------------------
+  if (needsSelection.length > 0) {
+    const first = needsSelection[0];
+    const candidateList = first.candidates
+      .map((c, i) => `${i + 1}) ${c.display_name} <${c.email}>`)
+      .join('\n');
+    
+    // pending.pool.member_select を返す
+    const pending: PendingState = {
+      kind: 'pending.pool.member_select',
+      threadId: context?.threadId ?? '__global__',
+      createdAt: Date.now(),
+      query_name: first.name,
+      candidates: first.candidates.map(c => ({
+        id: c.id,
+        display_name: c.display_name,
+        email: c.email,
+        is_workmate: c.relationship?.relation_type === 'workmate',
+      })),
+      resolved_members: workmateMembers,
+      remaining_names: needsSelection.slice(1).map(n => n.name),
+      draft_pool_name: params.pool_name,
+      original_params: intentResult.params as Record<string, unknown>,
+    };
+    
+    return {
+      success: false,
+      message: `「${first.name}」が複数見つかりました。どれですか？\n\n${candidateList}\n\n番号で選んでください。`,
+      data: {
+        kind: 'pending.action.created',
+        payload: {
+          actionType: 'pool.member_select',
+          pending,
+        },
+      } as any,
+    };
+  }
+  
+  // -------------------- 4. workmate未成立者への対応 --------------------
   if (needsWorkmateRequest.length > 0) {
     const requestList = needsWorkmateRequest
       .map((m) => `• ${m.display_name}${m.email ? ` (${m.email})` : ''}`)
@@ -138,30 +200,100 @@ export async function executePoolCreate(
             name: m.display_name, 
             email: m.email 
           })),
-          already_workmate: workmateMembers.map(m => ({ 
-            user_id: m.user_id!, 
-            display_name: m.display_name 
-          })),
+          already_workmate: workmateMembers,
           not_found: notFoundMembers,
         },
       },
     };
   }
   
-  // -------------------- 4. 連絡先が見つからない場合 --------------------
-  if (notFoundMembers.length > 0 && workmateMembers.length === 0) {
+  // -------------------- 5. 連絡先が見つからない場合 --------------------
+  if (notFoundMembers.length > 0 && workmateMembers.length === 0 && !params.member_names?.length) {
+    // メンバー指定なしの場合はOK（オーナーのみでPool作成）
+  } else if (notFoundMembers.length > 0 && workmateMembers.length === 0) {
     return {
       success: false,
       message: `以下の方が見つかりませんでした：\n\n• ${notFoundMembers.join('\n• ')}\n\n正確な名前またはメールアドレスを入力するか、先に仕事仲間として登録してください。`,
     };
   }
   
-  // -------------------- 5. プール作成実行 --------------------
+  // -------------------- 6. ドラフト作成 → pending.pool.create で確認要求 --------------------
+  const slotConfig: SlotConfig | undefined = (params.range || params.start_hour || params.duration_minutes) 
+    ? {
+        duration_minutes: params.duration_minutes || 60,
+        range: parseRange(params.range),
+        start_hour: params.start_hour || 10,
+        end_hour: params.end_hour || 18,
+      }
+    : undefined;
+  
+  const draft: PoolCreateDraft = {
+    pool_name: params.pool_name,
+    description: params.description,
+    members: workmateMembers,
+    slot_config: slotConfig,
+  };
+  
+  // 確認メッセージを構築
+  const rangeLabel = slotConfig 
+    ? (slotConfig.range === 'this_week' ? '今週' : slotConfig.range === 'next_week' ? '来週' : '来月')
+    : null;
+  
+  const memberList = workmateMembers.length > 0
+    ? workmateMembers.map(m => m.display_name).join(' / ')
+    : 'あなた（オーナー）のみ';
+  
+  const slotInfo = slotConfig
+    ? `${rangeLabel} 平日 ${slotConfig.start_hour}:00-${slotConfig.end_hour}:00 / ${slotConfig.duration_minutes}分枠`
+    : '未設定（後で追加できます）';
+  
+  const confirmMessage = [
+    `以下の内容で予約受付（プール）を作成します。よろしいですか？`,
+    ``,
+    `📝 プール名: ${params.pool_name}`,
+    `👥 メンバー: ${memberList}`,
+    `📅 枠: ${slotInfo}`,
+    ``,
+    `（はい / いいえ）`,
+  ].join('\n');
+  
+  // pending.pool.create を返す
+  const pending: PendingState = {
+    kind: 'pending.pool.create',
+    threadId: context?.threadId ?? '__global__',
+    createdAt: Date.now(),
+    draft,
+  };
+  
+  return {
+    success: true,
+    message: confirmMessage,
+    data: {
+      kind: 'pending.action.created',
+      payload: {
+        actionType: 'pool.create.confirm',
+        pending,
+      },
+    } as any,
+  };
+}
+
+// ============================================================
+// Finalize Executor (Step 2: 確認後の実作成)
+// ============================================================
+
+/**
+ * プール作成実行（確認後に呼ばれる）
+ */
+export async function executePoolCreateFinalize(
+  draft: PoolCreateDraft,
+  _context?: ExecutionContext
+): Promise<ExecutionResult> {
   try {
-    // 5a. プール作成
+    // 1. プール作成
     const poolResponse = await poolsApi.create({
-      name: params.pool_name,
-      description: params.description || `${params.pool_name}の予約受付`,
+      name: draft.pool_name,
+      description: draft.description || `${draft.pool_name}の予約受付`,
     });
     
     if (!poolResponse.pool) {
@@ -175,7 +307,7 @@ export async function executePoolCreate(
     const results: string[] = [];
     results.push(`✅ プール「${pool.name}」を作成しました`);
     
-    // 5b. オーナー自身をメンバーとして追加
+    // 2. オーナー自身をメンバーとして追加
     let membersAdded = 0;
     try {
       await poolsApi.addMember(pool.id, { user_id: pool.owner_user_id });
@@ -184,10 +316,10 @@ export async function executePoolCreate(
       console.log('[PoolCreate] Owner already a member or error:', e);
     }
     
-    // 5c. workmate成立済みメンバーを追加
-    for (const member of workmateMembers) {
+    // 3. workmate成立済みメンバーを追加
+    for (const member of draft.members) {
       try {
-        await poolsApi.addMember(pool.id, { user_id: member.user_id! });
+        await poolsApi.addMember(pool.id, { user_id: member.user_id });
         membersAdded++;
         results.push(`👤 ${member.display_name}さんをメンバーに追加しました`);
       } catch (e) {
@@ -199,29 +331,24 @@ export async function executePoolCreate(
       results.push(`👥 合計 ${membersAdded} 人がメンバーとして登録されました`);
     }
     
-    // 5d. スロット作成
+    // 4. スロット作成
     let slotsCreated = 0;
-    const slotConfig: SlotConfig = {
-      duration_minutes: params.duration_minutes || 60,
-      range: parseRange(params.range),
-      start_hour: params.start_hour || 10,
-      end_hour: params.end_hour || 18,
-    };
-    
-    const defaultSlots = generateSlots(slotConfig);
-    if (defaultSlots.length > 0) {
-      try {
-        const slotsResponse = await poolsApi.createSlots(pool.id, defaultSlots);
-        slotsCreated = slotsResponse.slots?.length || 0;
-        if (slotsCreated > 0) {
-          results.push(`📅 ${slotsCreated} 件の予約枠を作成しました`);
+    if (draft.slot_config) {
+      const defaultSlots = generateSlots(draft.slot_config);
+      if (defaultSlots.length > 0) {
+        try {
+          const slotsResponse = await poolsApi.createSlots(pool.id, defaultSlots);
+          slotsCreated = slotsResponse.slots?.length || 0;
+          if (slotsCreated > 0) {
+            results.push(`📅 ${slotsCreated} 件の予約枠を作成しました`);
+          }
+        } catch (e) {
+          console.error('[PoolCreate] Failed to create slots:', e);
         }
-      } catch (e) {
-        console.error('[PoolCreate] Failed to create slots:', e);
       }
     }
     
-    // 5e. 公開リンク取得
+    // 5. 公開リンク取得
     let publicUrl: string | null = null;
     try {
       const linkResponse = await poolsApi.getPublicLink(pool.id);
@@ -230,7 +357,7 @@ export async function executePoolCreate(
       console.error('[PoolCreate] Failed to get public link:', e);
     }
     
-    // -------------------- 6. 結果メッセージ構築 --------------------
+    // -------------------- 結果メッセージ構築 --------------------
     let message = results.join('\n');
     
     if (publicUrl) {
@@ -241,11 +368,6 @@ export async function executePoolCreate(
     
     if (slotsCreated === 0) {
       message += '\n\n💡 予約枠を追加するには「来週の平日で1時間枠を追加して」などと伝えてください。';
-    }
-    
-    // 連絡先が見つからなかったメンバーがいる場合
-    if (notFoundMembers.length > 0) {
-      message += `\n\n⚠️ 以下の方は見つからなかったためスキップしました：\n• ${notFoundMembers.join('\n• ')}`;
     }
     
     return {
@@ -271,7 +393,7 @@ export async function executePoolCreate(
     if (errorMessage.includes('UNIQUE') || errorMessage.includes('duplicate')) {
       return {
         success: false,
-        message: `同じ名前のプール「${params.pool_name}」が既に存在します。別の名前を指定してください。`,
+        message: `同じ名前のプール「${draft.pool_name}」が既に存在します。別の名前を指定してください。`,
       };
     }
     
@@ -282,17 +404,148 @@ export async function executePoolCreate(
   }
 }
 
+/**
+ * プール作成キャンセル
+ */
+export function executePoolCreateCancel(): ExecutionResult {
+  return {
+    success: true,
+    message: 'OK、プール作成を中止しました。',
+    data: {
+      kind: 'pending.action.cleared',
+      payload: {},
+    },
+  };
+}
+
+/**
+ * メンバー選択後の処理
+ */
+export async function executePoolMemberSelected(
+  selectedMemberId: string,
+  pending: PendingState & { kind: 'pending.pool.member_select' },
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  // 選択されたメンバーを追加
+  const selected = pending.candidates.find(c => c.id === selectedMemberId);
+  if (!selected) {
+    return {
+      success: false,
+      message: '選択されたメンバーが見つかりません。',
+    };
+  }
+  
+  const resolvedMembers = [
+    ...pending.resolved_members,
+    {
+      user_id: selected.id,
+      display_name: selected.display_name,
+      email: selected.email,
+    },
+  ];
+  
+  // まだ解決が必要なメンバーがいる場合は、再帰的に処理
+  // （今回のMVPでは最初の1名のみ選択要求、残りは後で）
+  
+  // workmate チェック
+  if (!selected.is_workmate) {
+    return {
+      success: false,
+      message: `${selected.display_name}さんはまだ仕事仲間（workmate）登録されていません。\n\n先に「${selected.display_name}さんを仕事仲間に追加して」と送ってください。`,
+      data: {
+        kind: 'pool.needs_workmate',
+        payload: {
+          pool_name: pending.draft_pool_name,
+          needs_workmate: [{ name: selected.display_name, email: selected.email }],
+          already_workmate: pending.resolved_members,
+          not_found: [],
+        },
+      },
+    };
+  }
+  
+  // 全メンバー解決済み → confirm フローへ
+  const params = pending.original_params as CreatePoolParams;
+  
+  // 新しい intentResult を作成して executePoolCreate を再実行
+  const newIntentResult: IntentResult = {
+    intent: 'pool_booking.create',
+    confidence: 1.0,
+    params: {
+      ...params,
+      member_names: undefined, // 既に解決済み
+    },
+  };
+  
+  // resolvedMembers を workmateMembers として扱う（内部処理用）
+  // → executePoolCreate を直接呼ばず、draft を作成して pending.pool.create へ
+  
+  const slotConfig: SlotConfig | undefined = (params.range || params.start_hour || params.duration_minutes) 
+    ? {
+        duration_minutes: params.duration_minutes || 60,
+        range: parseRange(params.range),
+        start_hour: params.start_hour || 10,
+        end_hour: params.end_hour || 18,
+      }
+    : undefined;
+  
+  const draft: PoolCreateDraft = {
+    pool_name: pending.draft_pool_name,
+    description: params.description,
+    members: resolvedMembers,
+    slot_config: slotConfig,
+  };
+  
+  // 確認メッセージを構築
+  const rangeLabel = slotConfig 
+    ? (slotConfig.range === 'this_week' ? '今週' : slotConfig.range === 'next_week' ? '来週' : '来月')
+    : null;
+  
+  const memberList = resolvedMembers.length > 0
+    ? resolvedMembers.map(m => m.display_name).join(' / ')
+    : 'あなた（オーナー）のみ';
+  
+  const slotInfo = slotConfig
+    ? `${rangeLabel} 平日 ${slotConfig.start_hour}:00-${slotConfig.end_hour}:00 / ${slotConfig.duration_minutes}分枠`
+    : '未設定（後で追加できます）';
+  
+  const confirmMessage = [
+    `以下の内容で予約受付（プール）を作成します。よろしいですか？`,
+    ``,
+    `📝 プール名: ${pending.draft_pool_name}`,
+    `👥 メンバー: ${memberList}`,
+    `📅 枠: ${slotInfo}`,
+    ``,
+    `（はい / いいえ）`,
+  ].join('\n');
+  
+  // pending.pool.create を返す
+  const newPending: PendingState = {
+    kind: 'pending.pool.create',
+    threadId: context?.threadId ?? '__global__',
+    createdAt: Date.now(),
+    draft,
+  };
+  
+  return {
+    success: true,
+    message: confirmMessage,
+    data: {
+      kind: 'pending.action.created',
+      payload: {
+        actionType: 'pool.create.confirm',
+        pending: newPending,
+      },
+    } as any,
+  };
+}
+
 // ============================================================
 // Helper Functions
 // ============================================================
 
 /**
  * relationshipsApi.search を使ってメンバーを検索し、workmate状態を取得
- * 
- * 利点:
- * - user_id を直接取得できる
- * - workmate関係が既にあるかを1回のAPIで確認できる
- * - can_request でリクエスト可能かも分かる
  */
 async function resolveMemberViaSearch(name: string): Promise<MemberResolution> {
   // 敬称を除去
@@ -311,11 +564,19 @@ async function resolveMemberViaSearch(name: string): Promise<MemberResolution> {
       };
     }
     
-    // 複数ヒットの場合は最初の1件を使用（MVP）
-    // TODO: 候補選択フローを実装
-    const result: UserSearchResult = response.results[0];
+    // 複数候補がある場合は candidates を返す
+    if (response.results.length > 1) {
+      return {
+        name,
+        display_name: name,
+        is_workmate: false,
+        can_request: false,
+        candidates: response.results,
+      };
+    }
     
-    // workmate関係があるか確認
+    // 1件のみヒット
+    const result: UserSearchResult = response.results[0];
     const isWorkmate = result.relationship?.relation_type === 'workmate';
     
     return {

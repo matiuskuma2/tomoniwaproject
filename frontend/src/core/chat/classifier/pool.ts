@@ -104,6 +104,53 @@ export const classifyPool: ClassifierFn = (
 ): IntentResult | null => {
   const params: Record<string, unknown> = {};
   
+  // -------------------- pending.pool.create 対応（確認待ち）--------------------
+  if (activePending?.kind === 'pending.pool.create') {
+    // はい/いいえ で確認
+    if (/^(はい|yes|ok|うん|作成|作って|お願い)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pool_booking.create_confirm',
+        confidence: 0.95,
+        params: { decision: 'confirm', draft: (activePending as any).draft },
+      };
+    }
+    if (/^(いいえ|no|やめる|キャンセル|中止)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pool_booking.create_cancel',
+        confidence: 0.95,
+        params: { decision: 'cancel' },
+      };
+    }
+  }
+  
+  // -------------------- pending.pool.member_select 対応（メンバー選択待ち）--------------------
+  if (activePending?.kind === 'pending.pool.member_select') {
+    const numberMatch = normalizedInput.match(/^([1-9]|10)$/);
+    if (numberMatch) {
+      const selectedIndex = parseInt(numberMatch[1], 10) - 1;
+      const pendingData = activePending as any;
+      const candidates = pendingData.candidates as Array<{ id: string }>;
+      if (candidates && candidates[selectedIndex]) {
+        return {
+          intent: 'pool_booking.member_selected',
+          confidence: 0.95,
+          params: { 
+            selected_member_id: candidates[selectedIndex].id,
+            pending: activePending,
+          },
+        };
+      }
+    }
+    // キャンセル
+    if (/^(キャンセル|やめる|中止)$/i.test(normalizedInput)) {
+      return {
+        intent: 'pool_booking.create_cancel',
+        confidence: 0.95,
+        params: { decision: 'cancel' },
+      };
+    }
+  }
+  
   // -------------------- pending.pool_booking.slot_selection 対応 --------------------
   // スロット選択待ちの場合、番号入力を予約として処理
   if (activePending?.kind === 'pending.action') {
