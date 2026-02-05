@@ -1095,7 +1095,7 @@ app.patch('/:poolId/bookings/:bookingId/cancel', async (c) => {
 
     // Get booking
     const booking = await env.DB.prepare(`
-      SELECT id, pool_id, slot_id, requester_user_id, assignee_user_id, status, note
+      SELECT id, pool_id, slot_id, requester_user_id, assignee_user_id, status, requester_note
       FROM pool_bookings
       WHERE id = ? AND pool_id = ? AND workspace_id = ?
     `).bind(bookingId, poolId, workspaceId).first<{
@@ -1105,7 +1105,7 @@ app.patch('/:poolId/bookings/:bookingId/cancel', async (c) => {
       requester_user_id: string;
       assignee_user_id: string;
       status: string;
-      note: string | null;
+      requester_note: string | null;
     }>();
 
     if (!booking) {

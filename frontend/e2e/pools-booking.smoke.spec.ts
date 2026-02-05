@@ -17,7 +17,8 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
 
 // API ベース URL
-const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:8787';
+// NOTE: Development 環境では port 3000 で wrangler が動作
+const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
 
 // フィクスチャで作成したユーザー情報
 interface UserInfo {
@@ -76,6 +77,8 @@ async function cleanupUserPair(request: APIRequestContext, userIds: string[]): P
 
 /**
  * API リクエストヘルパー（認証付き）
+ * NOTE: Development環境では x-user-id ヘッダーを使用
+ *       token は実際には user_id が入っている（E2E fixture）
  */
 async function apiRequest(
   request: APIRequestContext,
@@ -86,7 +89,8 @@ async function apiRequest(
 ): Promise<{ status: number; body: any }> {
   const options: any = {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      // Development環境: x-user-id ヘッダーを使用
+      'x-user-id': token,
       'Content-Type': 'application/json',
     }
   };
@@ -115,15 +119,18 @@ async function apiRequest(
   return { status: response.status(), body };
 }
 
-test.describe('G2-A Pool Booking API Smoke Tests', () => {
+test.describe.serial('G2-A Pool Booking API Smoke Tests', () => {
   let fixture: FixtureResult;
   let poolId: string;
   let slotId: string;
   let bookingId: string;
+  let poolName: string; // 一意のプール名を保持
   
   test.beforeAll(async ({ request }) => {
     // テスト用ユーザーペアを作成
     fixture = await createUserPair(request, ' (Pools)');
+    // 一意のプール名を生成
+    poolName = `E2E Test Pool ${Date.now()}`;
     console.log('[E2E-Pools] Created user pair:', fixture.fixture_id);
     console.log('[E2E-Pools] User A (owner):', fixture.user_a.email);
     console.log('[E2E-Pools] User B (requester):', fixture.user_b.email);
@@ -139,13 +146,13 @@ test.describe('G2-A Pool Booking API Smoke Tests', () => {
 
   test('POOL-1: Pool作成ができる', async ({ request }) => {
     const result = await apiRequest(request, 'POST', '/api/pools', fixture.user_a.token, {
-      name: 'E2E Test Pool',
+      name: poolName,
       description: 'E2E テスト用プール'
     });
     
     expect(result.status).toBe(201);
     expect(result.body.pool).toBeDefined();
-    expect(result.body.pool.name).toBe('E2E Test Pool');
+    expect(result.body.pool.name).toBe(poolName);
     
     poolId = result.body.pool.id;
     console.log('[E2E-Pools] POOL-1: Pool created:', poolId);
@@ -205,7 +212,7 @@ test.describe('G2-A Pool Booking API Smoke Tests', () => {
     expect(result.status).toBe(200);
     expect(result.body.public_link_token).toBeDefined();
     expect(result.body.public_url).toBeDefined();
-    expect(result.body.pool_name).toBe('E2E Test Pool');
+    expect(result.body.pool_name).toBe(poolName);
     
     console.log('[E2E-Pools] POOL-5: Public link:', result.body.public_url);
   });
@@ -239,7 +246,7 @@ test.describe('G2-A Pool Booking API Smoke Tests', () => {
   });
 });
 
-test.describe('D0 Relationships Block API Smoke Tests', () => {
+test.describe.serial('D0 Relationships Block API Smoke Tests', () => {
   let fixture: FixtureResult;
   
   test.beforeAll(async ({ request }) => {
@@ -323,7 +330,7 @@ test.describe('D0 Relationships Block API Smoke Tests', () => {
 });
 
 // Smoke テスト: 重複予約の競合チェック
-test.describe('G2-A Pool Booking Conflict Tests', () => {
+test.describe.serial('G2-A Pool Booking Conflict Tests', () => {
   let fixture: FixtureResult;
   let poolId: string;
   let slotId: string;
