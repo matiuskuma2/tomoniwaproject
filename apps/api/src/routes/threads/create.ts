@@ -30,18 +30,23 @@ type Variables = {
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
- * Create new thread with AI-generated candidates OR bulk invite from list
+ * Create new thread
  * 
  * @route POST /threads
- * @body { title: string, description?: string, target_list_id?: string }
+ * @body { 
+ *   title: string, 
+ *   description?: string, 
+ *   target_list_id?: string,
+ *   seed_mode?: 'empty' | 'legacy_default_slots' | 'ai_from_list'
+ * }
  * @ratelimit 10 per minute by user
  * 
- * If target_list_id is provided:
- * - Load list_members → contacts → create invites
- * - Email queue for bulk sending
+ * seed_mode behavior:
+ * - 'empty' (default): Create empty thread with no slots or invites
+ * - 'legacy_default_slots': Create 3 default slots (tomorrow, day after, 3 days) - for demo/审査用
+ * - 'ai_from_list': Use AI to generate candidates from target_list_id
  * 
- * Otherwise:
- * - AI-generated candidates (original flow)
+ * SSOT: Thread creation should start empty. Slots and invites are added via subsequent API calls.
  */
 app.post(
   '/',
@@ -62,11 +67,22 @@ app.post(
 
     try {
       const body = await c.req.json();
-      const { title, description, target_list_id } = body;
+      const { title, description, target_list_id, seed_mode = 'empty' } = body;
+
+      // Validate seed_mode
+      const validSeedModes = ['empty', 'legacy_default_slots', 'ai_from_list'];
+      if (!validSeedModes.includes(seed_mode)) {
+        return c.json({ 
+          error: `Invalid seed_mode. Must be one of: ${validSeedModes.join(', ')}`,
+          received: seed_mode 
+        }, 400);
+      }
 
       if (!title || typeof title !== 'string') {
         return c.json({ error: 'Missing or invalid field: title' }, 400);
       }
+
+      log.debug('Creating thread', { title, seed_mode, hasTargetList: !!target_list_id });
 
       // Step 1: Create thread in scheduling_threads (P0-1: tenant isolation)
       const threadId = crypto.randomUUID();
@@ -105,50 +121,59 @@ app.post(
 
       log.debug('Created default attendance rule');
 
-      // Step 1.6: Create default scheduling slots (3 slots: tomorrow, day after, 3 days from now)
-      const slotBaseTime = new Date();
-      const tomorrow = new Date(slotBaseTime);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(14, 0, 0, 0); // 2 PM
-
-      const dayAfter = new Date(slotBaseTime);
-      dayAfter.setDate(dayAfter.getDate() + 2);
-      dayAfter.setHours(14, 0, 0, 0);
-
-      const threeDays = new Date(slotBaseTime);
-      threeDays.setDate(threeDays.getDate() + 3);
-      threeDays.setHours(14, 0, 0, 0);
-
-      const slots = [
-        { start: tomorrow, end: new Date(tomorrow.getTime() + 60 * 60 * 1000) }, // 1 hour
-        { start: dayAfter, end: new Date(dayAfter.getTime() + 60 * 60 * 1000) },
-        { start: threeDays, end: new Date(threeDays.getTime() + 60 * 60 * 1000) },
-      ];
-
-      for (const slot of slots) {
-        const slotId = crypto.randomUUID();
-        await env.DB.prepare(`
-          INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone)
-          VALUES (?, ?, ?, ?, ?)
-        `).bind(
-          slotId,
-          threadId,
-          slot.start.toISOString(),
-          slot.end.toISOString(),
-          Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'
-        ).run();
-      }
-
-      log.debug('Created 3 default scheduling slots');
-
       let candidates: any[] = [];
       let invites: any[] = [];
-      let skippedCount = 0; // ローカル変数で管理（c.set/get は使わない）
+      let skippedCount = 0;
+      let slotsCreated = 0;
 
       // ============================
-      // Branch: Bulk invite from list OR AI-generated candidates
+      // SSOT: seed_mode controls initial data creation
       // ============================
-      if (target_list_id) {
+
+      // Step 1.6: Create default scheduling slots (only if seed_mode = 'legacy_default_slots')
+      if (seed_mode === 'legacy_default_slots') {
+        const slotBaseTime = new Date();
+        const tomorrow = new Date(slotBaseTime);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(14, 0, 0, 0); // 2 PM
+
+        const dayAfter = new Date(slotBaseTime);
+        dayAfter.setDate(dayAfter.getDate() + 2);
+        dayAfter.setHours(14, 0, 0, 0);
+
+        const threeDays = new Date(slotBaseTime);
+        threeDays.setDate(threeDays.getDate() + 3);
+        threeDays.setHours(14, 0, 0, 0);
+
+        const slots = [
+          { start: tomorrow, end: new Date(tomorrow.getTime() + 60 * 60 * 1000) }, // 1 hour
+          { start: dayAfter, end: new Date(dayAfter.getTime() + 60 * 60 * 1000) },
+          { start: threeDays, end: new Date(threeDays.getTime() + 60 * 60 * 1000) },
+        ];
+
+        for (const slot of slots) {
+          const slotId = crypto.randomUUID();
+          await env.DB.prepare(`
+            INSERT INTO scheduling_slots (slot_id, thread_id, start_at, end_at, timezone)
+            VALUES (?, ?, ?, ?, ?)
+          `).bind(
+            slotId,
+            threadId,
+            slot.start.toISOString(),
+            slot.end.toISOString(),
+            Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Tokyo'
+          ).run();
+        }
+        slotsCreated = slots.length;
+        log.debug('Created legacy default scheduling slots', { count: slotsCreated });
+      } else {
+        log.debug('Skipping default slots (seed_mode is not legacy_default_slots)', { seed_mode });
+      }
+
+      // ============================
+      // Branch: Bulk invite from list (only if seed_mode = 'ai_from_list' AND target_list_id provided)
+      // ============================
+      if (seed_mode === 'ai_from_list' && target_list_id) {
         // Step 2A: Bulk invite from list
         log.debug('Bulk invite mode', { targetListId: target_list_id });
 
@@ -218,9 +243,9 @@ app.post(
           email: m.contact_email!,
           reason: `From list: ${list.name}`,
         }));
-      } else {
-        // Step 2B: Generate candidates with AI (original flow)
-        log.debug('AI candidate generation mode');
+      } else if (seed_mode === 'legacy_default_slots' && !target_list_id) {
+        // Step 2B: Generate candidates with AI (legacy flow - only for demo/审査用)
+        log.debug('AI candidate generation mode (legacy)', { seed_mode });
 
         const allowFallback = env.AI_FALLBACK_ENABLED === 'true';
         
@@ -251,6 +276,9 @@ app.post(
         );
 
         log.debug('Created invites', { count: invites.length });
+      } else {
+        // SSOT: seed_mode = 'empty' (default) - no candidates, no invites
+        log.debug('Empty thread mode - no auto-generated candidates or invites', { seed_mode });
       }
 
       // Step 4: Send invite emails via queue (共通)
@@ -295,7 +323,11 @@ app.post(
             invite_url: `https://${host}/i/${invites[i].token}`,
           };
         }),
-        message: `Thread created with ${candidates.length} candidate invitations sent`,
+        message: seed_mode === 'empty' 
+          ? 'Thread created (empty - add slots and invites via separate API calls)'
+          : `Thread created with ${candidates.length} candidate invitations sent`,
+        seed_mode,
+        slots_created: slotsCreated,
         // 最重要ポイント 3: skipped_count をレスポンスに含める（target_list_id モード時のみ）
         ...(target_list_id ? { skipped_count: skippedCount } : {}),
       });

@@ -14,8 +14,20 @@ interface InvitesCardProps {
 export function InvitesCard({ status }: InvitesCardProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // SSOT: Show empty state for new threads (no invites yet)
   if (status.invites.length === 0) {
-    return null;
+    return (
+      <div className="bg-white rounded-lg shadow p-4 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">招待者</h3>
+        <div className="text-center py-6 text-gray-500">
+          <div className="text-3xl mb-2">👥</div>
+          <p className="text-sm">招待者はまだいません</p>
+          <p className="text-xs text-gray-400 mt-1">
+            メールアドレスを入力するか、連絡先リストから追加してください
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const getInviteStatusBadge = (inviteStatus: string | null) => {

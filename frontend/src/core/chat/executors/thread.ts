@@ -152,10 +152,14 @@ export async function executeCreate(
       name: email.split('@')[0],
     }));
 
+    // SSOT: Create empty thread, then add invites separately
+    // NOTE: This flow creates candidates but should use empty seed_mode
+    // The candidates are passed for invite creation, not AI generation
     const response = await threadsApi.create({
       title: '日程調整（自動生成）',
       description: '',
       candidates,
+      seed_mode: 'empty',  // Explicitly request empty thread - candidates handled separately
     });
 
     const inviteCount = response.candidates?.length || 0;
@@ -514,6 +518,9 @@ export async function executeFinalize(
 /**
  * P0-5: thread.create
  * Creates a new empty thread
+ * 
+ * SSOT: Default seed_mode is 'empty' - thread starts with no slots or invites.
+ * User adds slots via "候補出して" and invites via separate actions.
  */
 export async function executeThreadCreate(
   intentResult: IntentResult
@@ -523,7 +530,12 @@ export async function executeThreadCreate(
     const title = '日程調整';
     const description = raw.length > 0 ? raw : '';
 
-    const created: any = await threadsApi.create({ title, description });
+    // SSOT: Always create empty thread - no auto-generated slots or invites
+    const created: any = await threadsApi.create({ 
+      title, 
+      description,
+      seed_mode: 'empty',  // Explicitly request empty thread
+    });
 
     const threadId =
       created?.thread?.id ??
@@ -579,9 +591,11 @@ export async function executeInviteList(
     let ensuredThreadId = threadId;
 
     if (!ensuredThreadId) {
+      // SSOT: Create empty thread, then add invites via batch
       const created: any = await threadsApi.create({
         title: '日程調整',
         description: `招待: ${listName}`,
+        seed_mode: 'empty',  // Explicitly request empty thread
       });
       ensuredThreadId = created?.thread?.id ?? created?.thread_id ?? created?.id ?? null;
 

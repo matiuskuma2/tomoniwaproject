@@ -41,11 +41,16 @@ export const threadsApi = {
 
   /**
    * Create new thread
+   * 
+   * SSOT: Default seed_mode is 'empty' - thread starts with no slots or invites.
+   * Use 'legacy_default_slots' for demo/审査用 (creates 3 default slots + AI candidates)
+   * Use 'ai_from_list' with target_list_id to bulk invite from a list
    */
   async create(data: {
     title: string;
     description?: string;
     target_list_id?: string;
+    seed_mode?: 'empty' | 'legacy_default_slots' | 'ai_from_list';
     candidates?: Array<{
       name: string;
       email: string;
@@ -60,9 +65,15 @@ export const threadsApi = {
       invite_url: string;
     }>;
     message?: string;
+    seed_mode?: string;
+    slots_created?: number;
     skipped_count?: number;
   }> {
-    return api.post('/api/threads', data);
+    // SSOT: Always send seed_mode, default to 'empty'
+    return api.post('/api/threads', { 
+      ...data, 
+      seed_mode: data.seed_mode || 'empty' 
+    });
   },
 
   /**

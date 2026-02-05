@@ -27,9 +27,11 @@ export function ThreadCreatePage() {
       setCreating(true);
       setError(null);
       
+      // SSOT: Always create empty thread - slots and invites added via separate actions
       const result = await threadsApi.create({
         title: title.trim(),
         description: description.trim() || undefined,
+        seed_mode: 'empty',
       });
       
       // Navigate to the created thread

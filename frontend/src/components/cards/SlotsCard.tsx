@@ -19,8 +19,20 @@ export function SlotsCard({ status, viewerTz }: SlotsCardProps) {
   // P2-B1: 最新候補のみ表示トグル（デフォルトON）
   const [showLatestOnly, setShowLatestOnly] = useState(true);
   
+  // SSOT: Show empty state for new threads (no slots yet)
   if (status.slots.length === 0) {
-    return null;
+    return (
+      <div className="bg-white rounded-lg shadow p-4 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">候補日時</h3>
+        <div className="text-center py-6 text-gray-500">
+          <div className="text-3xl mb-2">📅</div>
+          <p className="text-sm">候補日時はまだありません</p>
+          <p className="text-xs text-gray-400 mt-1">
+            チャットで「候補出して」または「来週の午後で」などと入力してください
+          </p>
+        </div>
+      </div>
+    );
   }
 
   // Phase Next-6 Day2: Vote counts are now server-side (負債ゼロ)
