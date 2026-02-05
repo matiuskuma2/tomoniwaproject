@@ -23,7 +23,7 @@ import { extractEmails, extractNames } from './utils';
 export const classifyRelation: ClassifierFn = (
   input: string,
   normalizedInput: string,
-  context: IntentContext | undefined,
+  _context: IntentContext | undefined, // Prefixed: may be used in future for context-aware classification
   _activePending: PendingState | null
 ): IntentResult | null => {
   // ----------------------------------------------------------------

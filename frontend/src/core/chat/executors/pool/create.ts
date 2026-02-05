@@ -145,7 +145,7 @@ export async function executePoolCreate(
     // pending.pool.member_select を返す
     const pending: PendingState = {
       kind: 'pending.pool.member_select',
-      threadId: context?.threadId ?? '__global__',
+      threadId: (context as any)?.threadId ?? '__global__',
       createdAt: Date.now(),
       query_name: first.name,
       candidates: first.candidates.map(c => ({
@@ -260,7 +260,7 @@ export async function executePoolCreate(
   // pending.pool.create を返す
   const pending: PendingState = {
     kind: 'pending.pool.create',
-    threadId: context?.threadId ?? '__global__',
+    threadId: (context as any)?.threadId ?? '__global__',
     createdAt: Date.now(),
     draft,
   };
@@ -310,7 +310,7 @@ export async function executePoolCreateFinalize(
     // 2. オーナー自身をメンバーとして追加
     let membersAdded = 0;
     try {
-      await poolsApi.addMember(pool.id, { user_id: pool.owner_user_id });
+      await poolsApi.addMember(pool.id, pool.owner_user_id);
       membersAdded++;
     } catch (e) {
       console.log('[PoolCreate] Owner already a member or error:', e);
@@ -319,7 +319,7 @@ export async function executePoolCreateFinalize(
     // 3. workmate成立済みメンバーを追加
     for (const member of draft.members) {
       try {
-        await poolsApi.addMember(pool.id, { user_id: member.user_id });
+        await poolsApi.addMember(pool.id, member.user_id);
         membersAdded++;
         results.push(`👤 ${member.display_name}さんをメンバーに追加しました`);
       } catch (e) {
@@ -337,7 +337,7 @@ export async function executePoolCreateFinalize(
       const defaultSlots = generateSlots(draft.slot_config);
       if (defaultSlots.length > 0) {
         try {
-          const slotsResponse = await poolsApi.createSlots(pool.id, defaultSlots);
+          const slotsResponse = await poolsApi.createSlots(pool.id, { slots: defaultSlots });
           slotsCreated = slotsResponse.slots?.length || 0;
           if (slotsCreated > 0) {
             results.push(`📅 ${slotsCreated} 件の予約枠を作成しました`);
@@ -467,16 +467,6 @@ export async function executePoolMemberSelected(
   // 全メンバー解決済み → confirm フローへ
   const params = pending.original_params as CreatePoolParams;
   
-  // 新しい intentResult を作成して executePoolCreate を再実行
-  const newIntentResult: IntentResult = {
-    intent: 'pool_booking.create',
-    confidence: 1.0,
-    params: {
-      ...params,
-      member_names: undefined, // 既に解決済み
-    },
-  };
-  
   // resolvedMembers を workmateMembers として扱う（内部処理用）
   // → executePoolCreate を直接呼ばず、draft を作成して pending.pool.create へ
   
@@ -522,7 +512,7 @@ export async function executePoolMemberSelected(
   // pending.pool.create を返す
   const newPending: PendingState = {
     kind: 'pending.pool.create',
-    threadId: context?.threadId ?? '__global__',
+    threadId: (context as any)?.threadId ?? '__global__',
     createdAt: Date.now(),
     draft,
   };
@@ -776,7 +766,7 @@ export async function executePoolAddSlots(
     }
     
     // スロット作成
-    const response = await poolsApi.createSlots(poolId!, slotsToCreate);
+    const response = await poolsApi.createSlots(poolId!, { slots: slotsToCreate });
     const created = response.slots?.length || 0;
     
     return {

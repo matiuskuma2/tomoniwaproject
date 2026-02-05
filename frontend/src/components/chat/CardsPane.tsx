@@ -4,8 +4,13 @@
  * Uses GET /api/threads/:id/status + Calendar API
  * 
  * P1-3: viewerTz is passed down so all time rendering uses users/me.timezone
+ * 
+ * SSOT更新:
+ * - ThreadCardsSwitch を使用して topology/mode に基づいてカードを出し分け
+ * - USE_THREAD_CARDS_SWITCH フラグで段階的移行
  */
 
+import { ThreadCardsSwitch } from '../cards/ThreadCardsSwitch';
 import { ThreadStatusCard } from '../cards/ThreadStatusCard';
 import { InvitesCard } from '../cards/InvitesCard';
 import { SlotsCard } from '../cards/SlotsCard';
@@ -19,6 +24,10 @@ import type {
   CalendarWeekResponse, 
   CalendarFreeBusyResponse 
 } from '../../core/models';
+
+// 段階的移行フラグ: true で ThreadCardsSwitch を使用
+// TODO: ExecutionResult型の統一後に true に切り替え
+const USE_THREAD_CARDS_SWITCH = false;
 
 interface CardsPaneProps {
   status: ThreadStatus_API | null;
@@ -59,7 +68,13 @@ export function CardsPane({ status, loading, calendarData, viewerTz }: CardsPane
       {calendarData?.freebusy && <FreeBusyCard data={calendarData.freebusy} viewerTz={viewerTz} />}
       
       {/* Phase Next-2: Thread Status Cards (show when thread is selected) */}
-      {status && (
+      {/* SSOT: ThreadCardsSwitch で topology/mode に基づいてカードを出し分け */}
+      {status && USE_THREAD_CARDS_SWITCH && (
+        <ThreadCardsSwitch status={status} viewerTz={viewerTz} />
+      )}
+      
+      {/* Legacy: 段階的移行中のフォールバック */}
+      {status && !USE_THREAD_CARDS_SWITCH && (
         <>
           <ThreadStatusCard status={status} viewerTz={viewerTz} />
           <InvitesCard status={status} />

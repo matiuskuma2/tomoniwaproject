@@ -99,7 +99,7 @@ const SLOT_LABEL_PATTERNS = [
 export const classifyPool: ClassifierFn = (
   input: string,
   normalizedInput: string,
-  context: IntentContext | undefined,
+  _context: IntentContext | undefined, // Prefixed: may be used in future for context-aware classification
   activePending: PendingState | null
 ): IntentResult | null => {
   const params: Record<string, unknown> = {};

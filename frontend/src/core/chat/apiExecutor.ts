@@ -98,7 +98,7 @@ import {
   executePoolMemberSelected,
 } from './executors';
 import type { PoolCreateDraft } from './executors/pool/create';
-import type { PendingState } from './pendingTypes';
+// PendingState import removed - already imported at line 23
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
 // P3-PREF: 好み設定 executor (PREF-SET-1: AI確認フロー追加)
@@ -389,6 +389,92 @@ export type ExecutionResultData =
   | { kind: 'chat.response'; payload: {
       intent_detected?: string;
       should_execute?: boolean;
+    } }
+  // D0: 関係性管理 (仕事仲間申請/承諾/拒否)
+  | { kind: 'relation.request.sent'; payload: {
+      request_id: string;
+      invitee_id?: string;
+      invitee_email?: string;
+      invitee_name?: string;
+      requested_type: 'workmate' | 'family';
+      expires_at: string;
+    } }
+  | { kind: 'relation.request.candidates'; payload: {
+      candidates: Array<{
+        id: string;
+        email: string;
+        display_name: string;
+        can_request: boolean;
+      }>;
+      query_name: string;
+    } }
+  | { kind: 'relation.approved'; payload: {
+      relationship_id: string;
+      relation_type: string;
+    } }
+  | { kind: 'relation.declined'; payload: {
+      token: string;
+    } }
+  // G2-A: Pool Booking (予約システム)
+  | { kind: 'pool_booking.booked'; payload: {
+      booking_id: string;
+      pool_id: string;
+      pool_name: string;
+      slot_id: string;
+      slot_label: string;
+      slot_start_at: string;
+      slot_end_at: string;
+      assignee_user_id: string;
+      status: string;
+    } }
+  | { kind: 'pool_booking.cancelled'; payload: {
+      booking_id: string;
+      pool_id: string;
+      status: string;
+    } }
+  | { kind: 'pool_booking.list'; payload: {
+      pool_id?: string;
+      pool_name?: string;
+      pools?: any[];
+      bookings: any[];
+    } }
+  // G2-A: Pool Management
+  | { kind: 'pool.created'; payload: {
+      pool_id: string;
+      pool_name: string;
+      members_count: number;
+      slots_count: number;
+      public_url: string | null;
+    } }
+  | { kind: 'pool.slots_added'; payload: {
+      pool_id: string;
+      pool_name: string;
+      slots_count: number;
+    } }
+  | { kind: 'pool.needs_workmate'; payload: {
+      pool_name: string;
+      needs_workmate: Array<{ name: string; email?: string }>;
+      already_workmate: Array<{ user_id: string; display_name: string }>;
+      not_found: string[];
+    } }
+  | { kind: 'pool_booking.pool_candidates'; payload: {
+      candidates: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        is_active: boolean;
+      }>;
+      query_name: string;
+    } }
+  | { kind: 'pool_booking.slot_candidates'; payload: {
+      pool_name: string;
+      candidates: Array<{
+        id: string;
+        start_at: string;
+        end_at: string;
+        label: string;
+      }>;
+      query_label?: string;
     } };
 
 export interface ExecutionResult {
