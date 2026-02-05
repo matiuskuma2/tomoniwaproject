@@ -83,6 +83,11 @@ export type IntentType =
   | 'relation.request.workmate' // D0: 仕事仲間申請
   | 'relation.approve'          // D0: 申請承諾
   | 'relation.decline'          // D0: 申請拒否
+  // G2-A: Pool Booking（受付プール予約）
+  | 'pool_booking.book'         // G2-A: 予約実行
+  | 'pool_booking.cancel'       // G2-A: 予約キャンセル
+  | 'pool_booking.list'         // G2-A: 予約一覧
+  | 'pool_booking.slots'        // G2-A: 空き枠確認
   | 'unknown';
 
 export interface IntentResult {

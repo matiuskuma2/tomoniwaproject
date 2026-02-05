@@ -45,8 +45,9 @@ CREATE TABLE IF NOT EXISTS pool_bookings_new (
     slot_id            TEXT NOT NULL,
     requester_user_id  TEXT NOT NULL,
     assignee_user_id   TEXT NOT NULL,
+    assignment_algo    TEXT NOT NULL DEFAULT 'round_robin' CHECK(assignment_algo IN ('round_robin')),
     status             TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed', 'completed', 'cancelled')),
-    note               TEXT,
+    requester_note     TEXT,
     cancelled_at       TEXT,             -- Timestamp when cancelled
     cancelled_by       TEXT,             -- User who cancelled
     cancellation_reason TEXT,            -- Reason for cancellation
@@ -61,11 +62,11 @@ CREATE TABLE IF NOT EXISTS pool_bookings_new (
 -- Step 2: Migrate existing data
 INSERT INTO pool_bookings_new (
     id, workspace_id, pool_id, slot_id, requester_user_id, assignee_user_id,
-    status, note, created_at, updated_at
+    assignment_algo, status, requester_note, created_at, updated_at
 )
 SELECT 
     id, workspace_id, pool_id, slot_id, requester_user_id, assignee_user_id,
-    status, requester_note, created_at, updated_at
+    assignment_algo, status, requester_note, created_at, updated_at
 FROM pool_bookings;
 
 -- Step 3: Drop old table and rename new
