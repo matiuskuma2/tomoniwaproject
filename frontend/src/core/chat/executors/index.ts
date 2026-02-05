@@ -142,6 +142,12 @@ export {
   executePoolBookingList,
 } from './pool/book';
 
+// Pool Management executors (G2-A: プール管理)
+export {
+  executePoolCreate,
+  executePoolAddSlots,
+} from './pool/create';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

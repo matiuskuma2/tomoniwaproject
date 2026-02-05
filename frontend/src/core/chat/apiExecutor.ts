@@ -90,6 +90,9 @@ import {
   executePoolBook as executePoolBookFromExecutors,
   executePoolBookingCancel as executePoolBookingCancelFromExecutors,
   executePoolBookingList as executePoolBookingListFromExecutors,
+  // G2-A: Pool Management
+  executePoolCreate as executePoolCreateFromExecutors,
+  executePoolAddSlots as executePoolAddSlotsFromExecutors,
 } from './executors';
 // Phase 1-3b: buildPrepareMessage を shared から直接 import
 import { buildPrepareMessage } from './executors/shared/prepareMessage';
@@ -591,6 +594,12 @@ export async function executeIntent(
       return executeRelationDeclineFromExecutors(intentResult, context);
     
     // G2-A: Pool Booking（受付プール予約）
+    case 'pool_booking.create':
+      return executePoolCreateFromExecutors(intentResult, context);
+    
+    case 'pool_booking.add_slots':
+      return executePoolAddSlotsFromExecutors(intentResult, context);
+    
     case 'pool_booking.book':
       return executePoolBookFromExecutors(intentResult, context);
     

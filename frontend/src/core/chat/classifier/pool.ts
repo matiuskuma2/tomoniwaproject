@@ -4,6 +4,8 @@
  * G2-A: Pool Booking の intent 分類
  * 
  * 対象 intent:
+ * - pool_booking.create: プール作成（管理者）
+ * - pool_booking.add_slots: 枠追加
  * - pool_booking.book: 予約実行（「予約したい」「申し込む」）
  * - pool_booking.cancel: 予約キャンセル
  * - pool_booking.list: 予約一覧
@@ -56,10 +58,30 @@ const SLOTS_PATTERNS = [
   /slots?(\s+available)?/i,
 ];
 
+/** プール作成パターン */
+const CREATE_PATTERNS = [
+  // プール作成
+  /予約(受付|プール)(を)?作(って|成|る)/,
+  /(受付|プール)(を)?作(って|成|る)/,
+  /新しい(受付|プール)(を)?作/,
+  /(相談|面談|営業|サポート).*(受付|窓口|プール).*(作|設置|開設)/,
+  /(作成|設置|開設)(して|する|お願い)/,
+  /create\s+(pool|booking)/i,
+];
+
+/** 枠追加パターン */
+const ADD_SLOTS_PATTERNS = [
+  /枠(を)?(追加|作成|設定)/,
+  /スロット(を)?(追加|作成)/,
+  /(予約)?枠(を)?増やす/,
+  /add\s+slots?/i,
+];
+
 /** プール名抽出パターン */
 const POOL_NAME_PATTERNS = [
-  /「([^」]+)」(の|で|を)?(予約|申し込|空き)/,
-  /([^\s「」]+)プール(の|で|を)?(予約|申し込|空き)/,
+  /「([^」]+)」(の|で|を)?(予約|申し込|空き|受付)/,
+  /([^\s「」]+)(プール|受付|窓口)(の|で|を)?(予約|申し込|空き|作)/,
+  /([^\s「」で]+)(で|の)(予約受付|受付)/,
 ];
 
 /** 枠ラベル抽出パターン */
@@ -118,6 +140,28 @@ export const classifyPool: ClassifierFn = (
           };
         }
       }
+    }
+  }
+  
+  // -------------------- プール作成 --------------------
+  for (const pattern of CREATE_PATTERNS) {
+    if (pattern.test(normalizedInput)) {
+      return {
+        intent: 'pool_booking.create',
+        confidence: 0.85,
+        params: extractCreateParams(input, normalizedInput),
+      };
+    }
+  }
+  
+  // -------------------- 枠追加 --------------------
+  for (const pattern of ADD_SLOTS_PATTERNS) {
+    if (pattern.test(normalizedInput)) {
+      return {
+        intent: 'pool_booking.add_slots',
+        confidence: 0.85,
+        params: extractSlotConfigParams(input, normalizedInput),
+      };
     }
   }
   
@@ -229,4 +273,100 @@ function extractBookingParams(input: string, _normalizedInput: string): Record<s
   }
   
   return { ...params, ...extractPoolParams(input, _normalizedInput) };
+}
+
+/**
+ * プール作成パラメータを抽出
+ */
+function extractCreateParams(input: string, normalizedInput: string): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  
+  // プール名抽出
+  // パターン1: 「〇〇」で予約受付/プールを作って
+  const quotedMatch = input.match(/「([^」]+)」/);
+  if (quotedMatch) {
+    params.pool_name = quotedMatch[1];
+  }
+  
+  // パターン2: 〇〇チームで予約受付
+  const teamMatch = input.match(/([^\s「」]+)(チーム|部|課|グループ)(で|の)(予約|受付)/);
+  if (teamMatch && !params.pool_name) {
+    params.pool_name = `${teamMatch[1]}${teamMatch[2]}`;
+  }
+  
+  // パターン3: 〇〇の予約受付/相談窓口
+  const serviceMatch = input.match(/(相談|面談|営業|サポート|予約)(窓口|受付|プール)/);
+  if (serviceMatch && !params.pool_name) {
+    params.pool_name = `${serviceMatch[1]}${serviceMatch[2]}`;
+  }
+  
+  // 説明文抽出
+  const descMatch = input.match(/説明[：:]\s*(.+?)(?:[。、]|$)/);
+  if (descMatch) {
+    params.description = descMatch[1];
+  }
+  
+  // メンバー抽出（「メンバーは田中/佐藤/山田」形式）
+  const membersMatch = input.match(/メンバー[はは：:]\s*([^。]+)/);
+  if (membersMatch) {
+    const memberNames = membersMatch[1]
+      .split(/[\/、,]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (memberNames.length > 0) {
+      params.member_names = memberNames;
+    }
+  }
+  
+  // 時間枠設定抽出
+  const durationMatch = normalizedInput.match(/(\d+)(分|時間)(枠|の枠)/);
+  if (durationMatch) {
+    const value = parseInt(durationMatch[1], 10);
+    const unit = durationMatch[2];
+    params.duration_minutes = unit === '時間' ? value * 60 : value;
+  }
+  
+  // 範囲抽出
+  if (/来週/.test(normalizedInput)) {
+    params.range = 'next_week';
+  } else if (/来月/.test(normalizedInput)) {
+    params.range = 'next_month';
+  }
+  
+  return params;
+}
+
+/**
+ * スロット設定パラメータを抽出
+ */
+function extractSlotConfigParams(input: string, normalizedInput: string): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  
+  // プール名
+  const poolParams = extractPoolParams(input, normalizedInput);
+  Object.assign(params, poolParams);
+  
+  // 時間枠設定
+  const durationMatch = normalizedInput.match(/(\d+)(分|時間)(枠|の枠)?/);
+  if (durationMatch) {
+    const value = parseInt(durationMatch[1], 10);
+    const unit = durationMatch[2];
+    params.duration_minutes = unit === '時間' ? value * 60 : value;
+  }
+  
+  // 範囲
+  if (/来週/.test(normalizedInput)) {
+    params.range = 'next_week';
+  } else if (/来月/.test(normalizedInput)) {
+    params.range = 'next_month';
+  }
+  
+  // 時間帯
+  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:\-]?[-〜~](\d{1,2})時?/);
+  if (timeRangeMatch) {
+    params.start_hour = parseInt(timeRangeMatch[1], 10);
+    params.end_hour = parseInt(timeRangeMatch[2], 10);
+  }
+  
+  return params;
 }

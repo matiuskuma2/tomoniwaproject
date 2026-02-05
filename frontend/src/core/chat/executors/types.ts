@@ -215,6 +215,18 @@ export type ExecutionResultData =
         label: string;
       }>;
       query_label?: string;
+    } }
+  | { kind: 'pool.created'; payload: {
+      pool_id: string;
+      pool_name: string;
+      members_count: number;
+      slots_count: number;
+      public_url: string | null;
+    } }
+  | { kind: 'pool.slots_added'; payload: {
+      pool_id: string;
+      pool_name: string;
+      slots_count: number;
     } };
 
 export interface ExecutionResult {

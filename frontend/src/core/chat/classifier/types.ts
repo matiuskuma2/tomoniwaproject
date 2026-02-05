@@ -84,6 +84,8 @@ export type IntentType =
   | 'relation.approve'          // D0: 申請承諾
   | 'relation.decline'          // D0: 申請拒否
   // G2-A: Pool Booking（受付プール予約）
+  | 'pool_booking.create'       // G2-A: プール作成（管理者）
+  | 'pool_booking.add_slots'    // G2-A: 枠追加
   | 'pool_booking.book'         // G2-A: 予約実行
   | 'pool_booking.cancel'       // G2-A: 予約キャンセル
   | 'pool_booking.list'         // G2-A: 予約一覧
