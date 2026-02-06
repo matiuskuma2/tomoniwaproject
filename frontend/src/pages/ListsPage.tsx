@@ -115,11 +115,34 @@ export function ListsPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* P0-NAV: People Hub 誘導バナー */}
+      <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <span className="text-2xl mr-3">👥</span>
+            <div>
+              <p className="text-sm font-medium text-blue-800">
+                People Hub に統合されました
+              </p>
+              <p className="text-xs text-blue-600">
+                連絡先・リスト・つながりを1画面で管理できます
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/people')}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+          >
+            People Hub へ →
+          </button>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="md:flex md:items-center md:justify-between mb-8">
         <div className="flex-1 min-w-0">
           <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
-            リスト管理
+            リスト管理（旧画面）
           </h2>
           <p className="mt-1 text-sm text-gray-500">
             送信セグメント（一括招待用）

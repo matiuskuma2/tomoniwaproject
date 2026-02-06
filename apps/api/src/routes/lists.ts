@@ -287,6 +287,17 @@ app.post('/:id/members', async (c) => {
       return c.json({ error: 'Contact not found' }, 404);
     }
 
+    // P0-LISTS-SAFETY: メール必須チェック（Hard fail）
+    // リストは一括招待用のため、メールが無い連絡先は追加不可
+    if (!contact.email || contact.email.trim() === '') {
+      return c.json({
+        error: 'LIST_MEMBER_EMAIL_REQUIRED',
+        message: `このリストは招待用のためメールが必要です。「${contact.display_name || contact.id}」にメールを登録してください。`,
+        contact_id: contact.id,
+        contact_display_name: contact.display_name,
+      }, 400);
+    }
+
     const member = await repo.addMember(listId, body.contact_id, workspaceId);
 
     return c.json({ member }, 201);

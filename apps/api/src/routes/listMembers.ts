@@ -150,6 +150,33 @@ listMembersRoutes.post('/lists/:listId/members/batch', async (c) => {
       }, 400);
     }
 
+    // P0-LISTS-SAFETY: メール必須チェック（Hard fail）
+    // リストは一括招待用のため、メールが無い連絡先は追加不可
+    const validContactIds = Array.from(validContactIdsSet);
+    if (validContactIds.length > 0) {
+      const placeholders = validContactIds.map(() => '?').join(',');
+      const contactsWithoutEmail = await c.env.DB.prepare(
+        `SELECT id, display_name FROM contacts 
+         WHERE id IN (${placeholders}) 
+         AND workspace_id = ? AND owner_user_id = ?
+         AND (email IS NULL OR email = '')`
+      ).bind(...validContactIds, workspaceId, ownerUserId).all<{ id: string; display_name: string | null }>();
+
+      if (contactsWithoutEmail.results && contactsWithoutEmail.results.length > 0) {
+        const missingNames = contactsWithoutEmail.results
+          .slice(0, 5)
+          .map(c => c.display_name || c.id)
+          .join(', ');
+        
+        return c.json({
+          error: 'LIST_MEMBER_EMAIL_REQUIRED',
+          message: `このリストは招待用のためメールが必要です。メール未設定: ${missingNames}${contactsWithoutEmail.results.length > 5 ? ` 他${contactsWithoutEmail.results.length - 5}件` : ''}`,
+          missing_email_contact_ids: contactsWithoutEmail.results.map(c => c.id),
+          request_id: requestId,
+        }, 400);
+      }
+    }
+
     // P0-1: Bulk insert with Transaction + Chunk (200件×N)
     // - Deduplicate contact_ids first (無駄なクエリを減らす)
     // - Split into 200-item chunks to avoid timeout

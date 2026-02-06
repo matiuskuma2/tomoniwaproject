@@ -283,6 +283,7 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [loading, setLoading] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState(false); // PR-P0-INBOX-READ: 一括操作中フラグ
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -313,16 +314,33 @@ export function NotificationBell() {
 
   const handleNotificationClick = async (notification: InboxNotification) => {
     // NOTIFICATION_SYSTEM_PLAN.md: 既読ロジック修正
-    // クリック時に既読APIを呼ぶ
+    // PR-P0-INBOX-READ: 即ローカル既読 + API呼び出し
+    // 
+    // SSOT原則:
+    // 1. クリック = 既読（事実を即記録）
+    // 2. ローカル状態を即更新（再取得待ちで未読が残る事故を防ぐ）
+    // 3. API呼び出しは非同期（失敗してもローカルは既読のまま）
+    // 4. refreshInbox()はバックグラウンドで実行（UIブロックしない）
+    
     if (!isNotificationRead(notification)) {
-      try {
-        await inboxApi.markAsRead(notification.id);
-        // キャッシュを更新（UIに反映）
-        await refreshInbox();
-      } catch (error) {
-        console.error('Failed to mark notification as read:', error);
-        // 既読失敗してもナビゲーションは続行
-      }
+      // 1. 即ローカル既読（UIを即座に更新）
+      setNotifications(prev => prev.map(n => 
+        n.id === notification.id 
+          ? { ...n, is_read: true, read: true } // 新旧フィールド両対応
+          : n
+      ));
+      
+      // 2. API呼び出し（非同期、await不要）
+      inboxApi.markAsRead(notification.id)
+        .then(() => {
+          // 成功後、バックグラウンドでキャッシュ更新
+          refreshInbox().catch(console.error);
+        })
+        .catch(error => {
+          console.error('Failed to mark notification as read:', error);
+          // API失敗してもローカルは既読のまま
+          // → 次回ロード時にサーバーの状態と同期される
+        });
     }
 
     // Get notification type (supports both new and legacy field names)
@@ -376,6 +394,54 @@ export function NotificationBell() {
     loadNotifications();
   };
 
+  // PR-P0-INBOX-READ: 全既読ボタン
+  const handleMarkAllRead = async () => {
+    if (actionInProgress || unreadCount === 0) return;
+    
+    setActionInProgress(true);
+    
+    // 1. 即ローカル全既読
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true, read: true })));
+    
+    // 2. API呼び出し
+    try {
+      await inboxApi.markAllAsRead();
+      // バックグラウンドでキャッシュ更新
+      refreshInbox().catch(console.error);
+    } catch (error) {
+      console.error('Failed to mark all as read:', error);
+      // 失敗してもローカルは既読のまま（次回ロードで同期）
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
+  // PR-P0-INBOX-READ: 既読クリアボタン（受信箱が詰まる事故防止）
+  const handleClearRead = async () => {
+    const readCount = notifications.filter(n => isNotificationRead(n)).length;
+    if (actionInProgress || readCount === 0) return;
+    
+    if (!window.confirm(`既読の通知 ${readCount}件を削除しますか？`)) return;
+    
+    setActionInProgress(true);
+    
+    // 1. 即ローカル削除
+    setNotifications(prev => prev.filter(n => !isNotificationRead(n)));
+    
+    // 2. API呼び出し
+    try {
+      await inboxApi.clearRead();
+      // バックグラウンドでキャッシュ更新
+      refreshInbox().catch(console.error);
+    } catch (error) {
+      console.error('Failed to clear read notifications:', error);
+      // 失敗したら再取得
+      loadNotifications();
+    } finally {
+      setActionInProgress(false);
+    }
+  };
+
   return (
     <div className="relative">
       {/* Bell Icon */}
@@ -404,11 +470,31 @@ export function NotificationBell() {
 
           {/* Drawer Panel */}
           <div className="absolute right-0 top-12 w-96 max-h-[80vh] bg-white rounded-lg shadow-xl z-50 overflow-hidden">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">通知</h3>
-              {unreadCount > 0 && (
-                <span className="text-sm text-gray-500">{unreadCount}件の未読</span>
-              )}
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-gray-900">通知</h3>
+                {unreadCount > 0 && (
+                  <span className="text-sm text-gray-500">{unreadCount}件の未読</span>
+                )}
+              </div>
+              {/* PR-P0-INBOX-READ: 一括操作ボタン */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleMarkAllRead}
+                  disabled={actionInProgress || unreadCount === 0}
+                  className="text-xs text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  すべて既読
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={handleClearRead}
+                  disabled={actionInProgress || notifications.filter(n => isNotificationRead(n)).length === 0}
+                  className="text-xs text-gray-600 hover:text-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                  既読を削除
+                </button>
+              </div>
             </div>
 
             <div className="overflow-y-auto max-h-[calc(80vh-60px)]">

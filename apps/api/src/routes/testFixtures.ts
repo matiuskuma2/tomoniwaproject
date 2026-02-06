@@ -1153,6 +1153,113 @@ app.delete('/users/pair', async (c) => {
  * 
  * @route DELETE /test/fixtures/inbox/:userId
  */
+/**
+ * Create Inbox Notification Fixture (PR-P0-INBOX-READ)
+ * 
+ * E2Eテスト用に inbox 通知を作成
+ * 
+ * @route POST /test/fixtures/inbox
+ * @body {
+ *   user_id: string,           // ユーザー ID (e2e- prefix required)
+ *   type: string,              // 通知タイプ
+ *   title: string,             // タイトル
+ *   message?: string,          // メッセージ
+ *   priority?: string,         // 優先度 (normal | high | low)
+ *   action_url?: string        // アクション URL
+ * }
+ * @returns {
+ *   success: true,
+ *   id: string
+ * }
+ */
+app.post('/inbox', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'TestFixtures', handler: 'create-inbox' });
+
+  // 本番環境での実行を絶対に阻止
+  if (env.ENVIRONMENT === 'production') {
+    log.warn('Attempted to use test fixtures in production');
+    return c.json({ error: 'Forbidden in production' }, 403);
+  }
+
+  try {
+    const body = await c.req.json();
+    const {
+      user_id,
+      type,
+      title,
+      message = null,
+      priority = 'normal',
+      action_url = null,
+      action_type = null,
+      action_target_id = null
+    } = body as {
+      user_id: string;
+      type: string;
+      title: string;
+      message?: string;
+      priority?: string;
+      action_url?: string;
+      action_type?: string;
+      action_target_id?: string;
+    };
+
+    // Validate required fields
+    if (!user_id || !type || !title) {
+      return c.json({ 
+        error: 'invalid_request', 
+        message: 'user_id, type, title are required' 
+      }, 400);
+    }
+
+    // E2E ユーザーのみ許可
+    if (!user_id.startsWith('e2e-')) {
+      return c.json({ error: 'Only e2e- prefixed users allowed' }, 403);
+    }
+
+    const now = new Date().toISOString();
+    const id = `inbox-e2e-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    await env.DB.prepare(`
+      INSERT INTO inbox (
+        id, user_id, type, title, message, 
+        action_type, action_target_id, action_url, 
+        priority, is_read, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    `).bind(
+      id,
+      user_id,
+      type,
+      title,
+      message,
+      action_type,
+      action_target_id,
+      action_url,
+      priority,
+      now
+    ).run();
+
+    log.debug('E2E inbox notification created', { id, user_id, type, title });
+
+    return c.json({
+      success: true,
+      id,
+      user_id,
+      type,
+      title
+    }, 201);
+
+  } catch (error) {
+    log.error('Failed to create E2E inbox notification', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    return c.json({ 
+      error: 'internal_error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 app.delete('/inbox/:userId', async (c) => {
   const { env } = c;
   const log = createLogger(env, { module: 'TestFixtures', handler: 'clear-inbox' });
@@ -1369,6 +1476,7 @@ app.get('/health', (c) => {
       'POST /one-to-many-candidates',
       'POST /users/pair',
       'POST /relationships',
+      'POST /inbox',
       'DELETE /one-on-one/:token',
       'DELETE /freebusy-context/:token',
       'DELETE /open-slots/:token',
