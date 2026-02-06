@@ -1,66 +1,52 @@
 /**
  * People Hub Page - P1 SSOT統合UI
  * 
- * 連絡先 / リスト / つながり を単一ページで管理
+ * People中心の統合ビュー（連絡先/リスト/つながりを1画面で管理）
  * 
  * 設計原則:
- * - SSOT: contacts テーブルが台帳
+ * - SSOT: GET /api/people で統合データ取得
  * - UIは監査専用: 登録はチャット経由
- * - email必須化: 一括招待の成立を保証
+ * - 1人=1行: person_keyで重複排除
+ * - email必須警告: リスト招待の成立を保証
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { contactsApi, listsApi } from '../core/api';
-import { 
-  relationshipsApi,
-  getRelationTypeLabel, 
-  getRelationTypeBadgeClass,
-  type RelationType,
-  type Relationship,
-} from '../core/api/relationships';
-import { 
-  getRelationshipMap,
-  invalidateRelationships,
-  type RelationshipInfo 
-} from '../core/cache/relationshipsCache';
+import {
+  peopleApi,
+  getConnectionStatusLabel,
+  getConnectionStatusBadgeClass,
+  listsApi,
+  type Person,
+  type ConnectionStatus,
+  type PeopleListResponse,
+  type AuditSummary,
+} from '../core/api';
+import type { List } from '../core/models';
 import { getLists, subscribeLists } from '../core/cache';
-import type { Contact, List, ListMember } from '../core/models';
 
 // ============================================================
 // Types
 // ============================================================
 
-type TabId = 'contacts' | 'lists' | 'relations';
-
-interface TabConfig {
-  id: TabId;
-  label: string;
-  icon: string;
-}
-
-const TABS: TabConfig[] = [
-  { id: 'contacts', label: '連絡先', icon: '👤' },
-  { id: 'lists', label: 'リスト', icon: '📋' },
-  { id: 'relations', label: 'つながり', icon: '🤝' },
-];
+type FilterType = 'all' | ConnectionStatus;
 
 // ============================================================
-// Relationship Badge Component
+// Connection Badge Component
 // ============================================================
 
-interface RelationshipBadgeProps {
-  relationType: RelationType;
-  showStranger?: boolean;
+interface ConnectionBadgeProps {
+  status: ConnectionStatus;
+  showExternal?: boolean;
 }
 
-function RelationshipBadge({ relationType, showStranger = false }: RelationshipBadgeProps) {
-  if (relationType === 'stranger' && !showStranger) {
+function ConnectionBadge({ status, showExternal = false }: ConnectionBadgeProps) {
+  if (status === 'external' && !showExternal) {
     return null;
   }
   
-  const label = getRelationTypeLabel(relationType);
-  const colorClass = getRelationTypeBadgeClass(relationType);
+  const label = getConnectionStatusLabel(status);
+  const colorClass = getConnectionStatusBadgeClass(status);
   
   return (
     <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colorClass}`}>
@@ -84,455 +70,203 @@ function EmailWarningBadge({ hasEmail }: { hasEmail: boolean }) {
 }
 
 // ============================================================
-// Contacts Tab
+// List Tags Component
 // ============================================================
 
-interface ContactsTabProps {
-  searchQuery: string;
+function ListTags({ lists }: { lists: { list_id: string; list_name: string }[] }) {
+  if (lists.length === 0) return null;
+  
+  const displayLists = lists.slice(0, 2);
+  const remaining = lists.length - 2;
+  
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {displayLists.map((list) => (
+        <span
+          key={list.list_id}
+          className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800"
+        >
+          {list.list_name}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
+          +{remaining}
+        </span>
+      )}
+    </div>
+  );
 }
 
-function ContactsTab({ searchQuery }: ContactsTabProps) {
-  const navigate = useNavigate();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [relationshipMap, setRelationshipMap] = useState<Map<string, RelationshipInfo>>(new Map());
+// ============================================================
+// Audit Banner Component
+// ============================================================
 
-  const loadContacts = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [contactsRes, relMap] = await Promise.all([
-        contactsApi.list({ q: searchQuery || undefined, limit: 100 }),
-        getRelationshipMap(),
-      ]);
-      setContacts(contactsRes.items || []);
-      setRelationshipMap(relMap);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '読み込みに失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  }, [searchQuery]);
+interface AuditBannerProps {
+  audit: AuditSummary | null;
+  loading: boolean;
+}
 
-  useEffect(() => {
-    loadContacts();
-  }, [loadContacts]);
-
-  const getContactRelationType = (contact: Contact): RelationType => {
-    if (contact.user_id) {
-      const info = relationshipMap.get(contact.user_id);
-      if (info) return info.relation_type;
-    }
-    if (contact.relationship_type === 'family') return 'family';
-    if (contact.relationship_type === 'coworker') return 'workmate';
-    return 'stranger';
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
+function AuditBanner({ audit, loading }: AuditBannerProps) {
+  if (loading || !audit) {
+    return null;
   }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-        {error}
-      </div>
-    );
+  
+  const hasIssues = audit.missing_email_count > 0 || audit.pending_request_count > 0;
+  
+  if (!hasIssues) {
+    return null;
   }
-
-  if (contacts.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-          <span className="text-2xl">👤</span>
-        </div>
-        <p className="text-gray-500">連絡先がありません</p>
-        <p className="text-sm text-gray-400 mt-1">チャットで名刺を取り込むか、連絡先を追加してください</p>
-        <button
-          onClick={() => navigate('/chat')}
-          className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          チャットで追加 →
-        </button>
-      </div>
-    );
-  }
-
+  
   return (
-    <div className="bg-white shadow rounded-lg overflow-hidden">
-      <ul className="divide-y divide-gray-200">
-        {contacts.map((contact) => {
-          const relationType = getContactRelationType(contact);
-          
-          return (
-            <li key={contact.id} className="px-4 py-4 hover:bg-gray-50 cursor-pointer">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {contact.display_name || '(名前未設定)'}
-                    </p>
-                    <RelationshipBadge relationType={relationType} />
-                    <EmailWarningBadge hasEmail={!!contact.email} />
-                  </div>
-                  {contact.email && (
-                    <p className="text-sm text-gray-500 truncate">{contact.email}</p>
-                  )}
-                </div>
-                <div className="ml-4 flex-shrink-0 flex gap-2">
-                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
-                    {contact.kind === 'internal_user' ? '内部' : '外部'}
-                  </span>
-                </div>
-              </div>
-            </li>
-          );
-        })}
+    <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+      <h3 className="text-sm font-medium text-amber-800 mb-2">⚠️ 注意が必要な項目</h3>
+      <ul className="text-sm text-amber-700 space-y-1">
+        {audit.missing_email_count > 0 && (
+          <li>
+            • {audit.missing_email_count}人がメール未設定です（一括招待できません）
+          </li>
+        )}
+        {audit.pending_request_count > 0 && (
+          <li>
+            • {audit.pending_request_count}件のつながり申請が保留中です
+          </li>
+        )}
       </ul>
     </div>
   );
 }
 
 // ============================================================
-// Lists Tab
+// Chat Modal Component
 // ============================================================
 
-interface ListsTabProps {
-  searchQuery: string;
+interface ChatModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onNavigate: () => void;
 }
 
-function ListsTab({ searchQuery }: ListsTabProps) {
-  const navigate = useNavigate();
-  const [lists, setLists] = useState<List[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedList, setSelectedList] = useState<string | null>(null);
-  const [members, setMembers] = useState<ListMember[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
-
-  const loadLists = useCallback(async () => {
-    try {
-      setLoading(true);
-      const items = await getLists();
-      // フィルタリング
-      const filtered = searchQuery
-        ? items.filter(l => l.name.toLowerCase().includes(searchQuery.toLowerCase()))
-        : items;
-      setLists(filtered);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '読み込みに失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  }, [searchQuery]);
-
-  useEffect(() => {
-    loadLists();
-    const unsubscribe = subscribeLists((updatedLists) => {
-      if (updatedLists) setLists(updatedLists);
-    });
-    return unsubscribe;
-  }, [loadLists]);
-
-  const loadMembers = async (listId: string) => {
-    setSelectedList(listId);
-    setMembersLoading(true);
-    try {
-      const response = await listsApi.getMembers(listId);
-      setMembers(response.items || []);
-    } catch (err) {
-      console.error('Failed to load members:', err);
-    } finally {
-      setMembersLoading(false);
-    }
-  };
-
-  const closeMembers = () => {
-    setSelectedList(null);
-    setMembers([]);
-  };
-
-  // email が設定されていないメンバー数をカウント
-  const countMissingEmails = (membersList: ListMember[]) => {
-    return membersList.filter(m => !m.contact_email).length;
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-        {error}
-      </div>
-    );
-  }
-
-  if (lists.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-          <span className="text-2xl">📋</span>
-        </div>
-        <p className="text-gray-500">リストがありません</p>
-        <p className="text-sm text-gray-400 mt-1">チャットで「◯◯リスト作って」と言うと作成できます</p>
-        <button
-          onClick={() => navigate('/chat')}
-          className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          チャットで作成 →
-        </button>
-      </div>
-    );
-  }
-
+function ChatModal({ isOpen, onClose, onNavigate }: ChatModalProps) {
+  if (!isOpen) return null;
+  
+  const examples = [
+    '田中太郎さん（tanaka@example.com）を連絡先に追加して',
+    '名刺を取り込みたい',
+    '営業チームのリストを作成して',
+    '山田さんを仕事仲間として登録したい',
+  ];
+  
   return (
-    <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {lists.map((list) => (
-          <div
-            key={list.id}
-            className="bg-white shadow rounded-lg p-6 hover:shadow-md transition cursor-pointer"
-            onClick={() => loadMembers(list.id)}
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900">
+            💬 チャットで追加
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-500"
           >
-            <h3 className="text-lg font-medium text-gray-900 mb-2">{list.name}</h3>
-            {list.description && (
-              <p className="text-sm text-gray-500 mb-4 line-clamp-2">{list.description}</p>
-            )}
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>メンバー確認 →</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Members Modal */}
-      {selectedList && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
-                メンバー一覧
-                {members.length > 0 && (
-                  <span className="ml-2 text-sm text-gray-500">
-                    ({members.length}人)
-                  </span>
-                )}
-              </h3>
-              <button
-                onClick={closeMembers}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Email警告 */}
-            {members.length > 0 && countMissingEmails(members) > 0 && (
-              <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded">
-                ⚠️ {countMissingEmails(members)}人がメール未設定です（一括招待できません）
-              </div>
-            )}
-
-            {membersLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-              </div>
-            ) : members.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">
-                メンバーがいません
-                <br />
-                <span className="text-sm">チャットで「このリストに追加」と言うと追加できます</span>
-              </p>
-            ) : (
-              <ul className="divide-y divide-gray-200">
-                {members.map((member) => (
-                  <li key={member.id} className="py-3">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {member.contact_display_name || '(名前未設定)'}
-                        </p>
-                        {member.contact_email ? (
-                          <p className="text-sm text-gray-500">{member.contact_email}</p>
-                        ) : (
-                          <p className="text-sm text-red-500">⚠️ メール未設定</p>
-                        )}
-                      </div>
-                      <EmailWarningBadge hasEmail={!!member.contact_email} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+            ✕
+          </button>
         </div>
-      )}
-    </>
+        
+        <p className="text-sm text-gray-600 mb-4">
+          連絡先の追加・名刺の取り込み・リストの作成は、チャットで行うと安全です。
+          AIアシスタントが確認しながら正確に登録します。
+        </p>
+        
+        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <p className="text-xs text-gray-500 mb-2">例：</p>
+          <ul className="space-y-2">
+            {examples.map((example, i) => (
+              <li key={i} className="text-sm text-gray-700">
+                「{example}」
+              </li>
+            ))}
+          </ul>
+        </div>
+        
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            キャンセル
+          </button>
+          <button
+            onClick={onNavigate}
+            className="flex-1 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+          >
+            チャットを開く
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ============================================================
-// Relations Tab
+// List Filter Dropdown
 // ============================================================
 
-interface RelationsTabProps {
-  searchQuery: string;
+interface ListFilterProps {
+  lists: List[];
+  selectedListId: string | null;
+  onSelect: (listId: string | null) => void;
 }
 
-function RelationsTab({ searchQuery }: RelationsTabProps) {
-  const navigate = useNavigate();
-  const [relationships, setRelationships] = useState<Relationship[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'workmate' | 'family'>('all');
-  const [removingId, setRemovingId] = useState<string | null>(null);
-
-  const loadRelationships = useCallback(async () => {
-    try {
-      setLoading(true);
-      const all = await relationshipsApi.listAll();
-      setRelationships(all);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '読み込みに失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadRelationships();
-  }, [loadRelationships]);
-
-  const handleRemove = async (relationshipId: string) => {
-    if (!window.confirm('このつながりを解除しますか？')) return;
-    
-    setRemovingId(relationshipId);
-    try {
-      await relationshipsApi.remove(relationshipId);
-      invalidateRelationships();
-      await loadRelationships();
-    } catch (err) {
-      console.error('Failed to remove relationship:', err);
-      alert('解除に失敗しました');
-    } finally {
-      setRemovingId(null);
-    }
-  };
-
-  // フィルタ + 検索
-  const filtered = relationships.filter(r => {
-    if (filter !== 'all' && r.relation_type !== filter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const name = r.other_user.display_name?.toLowerCase() || '';
-      const email = r.other_user.email?.toLowerCase() || '';
-      if (!name.includes(q) && !email.includes(q)) return false;
-    }
-    return true;
-  });
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-        {error}
-      </div>
-    );
-  }
-
+function ListFilterDropdown({ lists, selectedListId, onSelect }: ListFilterProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const selectedList = lists.find(l => l.id === selectedListId);
+  
   return (
-    <div>
-      {/* Filter */}
-      <div className="mb-4 flex gap-2">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-3 py-1 text-sm rounded-full ${
-            filter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          すべて
-        </button>
-        <button
-          onClick={() => setFilter('workmate')}
-          className={`px-3 py-1 text-sm rounded-full ${
-            filter === 'workmate' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-          }`}
-        >
-          仕事仲間
-        </button>
-        <button
-          onClick={() => setFilter('family')}
-          className={`px-3 py-1 text-sm rounded-full ${
-            filter === 'family' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'
-          }`}
-        >
-          家族
-        </button>
-      </div>
-
-      {/* New Request Button */}
-      <div className="mb-4">
-        <button
-          onClick={() => navigate('/relationships/request')}
-          className="inline-flex items-center px-4 py-2 border border-blue-600 rounded-md text-sm font-medium text-blue-600 bg-white hover:bg-blue-50"
-        >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-          </svg>
-          つながり申請
-        </button>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-            <span className="text-2xl">🤝</span>
-          </div>
-          <p className="text-gray-500">つながりがありません</p>
-          <p className="text-sm text-gray-400 mt-1">仕事仲間や家族を追加すると、予定共有やPool予約ができます</p>
-        </div>
-      ) : (
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <ul className="divide-y divide-gray-200">
-            {filtered.map((rel) => (
-              <li key={rel.id} className="px-4 py-4 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {rel.other_user.display_name || '(名前未設定)'}
-                      </p>
-                      <RelationshipBadge relationType={rel.relation_type} />
-                    </div>
-                    <p className="text-sm text-gray-500 truncate">{rel.other_user.email}</p>
-                  </div>
-                  <div className="ml-4 flex-shrink-0 flex gap-2">
-                    <button
-                      onClick={() => handleRemove(rel.id)}
-                      disabled={removingId === rel.id}
-                      className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
-                    >
-                      {removingId === rel.id ? '解除中...' : '解除'}
-                    </button>
-                  </div>
-                </div>
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`px-3 py-1 text-sm rounded-full flex items-center gap-1 ${
+          selectedListId
+            ? 'bg-purple-600 text-white'
+            : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+        }`}
+      >
+        📋 {selectedList?.name || 'リスト'}
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      
+      {isOpen && (
+        <div className="absolute mt-1 w-48 bg-white rounded-md shadow-lg z-10 border">
+          <ul className="py-1">
+            <li>
+              <button
+                onClick={() => {
+                  onSelect(null);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-4 py-2 text-sm ${
+                  !selectedListId ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                すべてのリスト
+              </button>
+            </li>
+            {lists.map((list) => (
+              <li key={list.id}>
+                <button
+                  onClick={() => {
+                    onSelect(list.id);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 text-sm ${
+                    selectedListId === list.id ? 'bg-purple-50 text-purple-700' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {list.name}
+                </button>
               </li>
             ))}
           </ul>
@@ -549,23 +283,123 @@ function RelationsTab({ searchQuery }: RelationsTabProps) {
 export function PeopleHubPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState('');
   
-  // タブ状態（URL param から）
-  const tabParam = searchParams.get('tab') as TabId | null;
-  const activeTab: TabId = tabParam && ['contacts', 'lists', 'relations'].includes(tabParam) 
-    ? tabParam 
-    : 'contacts';
-
-  const handleTabChange = (tab: TabId) => {
-    setSearchParams({ tab });
+  // State
+  const [people, setPeople] = useState<Person[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [lists, setLists] = useState<List[]>([]);
+  const [audit, setAudit] = useState<AuditSummary | null>(null);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [showChatModal, setShowChatModal] = useState(false);
+  
+  // Pagination
+  const [offset, setOffset] = useState(0);
+  const limit = 50;
+  
+  // Load lists for filter dropdown
+  useEffect(() => {
+    const loadLists = async () => {
+      try {
+        const items = await getLists();
+        setLists(items);
+      } catch (err) {
+        console.error('Failed to load lists:', err);
+      }
+    };
+    loadLists();
+    
+    const unsubscribe = subscribeLists((updatedLists) => {
+      if (updatedLists) setLists(updatedLists);
+    });
+    return unsubscribe;
+  }, []);
+  
+  // Load audit summary
+  useEffect(() => {
+    const loadAudit = async () => {
+      try {
+        setAuditLoading(true);
+        const summary = await peopleApi.getAudit();
+        setAudit(summary);
+      } catch (err) {
+        console.error('Failed to load audit:', err);
+      } finally {
+        setAuditLoading(false);
+      }
+    };
+    loadAudit();
+  }, []);
+  
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+      setOffset(0); // Reset pagination on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  
+  // Load people
+  const loadPeople = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response: PeopleListResponse = await peopleApi.list({
+        q: debouncedQuery || undefined,
+        connection_status: filter !== 'all' ? filter : undefined,
+        list_id: selectedListId || undefined,
+        limit,
+        offset,
+      });
+      
+      setPeople(response.items);
+      setTotal(response.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '読み込みに失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedQuery, filter, selectedListId, offset]);
+  
+  useEffect(() => {
+    loadPeople();
+  }, [loadPeople]);
+  
+  // Handle filter change
+  const handleFilterChange = (newFilter: FilterType) => {
+    setFilter(newFilter);
+    setOffset(0);
   };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    // 検索は各タブコンポーネントで処理
+  
+  // Handle list filter change
+  const handleListFilterChange = (listId: string | null) => {
+    setSelectedListId(listId);
+    setOffset(0);
   };
-
+  
+  // Pagination
+  const hasMore = offset + limit < total;
+  const hasPrevious = offset > 0;
+  
+  const handleNextPage = () => {
+    if (hasMore) {
+      setOffset(offset + limit);
+    }
+  };
+  
+  const handlePreviousPage = () => {
+    if (hasPrevious) {
+      setOffset(Math.max(0, offset - limit));
+    }
+  };
+  
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -573,68 +407,219 @@ export function PeopleHubPage() {
         <div className="md:flex md:items-center md:justify-between">
           <div className="flex-1 min-w-0">
             <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
-              People Hub
+              👥 People
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              連絡先・リスト・つながりの一元管理
+              {total > 0 ? `${total}人` : ''} • 連絡先・リスト・つながりの一元管理
             </p>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
+          <div className="mt-4 flex md:mt-0 md:ml-4 gap-2">
             <button
-              onClick={() => navigate('/chat')}
+              onClick={() => navigate('/relationships/request')}
+              className="inline-flex items-center px-4 py-2 border border-blue-600 rounded-md text-sm font-medium text-blue-600 bg-white hover:bg-blue-50"
+            >
+              🤝 つながり申請
+            </button>
+            <button
+              onClick={() => setShowChatModal(true)}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
             >
-              チャットで追加
+              💬 チャットで追加
             </button>
           </div>
         </div>
       </div>
 
+      {/* Audit Banner */}
+      <AuditBanner audit={audit} loading={auditLoading} />
+
       {/* Search */}
-      <form onSubmit={handleSearch} className="mb-6">
-        <div className="flex gap-2">
+      <div className="mb-6">
+        <div className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="名前、メールアドレスで検索..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           />
-          <button
-            type="submit"
-            className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
-          >
-            検索
-          </button>
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
         </div>
-      </form>
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`
-                py-4 px-1 border-b-2 font-medium text-sm
-                ${activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-            >
-              <span className="mr-2">{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'contacts' && <ContactsTab searchQuery={searchQuery} />}
-      {activeTab === 'lists' && <ListsTab searchQuery={searchQuery} />}
-      {activeTab === 'relations' && <RelationsTab searchQuery={searchQuery} />}
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-2 items-center">
+        <span className="text-sm text-gray-500 mr-2">フィルター:</span>
+        
+        {/* Connection status filters */}
+        {[
+          { value: 'all' as const, label: 'すべて' },
+          { value: 'workmate' as const, label: '仕事仲間' },
+          { value: 'family' as const, label: '家族' },
+          { value: 'external' as const, label: '外部' },
+          { value: 'pending' as const, label: '申請中' },
+        ].map(({ value, label }) => (
+          <button
+            key={value}
+            onClick={() => handleFilterChange(value)}
+            className={`px-3 py-1 text-sm rounded-full ${
+              filter === value
+                ? value === 'all' 
+                  ? 'bg-gray-800 text-white'
+                  : getConnectionStatusBadgeClass(value).replace('bg-', 'bg-').replace('100', '600').replace('text-', 'text-white ').replace('800', '')
+                : value === 'all'
+                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : getConnectionStatusBadgeClass(value) + ' hover:opacity-80'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        
+        {/* List filter dropdown */}
+        {lists.length > 0 && (
+          <ListFilterDropdown
+            lists={lists}
+            selectedListId={selectedListId}
+            onSelect={handleListFilterChange}
+          />
+        )}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && people.length === 0 && (
+        <div className="text-center py-12">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
+            <span className="text-2xl">👥</span>
+          </div>
+          <p className="text-gray-500">
+            {debouncedQuery || filter !== 'all' || selectedListId
+              ? '条件に一致する人がいません'
+              : '連絡先がありません'}
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            チャットで名刺を取り込むか、連絡先を追加してください
+          </p>
+          <button
+            onClick={() => setShowChatModal(true)}
+            className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+          >
+            チャットで追加 →
+          </button>
+        </div>
+      )}
+
+      {/* People List */}
+      {!loading && people.length > 0 && (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          <ul className="divide-y divide-gray-200">
+            {people.map((person) => (
+              <li key={person.person_key} className="px-4 py-4 hover:bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    {/* Name + Badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {person.display_name || '(名前未設定)'}
+                      </p>
+                      <ConnectionBadge status={person.connection_status} showExternal />
+                      <EmailWarningBadge hasEmail={person.has_email} />
+                      {person.is_app_user && (
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-800">
+                          アプリユーザー
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Email */}
+                    {person.email && (
+                      <p className="text-sm text-gray-500 truncate mt-1">{person.email}</p>
+                    )}
+                    
+                    {/* List Tags */}
+                    {person.lists.length > 0 && (
+                      <div className="mt-2">
+                        <ListTags lists={person.lists} />
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Actions */}
+                  <div className="ml-4 flex-shrink-0 flex gap-2">
+                    {person.is_app_user && person.connection_status !== 'pending' && person.connection_status !== 'blocked' && (
+                      <button
+                        onClick={() => navigate(`/scheduling/internal?with=${person.person_id}`)}
+                        className="px-3 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded hover:bg-blue-50"
+                      >
+                        日程調整
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && people.length > 0 && (hasPrevious || hasMore) && (
+        <div className="mt-4 flex justify-between items-center">
+          <button
+            onClick={handlePreviousPage}
+            disabled={!hasPrevious}
+            className={`px-4 py-2 text-sm font-medium rounded-md ${
+              hasPrevious
+                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                : 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+            }`}
+          >
+            ← 前へ
+          </button>
+          <span className="text-sm text-gray-500">
+            {offset + 1} - {Math.min(offset + limit, total)} / {total}人
+          </span>
+          <button
+            onClick={handleNextPage}
+            disabled={!hasMore}
+            className={`px-4 py-2 text-sm font-medium rounded-md ${
+              hasMore
+                ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                : 'text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed'
+            }`}
+          >
+            次へ →
+          </button>
+        </div>
+      )}
+
+      {/* Chat Modal */}
+      <ChatModal
+        isOpen={showChatModal}
+        onClose={() => setShowChatModal(false)}
+        onNavigate={() => {
+          setShowChatModal(false);
+          navigate('/chat');
+        }}
+      />
     </div>
   );
 }

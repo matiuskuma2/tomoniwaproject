@@ -65,3 +65,18 @@ export type {
   InternalRespondRequest,
   InternalRespondResponse,
 } from './schedulingInternal';
+
+// People Hub API (SSOT統合)
+export { 
+  peopleApi,
+  getConnectionStatusLabel,
+  getConnectionStatusBadgeClass,
+} from './people';
+export type {
+  ConnectionStatus,
+  Person,
+  PersonListMembership,
+  PeopleListParams,
+  PeopleListResponse,
+  AuditSummary,
+} from './people';
