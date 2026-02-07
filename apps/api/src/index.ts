@@ -33,6 +33,7 @@ import inboxRoutes from './routes/inbox';
 import roomsRoutes from './routes/rooms';
 import schedulingApiRoutes from './routes/schedulingApi';
 import contactsRoutes from './routes/contacts';
+import contactImportRoutes from './routes/contactImport';
 import listsRoutes from './routes/lists';
 import listItemsRoutes from './routes/listItems';
 import listMembersRoutes from './routes/listMembers';
@@ -245,6 +246,7 @@ app.route('/api/rooms', roomsRoutes);
 // Contacts API (台帳管理)
 app.use('/api/contacts', requireAuth);
 app.use('/api/contacts/*', requireAuth);
+app.route('/api/contacts/import', contactImportRoutes); // PR-D-API-1: import must be before contacts (more specific path first)
 app.route('/api/contacts', contactsRoutes);
 
 // Lists API (送信セグメント)
