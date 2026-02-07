@@ -135,6 +135,18 @@ export const contactsImportApi = {
   },
 
   /**
+   * PR-D-3: 名刺OCRスキャン → preview → pending作成
+   * 画像をアップロードしてOCR抽出、既存のcontactImport pendingフローに接続
+   */
+  async businessCardScan(images: File[]): Promise<BusinessCardScanResponse> {
+    const formData = new FormData();
+    for (const img of images) {
+      formData.append('images', img);
+    }
+    return api.postForm('/api/business-cards/scan', formData);
+  },
+
+  /**
    * PR-D-API-1: 曖昧一致の解決（番号選択）
    */
   async personSelect(data: {
@@ -180,7 +192,7 @@ export interface ContactImportNewPreviewResponse {
     new_count: number;
     skipped_count: number;
     missing_email_count: number;
-    source: 'text' | 'csv';
+    source: 'text' | 'csv' | 'business_card';
     preview_entries: Array<{
       name: string;
       email?: string;
@@ -238,6 +250,22 @@ export interface ContactImportConfirmNewResponse {
     display_name: string;
     email?: string;
   }>;
+}
+
+// =============================================================================
+// PR-D-3: Business Card Scan Response
+// =============================================================================
+
+export interface BusinessCardScanResponse {
+  pending_action_id: string;
+  expires_at: string;
+  summary: ContactImportNewPreviewResponse['summary'] & {
+    source: 'text' | 'csv' | 'business_card';
+  };
+  parsed_entries: ContactImportNewPreviewResponse['parsed_entries'];
+  business_card_ids: string[];
+  next_pending_kind: string;
+  message: string;
 }
 
 // =============================================================================

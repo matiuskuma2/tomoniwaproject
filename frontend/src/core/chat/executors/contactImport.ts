@@ -19,6 +19,7 @@
 import {
   contactsImportApi,
   type ContactImportNewPreviewResponse,
+  type BusinessCardScanResponse,
 } from '../../api/contacts';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult, ExecutionContext } from './types';
@@ -307,9 +308,147 @@ export async function executeContactImportCancel(
   } as ExecutionResult;
 }
 
+/**
+ * PR-D-3: 名刺スキャン → OCR抽出 → pending確認フロー
+ * POST /api/business-cards/scan
+ * 
+ * 事故ゼロ: OCR結果はcontactImportの既存pendingフローに接続
+ * Gate-1: emailなしはHard fail (missing_email_count++)
+ * Gate-2: 曖昧一致はpending.person.selectで必ず止まる
+ */
+export async function executeBusinessCardScan(
+  images: File[]
+): Promise<ExecutionResult> {
+  if (!images || images.length === 0) {
+    return {
+      success: false,
+      message: '名刺画像を選択してください。',
+      needsClarification: {
+        field: 'images',
+        message: '名刺画像を選択してください。',
+      },
+    };
+  }
+
+  try {
+    log.info('[PR-D-3] Executing business card scan', {
+      module: 'contactImport',
+      imageCount: images.length,
+    });
+
+    const response = await contactsImportApi.businessCardScan(images);
+
+    // プレビューメッセージ生成（scanのレスポンスはpreviewと同形）
+    const message = buildScanPreviewMessage(response);
+
+    return {
+      success: true,
+      message,
+      data: {
+        kind: 'contact_import.preview',
+        payload: {
+          pending_action_id: response.pending_action_id,
+          expires_at: response.expires_at,
+          summary: response.summary,
+          parsed_entries: response.parsed_entries,
+          next_pending_kind: response.next_pending_kind,
+          source: 'business_card',
+          business_card_ids: response.business_card_ids,
+        },
+      },
+    } as ExecutionResult;
+
+  } catch (error) {
+    log.error('[PR-D-3] Business card scan failed', {
+      module: 'contactImport',
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      success: false,
+      message: `❌ 名刺スキャンに失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
 // ============================================================
 // Helper Functions
 // ============================================================
+
+/**
+ * PR-D-3: 名刺スキャン結果のプレビューメッセージを生成
+ */
+function buildScanPreviewMessage(response: BusinessCardScanResponse): string {
+  const { summary, parsed_entries } = response;
+  let message = '📇 名刺スキャン結果\n\n';
+
+  // 新規
+  const newEntries = parsed_entries.filter(e => e.match_status === 'new');
+  if (newEntries.length > 0) {
+    message += `✅ 新規登録予定: ${newEntries.length}件\n`;
+    newEntries.slice(0, 5).forEach((e, i) => {
+      message += `  ${i + 1}. ${e.name} <${e.email || ''}>`;
+      // 会社・役職があれば表示
+      const extra = [
+        (e as any).company,
+        (e as any).title,
+      ].filter(Boolean).join(' / ');
+      if (extra) message += ` (${extra})`;
+      message += '\n';
+    });
+    if (newEntries.length > 5) {
+      message += `  ... 他 ${newEntries.length - 5}件\n`;
+    }
+    message += '\n';
+  }
+
+  // メール完全一致
+  if (summary.exact_match_count > 0) {
+    message += `🔄 既存一致（自動更新）: ${summary.exact_match_count}件\n`;
+  }
+
+  // 曖昧一致
+  if (summary.ambiguous_count > 0) {
+    message += `❓ 曖昧一致（要確認）: ${summary.ambiguous_count}件\n`;
+    parsed_entries
+      .filter(e => e.match_status === 'ambiguous')
+      .forEach((e, i) => {
+        message += `  ${i + 1}. ${e.name} <${e.email || ''}>\n`;
+        if (e.ambiguous_candidates) {
+          e.ambiguous_candidates.forEach(c => {
+            message += `     → ${c.number}: ${c.display_name} <${c.email || ''}>\n`;
+          });
+        }
+      });
+    message += '\n';
+  }
+
+  // メール欠落（Hard fail）
+  if (summary.missing_email_count > 0) {
+    message += `⚠️ メールなし（スキップ）: ${summary.missing_email_count}件\n`;
+    parsed_entries
+      .filter(e => e.missing_email)
+      .slice(0, 3)
+      .forEach(e => {
+        message += `  - ${e.name} (メールアドレス未取得)\n`;
+      });
+    message += '\n';
+  }
+
+  // 指示
+  message += '━━━━━━━━━━━━━━━━━━━━\n';
+  if (summary.ambiguous_count > 0) {
+    message += '曖昧一致が見つかりました。\n';
+    message += '番号で選択 / 0=新規 / s=スキップ\n';
+    message += '全て解決後に「はい」で登録を確定します。\n';
+  } else {
+    message += '登録を実行しますか？\n';
+    message += '• 「はい」→ 登録\n';
+    message += '• 「いいえ」→ キャンセル\n';
+  }
+
+  return message;
+}
 
 /**
  * プレビューメッセージを生成
@@ -381,7 +520,7 @@ export function buildPendingContactImportConfirm(
   threadId: string,
   data: {
     pending_action_id: string;
-    source: 'text' | 'csv';
+    source: 'text' | 'csv' | 'business_card';
     summary: ContactImportNewPreviewResponse['summary'];
     parsed_entries: ContactImportNewPreviewResponse['parsed_entries'];
     next_pending_kind: string;

@@ -153,11 +153,13 @@ export {
 } from './pool/create';
 
 // Contact Import executors (PR-D-1.1: 連絡先取り込み)
+// PR-D-3: 名刺OCRスキャン追加
 export {
   executeContactImportPreview,
   executeContactImportConfirm,
   executeContactImportCancel,
   executeContactImportPersonSelect,
+  executeBusinessCardScan,
   // Helpers
   buildPendingContactImportConfirm,
   buildPendingPersonSelect,
