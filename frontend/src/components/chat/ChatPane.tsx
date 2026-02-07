@@ -17,12 +17,6 @@ import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { 
-  isPendingAction, 
-  isPendingRemind, 
-  isPendingRemindNeedResponse,
-  isPendingNotify,
-  isPendingSplit,
-  isPendingAutoPropose,
   getPendingPlaceholder,
   getPendingHintBanner,
   getPendingSendButtonLabel,

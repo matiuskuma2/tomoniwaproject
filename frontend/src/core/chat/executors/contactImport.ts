@@ -29,10 +29,6 @@ import { log } from '../../platform';
 // Type Definitions
 // ============================================================
 
-type _PendingPersonSelect = PendingState & {
-  kind: 'pending.person.select';
-};
-
 // ============================================================
 // Execute Functions
 // ============================================================

@@ -31,9 +31,6 @@ import {
   // Phase 1-2: isPendingAction は executors/pending.ts に移動
   // Phase 1-3a: isPendingSplit, isPendingAutoPropose は executors/autoPropose.ts に移動
   isPendingNotify,
-  // PR-D-1.1: 連絡先取り込み
-  isPendingContactImportConfirm,
-  isPendingPersonSelect,
 } from './pendingTypes';
 
 // P1-1: 分割した executor をインポート
