@@ -16,7 +16,7 @@ import {
   peopleApi,
   getConnectionStatusLabel,
   getConnectionStatusBadgeClass,
-  listsApi,
+  // listsApi,  // PR-D-FE-1: unused — 将来のリスト管理UIで使用予定
   type Person,
   type ConnectionStatus,
   type PeopleListResponse,
@@ -282,7 +282,7 @@ function ListFilterDropdown({ lists, selectedListId, onSelect }: ListFilterProps
 
 export function PeopleHubPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [_searchParams, _setSearchParams] = useSearchParams();
   
   // State
   const [people, setPeople] = useState<Person[]>([]);

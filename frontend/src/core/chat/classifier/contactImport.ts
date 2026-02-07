@@ -184,7 +184,6 @@ export const classifyContactImport: ClassifierFn = (
     }
     
     // どれにもマッチしない場合: ガイダンス
-    const optionsCount = pending.options.length;
     let guidance = `以下から選択してください：\n`;
     pending.options.forEach((opt, i) => {
       guidance += `${i + 1}. ${opt.display_name || '(名前なし)'} <${opt.email || '(メールなし)'}>\n`;

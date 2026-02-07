@@ -29,11 +29,7 @@ import { log } from '../../platform';
 // Type Definitions
 // ============================================================
 
-type PendingContactImportConfirm = PendingState & {
-  kind: 'pending.contact_import.confirm';
-};
-
-type PendingPersonSelect = PendingState & {
+type _PendingPersonSelect = PendingState & {
   kind: 'pending.person.select';
 };
 
@@ -114,7 +110,6 @@ export async function executeContactImportPersonSelect(
   intentResult: IntentResult,
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const pending = context?.pendingForThread as PendingPersonSelect | null;
   const pendingActionId = intentResult.params?.pending_action_id
     || (context?.pendingForThread as any)?.pending_action_id;
   const action = intentResult.params?.action;
