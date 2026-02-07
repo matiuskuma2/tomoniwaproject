@@ -1,7 +1,10 @@
 # インテント駆動会話設計書（SSOT）
 
-最終更新日: 2026-02-06
+最終更新日: 2026-02-07
 ステータス: 確定（SSOT準拠）
+
+**更新履歴:**
+- 2026-02-07: PR-D-1 contact.import.text 実装ドキュメント追加
 
 ---
 
@@ -145,6 +148,48 @@ ToMoniWaoのAI秘書は**インテント駆動**で動作する。
 ```
 
 ### 4.3 連絡先・つながり
+
+#### contact.import.text ✅ **PR-D-1 実装済み**
+**テキストから連絡先登録**
+
+```
+ユーザー: 「田中太郎 tanaka@example.com を連絡先に追加して」
+→ intent: contact.import.text
+→ params: { text: "田中太郎 tanaka@example.com", source: "text" }
+```
+
+または複数行の貼り付け:
+
+```
+ユーザー: 
+田中太郎 tanaka@example.com
+佐藤花子 sato@example.com
+山田次郎 yamada@example.com
+→ intent: contact.import.text
+→ params: { text: "...", source: "text" }
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| text | ✅ | 取り込むテキスト（改行区切りで複数行対応） |
+| source | - | text / email / csv（デフォルト: text） |
+
+**対応フォーマット:**
+- `名前 メール`（スペース区切り）
+- `名前<メール>`（カッコ区切り）
+- `名前,メール`（カンマ区切り）
+- `名前\tメール`（タブ区切り）
+- `メール`（メールのみ）
+
+**事故ゼロ設計:**
+- メール必須（Hard fail）: メールがない行はスキップ
+- 同姓同名・曖昧一致は pending で停止
+- 確認フローで明示的な承認を求める
+- 一度に100件まで
+
+**API:**
+- `POST /api/contacts/import`: プレビュー生成
+- `POST /api/contacts/import/confirm`: 確定実行
 
 #### contact.import.business_card
 **名刺から登録**
