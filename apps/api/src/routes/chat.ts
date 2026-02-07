@@ -35,11 +35,94 @@ const QUICK_RESPONSES: Record<string, string> = {
   'おはよう': 'おはようございます！今日は何かお手伝いできることはありますか？\n\n💡 「今日の予定」「来週の空き」「日程調整を送って」などと話しかけてください。',
   'ありがとう': 'どういたしまして！他にお手伝いできることがあれば、いつでも声をかけてくださいね。',
   'お疲れ様': 'お疲れ様です！何かお手伝いできることがあれば教えてください。',
-  'ヘルプ': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
-  'help': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
-  '使い方': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
-  '何ができる': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
+  'ヘルプ': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n👥 **連絡先登録**\n• 「〇〇さんを連絡先に追加」\n• テキストを貼り付けて登録\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
+  'help': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n👥 **連絡先登録**\n• 「〇〇さんを連絡先に追加」\n• テキストを貼り付けて登録\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
+  '使い方': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n👥 **連絡先登録**\n• 「〇〇さんを連絡先に追加」\n• テキストを貼り付けて登録\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
+  '何ができる': '以下のようなことができます：\n\n📅 **予定確認**\n• 「今日の予定」\n• 「来週の空き」\n\n📨 **日程調整**\n• 「〇〇さんに日程調整送って」\n• 「状況教えて」\n\n👥 **連絡先登録**\n• 「〇〇さんを連絡先に追加」\n• テキストを貼り付けて登録\n\n⚙️ **好み設定**\n• 「午後がいい」\n• 「好み見せて」',
 };
+
+// ============================================================
+// PR-D-1: インテント検出（contact.import）
+// ============================================================
+
+/**
+ * contact.import インテントの検出パターン
+ */
+const CONTACT_IMPORT_PATTERNS = [
+  // 明示的な登録指示
+  /(?:連絡先|アドレス帳|コンタクト).*(?:追加|登録|取り込|インポート)/,
+  /(?:追加|登録|取り込|インポート).*(?:連絡先|アドレス帳|コンタクト)/,
+  // 名前とメールの組み合わせ検出
+  /[\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+\s*[\w.-]+@[\w.-]+\.\w+/,
+  // 複数行のメールリスト
+  /(?:[\w.-]+@[\w.-]+\.\w+.*[\r\n]){2,}/,
+  // 「〇〇を追加」パターン
+  /(?:[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+さん|[\w\s]+)(?:を|は)?(?:連絡先に)?(?:追加|登録)/,
+];
+
+/**
+ * テキストがcontact.importインテントかどうかを判定
+ */
+function detectContactImportIntent(text: string): {
+  isMatch: boolean;
+  confidence: number;
+  source: 'text' | 'email';
+  extractedText?: string;
+} {
+  // 複数行のメールリストを含む場合は高確度
+  if (/(?:[\w.-]+@[\w.-]+\.\w+.*[\r\n]){2,}/.test(text)) {
+    return { isMatch: true, confidence: 0.95, source: 'text', extractedText: text };
+  }
+
+  // 明示的な登録指示 + メールアドレスを含む
+  const hasExplicitIntent = CONTACT_IMPORT_PATTERNS.slice(0, 2).some(p => p.test(text));
+  const hasEmail = /[\w.-]+@[\w.-]+\.\w+/.test(text);
+  
+  if (hasExplicitIntent && hasEmail) {
+    return { isMatch: true, confidence: 0.9, source: 'text', extractedText: text };
+  }
+
+  // 「〇〇 email@example.com を追加」パターン
+  const singleContactPattern = /(.+?)\s*([\w.-]+@[\w.-]+\.\w+)\s*(?:を|は)?(?:連絡先に)?(?:追加|登録)/;
+  const match = text.match(singleContactPattern);
+  if (match) {
+    const name = match[1].trim().replace(/さん$/, '');
+    const email = match[2];
+    return { 
+      isMatch: true, 
+      confidence: 0.85, 
+      source: 'text', 
+      extractedText: `${name} ${email}` 
+    };
+  }
+
+  // 名前とメールが1行に含まれる場合
+  if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+.*[\w.-]+@[\w.-]+\.\w+/.test(text)) {
+    return { isMatch: true, confidence: 0.7, source: 'text', extractedText: text };
+  }
+
+  return { isMatch: false, confidence: 0, source: 'text' };
+}
+
+/**
+ * contact.import のレスポンス生成
+ */
+interface ContactImportResponse {
+  intent: 'contact.import.text';
+  preview?: {
+    candidates: Array<{
+      raw_line: string;
+      display_name: string | null;
+      email: string | null;
+      status: 'ok' | 'missing_email' | 'invalid_email' | 'parse_error';
+    }>;
+    valid_count: number;
+    missing_email_count: number;
+  };
+  confirmation_token?: string;
+  requires_confirmation: boolean;
+  message: string;
+}
 
 // ============================================================
 // System Prompt
@@ -239,6 +322,94 @@ app.post('/message', async (c) => {
   // ユーザーメッセージを保存
   await saveMessage(env.DB, workspaceId, userId, 'user', text, threadId);
 
+  // ============================================================
+  // PR-D-1: contact.import インテント検出
+  // ============================================================
+  const importIntent = detectContactImportIntent(text);
+  if (importIntent.isMatch && importIntent.confidence >= 0.7) {
+    // contact.import インテントとして処理
+    const extractedText = importIntent.extractedText || text;
+    
+    try {
+      // /api/contacts/import を内部呼び出し
+      const importResponse = await fetch(`${c.req.url.replace('/chat/message', '/contacts/import')}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': c.req.header('Authorization') || '',
+          'Cookie': c.req.header('Cookie') || '',
+        },
+        body: JSON.stringify({
+          text: extractedText,
+          source: importIntent.source,
+        }),
+      });
+
+      if (importResponse.ok) {
+        const importResult = await importResponse.json() as {
+          preview: {
+            candidates: Array<{
+              raw_line: string;
+              display_name: string | null;
+              email: string | null;
+              status: string;
+            }>;
+            valid_count: number;
+            missing_email_count: number;
+            ambiguous_matches: Array<{
+              candidate_name: string | null;
+              candidate_email: string | null;
+              reason: string;
+            }>;
+          };
+          confirmation_token: string;
+          message: string;
+        };
+
+        // 結果に基づいてメッセージを生成
+        let responseMessage: string;
+        
+        if (importResult.preview.valid_count === 0) {
+          responseMessage = '📋 連絡先の取り込みを試みましたが、有効なデータが見つかりませんでした。\n\n' +
+            '以下の形式で入力してください：\n' +
+            '• 「名前 メールアドレス」（例: 田中太郎 tanaka@example.com）\n' +
+            '• 複数人は改行で区切ってください';
+        } else if (importResult.preview.ambiguous_matches?.length > 0) {
+          const ambiguousNames = importResult.preview.ambiguous_matches
+            .map(m => m.candidate_name || m.candidate_email)
+            .slice(0, 3)
+            .join('、');
+          responseMessage = `📋 ${importResult.preview.valid_count}件の連絡先を検出しました。\n\n` +
+            `⚠️ **要確認**: ${importResult.preview.ambiguous_matches.length}件の曖昧な一致があります（${ambiguousNames}など）\n\n` +
+            `この連絡先を登録しますか？ People Hub で確認して登録できます。`;
+        } else {
+          const candidates = importResult.preview.candidates
+            .filter(c => c.status === 'ok')
+            .slice(0, 5)
+            .map(c => `• ${c.display_name || '(名前なし)'} <${c.email}>`)
+            .join('\n');
+          responseMessage = `📋 ${importResult.preview.valid_count}件の連絡先を検出しました：\n\n${candidates}` +
+            (importResult.preview.valid_count > 5 ? `\n...他${importResult.preview.valid_count - 5}件` : '') +
+            '\n\nこの連絡先を登録しますか？ People Hub で確認して登録できます。';
+        }
+
+        // アシスタント応答を保存
+        await saveMessage(env.DB, workspaceId, userId, 'assistant', responseMessage, threadId, 'contact.import.text');
+
+        return c.json({
+          message: responseMessage,
+          intent: 'contact.import.text',
+          import_preview: importResult.preview,
+          confirmation_token: importResult.confirmation_token,
+          requires_confirmation: true,
+        });
+      }
+    } catch (importError) {
+      console.warn('[chat] contact.import internal call failed', importError);
+      // インポート処理が失敗した場合は、通常のLLM処理にフォールバック
+    }
+  }
+
   // 定型応答チェック（LLMスキップ）
   const normalizedInput = text.toLowerCase().replace(/[！？。、]/g, '');
   for (const [pattern, response] of Object.entries(QUICK_RESPONSES)) {
@@ -276,7 +447,7 @@ app.post('/message', async (c) => {
     console.error('[chat] LLM error', e, { workspaceId, userId, text });
     
     // エラー時のフォールバック応答
-    const fallbackResponse = '申し訳ありません、少し問題が発生しました。\n\n以下のような指示ができます：\n• 「今日の予定」\n• 「来週の空き」\n• 「〇〇さんに日程調整送って」';
+    const fallbackResponse = '申し訳ありません、少し問題が発生しました。\n\n以下のような指示ができます：\n• 「今日の予定」\n• 「来週の空き」\n• 「〇〇さんに日程調整送って」\n• 「〇〇さんを連絡先に追加」';
     
     await saveMessage(env.DB, workspaceId, userId, 'assistant', fallbackResponse, threadId);
     
