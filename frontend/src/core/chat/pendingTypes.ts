@@ -20,6 +20,7 @@ export type PendingKind =
   | 'pending.pool.member_select' // G2-A: Pool作成時のメンバー選択待ち
   | 'pending.contact_import.confirm'  // PR-D-1.1: 連絡先取り込み確認待ち
   | 'pending.person.select'    // PR-D-1.1: 曖昧一致時の人物選択待ち
+  | 'pending.post_import.next_step' // PR-D-FE-3.1: 名刺取り込み完了後の次手選択
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
@@ -195,7 +196,7 @@ export type PendingState =
   | (PendingBase & {
       kind: 'pending.contact_import.confirm';
       confirmation_token: string;
-      source: 'text' | 'email' | 'csv';
+      source: 'text' | 'email' | 'csv' | 'business_card';
       preview: {
         /** 登録予定の連絡先 */
         ok: Array<{
@@ -229,6 +230,25 @@ export type PendingState =
       }>;
       /** すべての曖昧一致が解決済みかどうか */
       all_ambiguous_resolved: boolean;
+    })
+
+  // PR-D-FE-3.1: 名刺取り込み完了後の次手選択
+  | (PendingBase & {
+      kind: 'pending.post_import.next_step';
+      /** ユーザーが入力した意図（アップロード時のメッセージから抽出） */
+      intent: 'send_invite' | 'schedule' | 'message_only' | 'unknown';
+      /** ユーザーが入力した補足メッセージ */
+      userMessage?: string;
+      /** 取り込み結果のサマリ */
+      importSummary: {
+        created_count: number;
+        updated_count: number;
+        skipped_count: number;
+        /** 取り込んだ連絡先の表示名+メール */
+        imported_contacts: Array<{ display_name: string; email: string }>;
+      };
+      /** 取り込み元ソース */
+      source: 'text' | 'csv' | 'business_card';
     })
 
   // PR-D-1.1: 曖昧一致時の人物選択待ち
@@ -333,6 +353,11 @@ export function isPendingPersonSelect(pending: PendingState | null): pending is 
   return pending?.kind === 'pending.person.select';
 }
 
+// PR-D-FE-3.1: 名刺取り込み完了後の次手選択
+export function isPendingPostImportNextStep(pending: PendingState | null): pending is PendingState & { kind: 'pending.post_import.next_step' } {
+  return pending?.kind === 'pending.post_import.next_step';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -346,6 +371,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'pending.pool.member_select', // G2-A
     'pending.contact_import.confirm',  // PR-D-1.1
     'pending.person.select',   // PR-D-1.1
+    'pending.post_import.next_step', // PR-D-FE-3.1
     'remind.pending',
     'remind.need_response',
     'remind.responded',
@@ -376,6 +402,10 @@ export function getPendingPlaceholder(pending: PendingState | null): string | nu
     // PR-D-FE-1: Contact Import系
     case 'pending.contact_import.confirm':
       return 'はい / いいえ';
+    case 'pending.post_import.next_step':
+      return pending.intent === 'unknown'
+        ? '1=招待送信 / 2=日程調整 / 3=完了'
+        : '「はい」/「いいえ」';
     case 'pending.person.select':
       return '番号で選択（例: 1） / 0=新規 / s=スキップ';
     
@@ -429,6 +459,14 @@ export function getPendingHintBanner(pending: PendingState | null): string | nul
       const optCount = p.options.length;
       return `❓ 「${p.input_name || p.input_email}」に似た連絡先が${optCount}件 — 番号で選択 / 0=新規 / s=スキップ`;
     }
+    case 'pending.post_import.next_step': {
+      const p = pending as PendingState & { kind: 'pending.post_import.next_step' };
+      if (p.intent === 'unknown') {
+        return `📋 ${p.importSummary.created_count}件の連絡先を取り込みました — 次のアクションを選んでください`;
+      }
+      const actionLabel = p.intent === 'send_invite' ? '招待送信' : p.intent === 'schedule' ? '日程調整' : '完了';
+      return `📋 ${p.importSummary.created_count}件の連絡先を取り込みました — ${actionLabel}を実行しますか？`;
+    }
     case 'pending.action':
       return `⚠️ 確認待ち: 「送る」「キャンセル」「別スレッドで」`;
     case 'pending.pool.create':
@@ -469,6 +507,8 @@ export function getPendingSendButtonLabel(pending: PendingState | null): string 
   switch (pending.kind) {
     case 'pending.contact_import.confirm':
       return '確定';
+    case 'pending.post_import.next_step':
+      return '選択';
     case 'pending.person.select':
       return '選択';
     case 'pending.action':
@@ -525,6 +565,8 @@ export function describePending(pending: PendingState | null): string {
     // PR-D-1.1: 連絡先取り込み
     case 'pending.contact_import.confirm':
       return `連絡先取り込み確認待ち (${pending.preview.ok.length}件)`;
+    case 'pending.post_import.next_step':
+      return `次手選択待ち (intent=${pending.intent}, ${pending.importSummary.created_count}件取り込み済)`;
     case 'pending.person.select':
       return `人物選択待ち (「${pending.input_name || pending.input_email}」${pending.options.length}件)`;
     default:

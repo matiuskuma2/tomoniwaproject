@@ -14,7 +14,8 @@ import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor
 import { extractErrorMessage } from '../../core/api/client';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 // PR-D-FE-3: 名刺OCRスキャン executor
-import { executeBusinessCardScan } from '../../core/chat/executors/contactImport';
+// PR-D-FE-3.1: classifyUploadIntent でアップロード時の意図を抽出
+import { executeBusinessCardScan, classifyUploadIntent } from '../../core/chat/executors/contactImport';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { 
@@ -182,22 +183,29 @@ export function ChatPane({
   }, [threadId, status?.thread?.id, loading]);
 
   // PR-D-FE-3: 名刺スキャン専用ハンドラ（画像添付時はテキスト分類をバイパス）
-  const handleBusinessCardScan = async (images: File[]) => {
+  // PR-D-FE-3.1: 意図メモ（テキスト入力）を context として渡す
+  const handleBusinessCardScan = async (images: File[], intentMemo: string) => {
     const targetThreadId = threadId || 'temp';
     const imageNames = images.map(f => f.name).join(', ');
+    const memoDisplay = intentMemo ? ` | ${intentMemo}` : '';
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: `📎 名刺スキャン: ${images.length}枚 (${imageNames})`,
+      content: `📎 名刺スキャン: ${images.length}枚 (${imageNames})${memoDisplay}`,
       timestamp: new Date(),
     };
     onAppend(targetThreadId, userMsg);
     setAttachedImages([]);
+    setMessage(''); // PR-D-FE-3.1: 意図メモもクリア
     setIsProcessing(true);
+
+    // PR-D-FE-3.1: アップロード時の意図を抽出
+    const context = classifyUploadIntent(intentMemo);
+    console.log('[PR-D-FE-3.1] Upload intent:', context.intent, 'message:', context.message);
 
     try {
       console.log('[PR-D-FE-3] Executing business card scan:', images.length, 'images');
-      const result = await executeBusinessCardScan(images);
+      const result = await executeBusinessCardScan(images, context);
       console.log('[PR-D-FE-3] Scan result:', result.success, result.message);
 
       const assistantMessage: ChatMessage = {
@@ -227,8 +235,9 @@ export function ChatPane({
 
   const handleSendClick = async () => {
     // PR-D-FE-3: 画像添付があれば名刺スキャンへ
+    // PR-D-FE-3.1: テキスト入力を意図メモとして渡す
     if (attachedImages.length > 0) {
-      await handleBusinessCardScan(attachedImages);
+      await handleBusinessCardScan(attachedImages, message.trim());
       return;
     }
 
