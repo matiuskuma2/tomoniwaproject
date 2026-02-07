@@ -4,10 +4,14 @@
 -- 
 -- 変更点:
 --   1) action_type CHECK に 'contact_import' を追加
---   2) source_type CHECK に 'contact_import_text', 'contact_import_csv' を追加
+--   2) source_type CHECK に 'contacts' を追加（contact_import用）
 --   3) status CHECK に 'cancelled' を追加（cancel用）
---   4) confirm_token の NOT NULL 制約を緩和（contact_importは未使用）
---   5) thread_id, source_type を NULLable に変更（contact_importは不要）
+--   4) thread_id を NULLable に変更（contact_importは thread 不使用）
+--
+-- NOT NULL 維持方針:
+--   - confirm_token: NOT NULL 維持。contact_import でも UUID を埋める
+--   - source_type: NOT NULL 維持。contact_import では 'contacts' を使用
+--   ※ 既存 pending_actions 消費者への影響をゼロにするため
 --
 -- SQLiteではCHECK制約を変更できないためテーブル再作成
 -- ============================================================
@@ -35,17 +39,16 @@ CREATE TABLE pending_actions (
     'contact_import'
   )),
   
-  -- NULLable: contact_import では source_type 不使用（payloadのsourceフィールドで管理）
-  source_type       TEXT CHECK (source_type IS NULL OR source_type IN (
+  source_type       TEXT NOT NULL CHECK (source_type IN (
     'emails',
-    'list'
+    'list',
+    'contacts'
   )),
   
   payload_json      TEXT NOT NULL,
   summary_json      TEXT NOT NULL,
   
-  -- NULLable: contact_import では confirm_token 不使用
-  confirm_token     TEXT UNIQUE,
+  confirm_token     TEXT NOT NULL UNIQUE,
   
   status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
     'pending',
@@ -77,7 +80,7 @@ DROP TABLE pending_actions_backup;
 
 -- 6. インデックス再作成
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_actions_confirm_token
-  ON pending_actions(confirm_token) WHERE confirm_token IS NOT NULL;
+  ON pending_actions(confirm_token);
 
 CREATE INDEX IF NOT EXISTS idx_pending_actions_tenant_status
   ON pending_actions(workspace_id, owner_user_id, status, created_at DESC);

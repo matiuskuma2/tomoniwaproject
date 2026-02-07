@@ -289,7 +289,9 @@ app.post('/preview', async (c) => {
     const summary = buildSummary(entries, source);
 
     // pending_action 作成
+    // NOT NULL維持方針: confirm_token=UUID埋め, source_type='contacts'
     const pendingId = crypto.randomUUID();
+    const confirmToken = crypto.randomUUID().replace(/-/g, '');
     const expiresAt = new Date(Date.now() + IMPORT_EXPIRATION_MINUTES * 60 * 1000).toISOString();
     const now = new Date().toISOString();
 
@@ -300,15 +302,16 @@ app.post('/preview', async (c) => {
          payload_json, summary_json,
          confirm_token, status, expires_at, created_at)
       VALUES (?, ?, ?, NULL,
-              'contact_import', NULL,
+              'contact_import', 'contacts',
               ?, ?,
-              NULL, 'pending', ?, ?)
+              ?, 'pending', ?, ?)
     `).bind(
       pendingId,
       workspaceId,
       ownerUserId,
       JSON.stringify(payload),
       JSON.stringify(summary),
+      confirmToken,
       expiresAt,
       now
     ).run();

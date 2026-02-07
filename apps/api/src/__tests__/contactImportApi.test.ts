@@ -26,7 +26,7 @@ interface MockPendingAction {
   workspace_id: string;
   owner_user_id: string;
   action_type: string;
-  source_type: string | null;
+  source_type: string;
   payload_json: string;
   summary_json: string;
   status: string;
@@ -153,7 +153,7 @@ function handlePreview(
   const now = new Date().toISOString();
   _pendingActions.set(pendingId, {
     id: pendingId, workspace_id: workspaceId, owner_user_id: ownerUserId,
-    action_type: 'contact_import', source_type: null,
+    action_type: 'contact_import', source_type: 'contacts',
     payload_json: JSON.stringify(payload), summary_json: '{}',
     status: 'pending', expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     created_at: now, confirmed_at: null, executed_at: null,
