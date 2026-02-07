@@ -611,6 +611,76 @@ export function PeopleHubPage() {
         </div>
       )}
 
+      {/* Lists Section (Read Only) */}
+      {lists.length > 0 && (
+        <div className="mt-8 border-t pt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900">
+              📋 リスト管理
+            </h3>
+            <span className="text-sm text-gray-500">
+              一括招待用のグループ
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {lists.map((list) => {
+              const memberCount = people.filter(p => 
+                p.lists.some(l => l.list_id === list.id)
+              ).length;
+              const missingEmailCount = people.filter(p => 
+                p.lists.some(l => l.list_id === list.id) && !p.has_email
+              ).length;
+              
+              return (
+                <div
+                  key={list.id}
+                  className="bg-white border rounded-lg p-4 hover:border-blue-300 cursor-pointer transition-colors"
+                  onClick={() => handleListFilterChange(list.id === selectedListId ? null : list.id)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                        {list.name}
+                      </h4>
+                      {list.description && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                          {list.description}
+                        </p>
+                      )}
+                    </div>
+                    {selectedListId === list.id && (
+                      <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                        選択中
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-sm text-gray-600">
+                      {memberCount}人
+                    </span>
+                    {missingEmailCount > 0 ? (
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                        ⚠️ メール欠落: {missingEmailCount}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                        ✓ 全員送達可能
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <p className="mt-4 text-sm text-gray-500 text-center">
+            リストの作成・編集はチャットで「営業リストを作成して」などと指示してください
+          </p>
+        </div>
+      )}
+
       {/* Chat Modal */}
       <ChatModal
         isOpen={showChatModal}
