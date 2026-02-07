@@ -119,7 +119,129 @@ export const contactsApi = {
 };
 
 // =============================================================================
-// PR-D-1.1: 型定義
+// PR-D-API-1: Contact Import API (新エンドポイント)
+// /api/contacts/import/preview | person-select | confirm | cancel
+// =============================================================================
+
+export const contactsImportApi = {
+  /**
+   * PR-D-API-1: プレビュー（テキスト/CSV → パース → 曖昧一致検出 → pending作成）
+   */
+  async preview(data: {
+    source: 'text' | 'csv';
+    raw_text: string;
+  }): Promise<ContactImportNewPreviewResponse> {
+    return api.post('/api/contacts/import/preview', data);
+  },
+
+  /**
+   * PR-D-API-1: 曖昧一致の解決（番号選択）
+   */
+  async personSelect(data: {
+    pending_action_id: string;
+    entry_index: number;
+    action: 'select' | 'new' | 'skip';
+    selected_number?: number;
+  }): Promise<ContactImportPersonSelectNewResponse> {
+    return api.post('/api/contacts/import/person-select', data);
+  },
+
+  /**
+   * PR-D-API-1: 確定（contacts書き込み）
+   * Gate-4: confirm のみ書き込み
+   */
+  async confirm(data: {
+    pending_action_id: string;
+  }): Promise<ContactImportConfirmNewResponse> {
+    return api.post('/api/contacts/import/confirm', data);
+  },
+
+  /**
+   * PR-D-API-1: キャンセル（書き込みゼロ保証）
+   */
+  async cancel(data: {
+    pending_action_id: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return api.post('/api/contacts/import/cancel', data);
+  },
+};
+
+// =============================================================================
+// PR-D-API-1: 新レスポンス型定義
+// =============================================================================
+
+export interface ContactImportNewPreviewResponse {
+  pending_action_id: string;
+  expires_at: string;
+  summary: {
+    total_count: number;
+    exact_match_count: number;
+    ambiguous_count: number;
+    new_count: number;
+    skipped_count: number;
+    missing_email_count: number;
+    source: 'text' | 'csv';
+    preview_entries: Array<{
+      name: string;
+      email?: string;
+      match_status: 'exact' | 'ambiguous' | 'new' | 'skipped';
+      candidate_count?: number;
+    }>;
+  };
+  parsed_entries: Array<{
+    index: number;
+    name: string;
+    email?: string;
+    missing_email: boolean;
+    match_status: 'exact' | 'ambiguous' | 'new' | 'skipped';
+    ambiguous_candidates?: Array<{
+      number: number;
+      contact_id: string;
+      display_name: string;
+      email?: string;
+      score: number;
+    }>;
+    resolved_action?: {
+      type: 'create_new' | 'select_existing' | 'skip';
+      contact_id?: string;
+    };
+  }>;
+  csv_warnings: string[];
+  next_pending_kind: string;
+  message: string;
+}
+
+export interface ContactImportPersonSelectNewResponse {
+  updated_entry: {
+    index: number;
+    name: string;
+    email?: string;
+    match_status: string;
+    resolved_action?: {
+      type: 'create_new' | 'select_existing' | 'skip';
+      contact_id?: string;
+    };
+  };
+  all_resolved: boolean;
+  remaining_unresolved: number;
+  next_pending_kind: string;
+  message: string;
+}
+
+export interface ContactImportConfirmNewResponse {
+  success: boolean;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  created_contacts: Array<{
+    id: string;
+    display_name: string;
+    email?: string;
+  }>;
+}
+
+// =============================================================================
+// PR-D-1.1: 型定義（旧API — 後方互換）
 // =============================================================================
 
 /**

@@ -31,9 +31,6 @@ import {
   // Phase 1-2: isPendingAction は executors/pending.ts に移動
   // Phase 1-3a: isPendingSplit, isPendingAutoPropose は executors/autoPropose.ts に移動
   isPendingNotify,
-  // PR-D-1.1: 連絡先取り込み
-  isPendingContactImportConfirm,
-  isPendingPersonSelect,
 } from './pendingTypes';
 
 // P1-1: 分割した executor をインポート
@@ -483,7 +480,31 @@ export type ExecutionResultData =
         label: string;
       }>;
       query_label?: string;
-    } };
+    } }
+  // PR-D-FE-1: Contact Import
+  | { kind: 'contact_import.preview'; payload: {
+      pending_action_id: string;
+      expires_at: string;
+      summary: any;
+      parsed_entries: any[];
+      next_pending_kind: string;
+      source: 'text' | 'csv';
+    } }
+  | { kind: 'contact_import.person_selected'; payload: {
+      pending_action_id: string;
+      all_resolved: boolean;
+      remaining_unresolved: number;
+      next_pending_kind: string;
+      updated_entry: any;
+    } }
+  | { kind: 'contact_import.confirmed'; payload: {
+      created_count: number;
+      updated_count: number;
+      skipped_count: number;
+    } }
+  | { kind: 'contact_import.cancelled'; payload: {} }
+  | { kind: 'contact_import.expired'; payload: {} }
+  | { kind: 'contact_import.ambiguous_remaining'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;

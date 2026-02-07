@@ -24,6 +24,8 @@ import type { ChatMessage } from './ChatPane';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { getPendingForThread } from '../../core/chat/pendingTypes';
+// PR-D-FE-1: Contact Import pending builder (静的import — require()はブラウザ非互換)
+import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
 
 // ============================================================
 // State Types
@@ -109,7 +111,10 @@ export type ChatAction =
   // Persistence actions
   | { type: 'SAVE_SUCCESS' }
   | { type: 'SAVE_FAILURE' }
-  | { type: 'DISABLE_PERSISTENCE' };
+  | { type: 'DISABLE_PERSISTENCE' }
+  
+  // PR-D-FE-1: Contact Import 曖昧一致解決（reducer内で既存pendingを安全に更新）
+  | { type: 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS'; payload: { threadId: string; pending_action_id: string } };
 
 // ============================================================
 // Reducer
@@ -232,6 +237,27 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           [threadId]: (state.remindCountByThreadId[threadId] || 0) + 1,
         },
       };
+    }
+    
+    // PR-D-FE-1: Contact Import 曖昧一致全解決時の pending 更新
+    // stale closure 回避: reducer内で state.pendingByThreadId を直接参照
+    case 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS': {
+      const { threadId, pending_action_id } = action.payload;
+      const existing = state.pendingByThreadId[threadId];
+      if (existing && existing.kind === 'pending.contact_import.confirm') {
+        return {
+          ...state,
+          pendingByThreadId: {
+            ...state.pendingByThreadId,
+            [threadId]: {
+              ...existing,
+              all_ambiguous_resolved: true,
+              pending_action_id: pending_action_id || (existing as any).pending_action_id,
+            } as any,
+          },
+        };
+      }
+      return state;
     }
     
     // Persistence actions
@@ -584,6 +610,50 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       }
     }
     
+    // PR-D-FE-1: Contact Import pending設定
+    else if (kind === 'contact_import.preview') {
+      const threadId = currentThreadId || 'temp';
+      // preview 結果から pending.contact_import.confirm を設定
+      const pending = buildPendingContactImportConfirm(threadId, {
+        pending_action_id: payload.pending_action_id,
+        source: payload.source || 'text',
+        summary: payload.summary,
+        parsed_entries: payload.parsed_entries,
+        next_pending_kind: payload.next_pending_kind,
+      });
+      dispatch({
+        type: 'SET_PENDING_FOR_THREAD',
+        payload: { threadId, pending },
+      });
+    }
+    else if (kind === 'contact_import.person_selected') {
+      const threadId = currentThreadId || 'temp';
+      if (payload.all_resolved) {
+        // 全解決 → reducer内で既存pendingを安全に参照して更新（stale closure回避）
+        dispatch({
+          type: 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS' as any,
+          payload: {
+            threadId,
+            pending_action_id: payload.pending_action_id,
+          },
+        });
+      }
+      // 未解決の場合は pending.person.select を維持（次の曖昧一致へ）
+    }
+    else if (kind === 'contact_import.confirmed' || kind === 'contact_import.cancelled') {
+      // 完了/キャンセル → pending クリア
+      const threadId = currentThreadId || 'temp';
+      dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+    }
+    else if (kind === 'contact_import.expired' || kind === 'contact_import.ambiguous_remaining') {
+      // 期限切れ → pending クリア
+      if (kind === 'contact_import.expired') {
+        const threadId = currentThreadId || 'temp';
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+      }
+      // ambiguous_remaining → pending保持（UIは409メッセージ表示のみ）
+    }
+
     // P2-D3: Reschedule (reschedule.pending → 再調整確認待ち)
     else if (kind === 'reschedule.pending') {
       // 元スレッドのIDで pending を保存

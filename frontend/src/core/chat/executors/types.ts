@@ -233,7 +233,31 @@ export type ExecutionResultData =
       needs_workmate: Array<{ name: string; email?: string }>;
       already_workmate: Array<{ user_id: string; display_name: string }>;
       not_found: string[];
-    } };
+    } }
+  // PR-D-FE-1: Contact Import
+  | { kind: 'contact_import.preview'; payload: {
+      pending_action_id: string;
+      expires_at: string;
+      summary: any;
+      parsed_entries: any[];
+      next_pending_kind: string;
+      source: 'text' | 'csv';
+    } }
+  | { kind: 'contact_import.person_selected'; payload: {
+      pending_action_id: string;
+      all_resolved: boolean;
+      remaining_unresolved: number;
+      next_pending_kind: string;
+      updated_entry: any;
+    } }
+  | { kind: 'contact_import.confirmed'; payload: {
+      created_count: number;
+      updated_count: number;
+      skipped_count: number;
+    } }
+  | { kind: 'contact_import.cancelled'; payload: {} }
+  | { kind: 'contact_import.expired'; payload: {} }
+  | { kind: 'contact_import.ambiguous_remaining'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;
