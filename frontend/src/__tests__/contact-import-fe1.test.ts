@@ -33,7 +33,7 @@ import {
   getPendingHintBanner,
   getPendingSendButtonLabel,
 } from '../core/chat/pendingTypes';
-import type { PendingState } from '../core/chat/pendingTypes';
+// PendingState type は buildPending* 経由で使用（直接参照不要）
 
 // 新API モック
 vi.mock('../core/api/contacts', async (importOriginal) => {
