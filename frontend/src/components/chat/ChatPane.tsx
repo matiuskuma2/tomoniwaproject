@@ -23,6 +23,9 @@ import {
   isPendingNotify,
   isPendingSplit,
   isPendingAutoPropose,
+  getPendingPlaceholder,
+  getPendingHintBanner,
+  getPendingSendButtonLabel,
 } from '../../core/chat/pendingTypes';
 
 /**
@@ -389,9 +392,14 @@ export function ChatPane({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder={threadId ? "メッセージを入力..." : "メールアドレスを入力してスレッドを作成 (例: tanaka@example.com)"}
+            placeholder={
+              getPendingPlaceholder(pendingForThread || globalPendingAction)
+              || (threadId ? "メッセージを入力..." : "メールアドレスを入力してスレッドを作成 (例: tanaka@example.com)")
+            }
             disabled={isProcessing}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+            className={`flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 ${
+              (pendingForThread || globalPendingAction) ? 'border-yellow-400 bg-yellow-50' : 'border-gray-300'
+            }`}
           />
           
           {/* Phase Next-4 Day1: Voice Recognition Button - 右側に配置 */}
@@ -410,26 +418,18 @@ export function ChatPane({
             data-testid="chat-send-button"
             onClick={handleSendClick}
             disabled={isProcessing || isVoiceProcessing || !message.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className={`px-4 py-2 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed ${
+              (pendingForThread || globalPendingAction) ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
+            }`}
           >
-            {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : '送信'}
+            {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : (getPendingSendButtonLabel(pendingForThread || globalPendingAction) || '送信')}
           </button>
         </div>
-        {/* P0-1: 正規化された pending インジケーター */}
+        {/* PR-D-FE-1: SSOT ベースの pending ヒントバナー */}
         {(pendingForThread || globalPendingAction) && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mt-2">
             <p className="text-xs text-yellow-800">
-              ⚠️ 確認待ち: {isPendingAction(pendingForThread || globalPendingAction) 
-                ? '「送る」「キャンセル」「別スレッドで」'
-                : isPendingRemind(pendingForThread) || isPendingRemindNeedResponse(pendingForThread)
-                  ? '「はい」「キャンセル」'
-                  : isPendingNotify(pendingForThread)
-                    ? '「はい」「キャンセル」'
-                    : isPendingAutoPropose(pendingForThread)
-                      ? '「はい」「キャンセル」'
-                      : isPendingSplit(pendingForThread)
-                        ? '「はい」「キャンセル」'
-                        : '入力待ち'}
+              {getPendingHintBanner(pendingForThread || globalPendingAction) || '⚠️ 入力待ち'}
             </p>
           </div>
         )}

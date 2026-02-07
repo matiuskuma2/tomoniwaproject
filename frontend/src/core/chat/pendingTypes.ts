@@ -360,6 +360,138 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
 /**
  * pending の説明文を生成（デバッグ・ログ用）
  */
+// ============================================================
+// PR-D-FE-1: Pending UI SSOT (Single Source of Truth)
+// placeholder / hint banner / send button label を一元管理
+// ============================================================
+
+/**
+ * pending種別に応じた入力欄のplaceholder
+ * Gate-A: 100%反映 — 何を入力すべきか明示
+ */
+export function getPendingPlaceholder(pending: PendingState | null): string | null {
+  if (!pending) return null;
+  
+  switch (pending.kind) {
+    // PR-D-FE-1: Contact Import系
+    case 'pending.contact_import.confirm':
+      return 'はい / いいえ';
+    case 'pending.person.select':
+      return '番号で選択（例: 1） / 0=新規 / s=スキップ';
+    
+    // 既存 pending 系
+    case 'pending.action':
+      if (pending.actionType === 'add_slots') {
+        return '「追加」/「やめる」';
+      }
+      return '「送る」/「キャンセル」/「別スレッドで」';
+    case 'pending.pool.create':
+      return '「はい」/「いいえ」';
+    case 'pending.pool.member_select':
+      return '番号で選択（例: 1）';
+    case 'pending.contact.select':
+      return '番号で選択（例: 1）';
+    case 'pending.channel.select':
+      return '番号で選択（例: 1）';
+    case 'remind.pending':
+    case 'remind.need_response':
+    case 'remind.responded':
+    case 'notify.confirmed':
+    case 'split.propose':
+    case 'auto_propose':
+    case 'reschedule.pending':
+      return '「はい」/「キャンセル」';
+    case 'ai.confirm':
+      return '「はい」/「いいえ」';
+    default:
+      return null;
+  }
+}
+
+/**
+ * pending種別に応じたヒントバナーのメッセージ
+ * Gate-A: 現在何を待っているか明示
+ */
+export function getPendingHintBanner(pending: PendingState | null): string | null {
+  if (!pending) return null;
+  
+  switch (pending.kind) {
+    case 'pending.contact_import.confirm': {
+      const p = pending as PendingState & { kind: 'pending.contact_import.confirm' };
+      if (!p.all_ambiguous_resolved && p.preview.ambiguous.length > 0) {
+        return `⚠️ 曖昧一致 ${p.preview.ambiguous.length}件あり — 「はい」で新規作成 / 「スキップして続行」/ 「いいえ」でキャンセル`;
+      }
+      const okCount = p.preview.ok.length;
+      return `📋 連絡先 ${okCount}件の登録を確認中 — 「はい」で登録 / 「いいえ」でキャンセル`;
+    }
+    case 'pending.person.select': {
+      const p = pending as PendingState & { kind: 'pending.person.select' };
+      const optCount = p.options.length;
+      return `❓ 「${p.input_name || p.input_email}」に似た連絡先が${optCount}件 — 番号で選択 / 0=新規 / s=スキップ`;
+    }
+    case 'pending.action':
+      return `⚠️ 確認待ち: 「送る」「キャンセル」「別スレッドで」`;
+    case 'pending.pool.create':
+      return `⚠️ プール作成確認: 「はい」「いいえ」`;
+    case 'pending.pool.member_select':
+      return `❓ メンバー選択: 番号で選択`;
+    case 'pending.contact.select':
+      return `❓ 連絡先選択: 番号で選択`;
+    case 'pending.channel.select':
+      return `❓ チャネル選択: 番号で選択`;
+    case 'remind.pending':
+      return `⚠️ リマインド確認: 「はい」「キャンセル」`;
+    case 'remind.need_response':
+    case 'remind.responded':
+      return `⚠️ リマインド確認: 「はい」「キャンセル」`;
+    case 'notify.confirmed':
+      return `⚠️ 確定通知確認: 「はい」「キャンセル」`;
+    case 'split.propose':
+      return `⚠️ 追加候補提案: 「はい」「キャンセル」`;
+    case 'auto_propose':
+      return `⚠️ 自動提案確認: 「はい」「キャンセル」`;
+    case 'reschedule.pending':
+      return `⚠️ 再調整確認: 「はい」「キャンセル」`;
+    case 'ai.confirm':
+      return `🤖 AI確認: 「はい」「いいえ」`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * pending種別に応じた送信ボタンのラベル
+ * Gate-A: 操作の意味を明示
+ */
+export function getPendingSendButtonLabel(pending: PendingState | null): string | null {
+  if (!pending) return null;
+  
+  switch (pending.kind) {
+    case 'pending.contact_import.confirm':
+      return '確定';
+    case 'pending.person.select':
+      return '選択';
+    case 'pending.action':
+      return '決定';
+    case 'pending.pool.create':
+    case 'pending.pool.member_select':
+    case 'pending.contact.select':
+    case 'pending.channel.select':
+      return '選択';
+    case 'remind.pending':
+    case 'remind.need_response':
+    case 'remind.responded':
+    case 'notify.confirmed':
+    case 'split.propose':
+    case 'auto_propose':
+    case 'reschedule.pending':
+    case 'ai.confirm':
+      return '確定';
+    default:
+      return null;
+  }
+}
+
 export function describePending(pending: PendingState | null): string {
   if (!pending) return 'なし';
   

@@ -1,74 +1,40 @@
 /**
  * executors/contactImport.ts
- * PR-D-1.1: 連絡先取り込み Executor
+ * PR-D-FE-1: Contact Import Executor — 新API接続
  * 
  * 事故ゼロ設計:
- * - メール必須 (Hard fail)
- * - 曖昧一致は自動選択しない
- * - confirm なしでの書き込みは禁止
- * - 書き込み後は必ず結果サマリを返す
+ * - Gate-3: APIがowner_user_id一致を検証（不一致=404）
+ * - Gate-4: confirm以外はcontacts書き込みゼロ（APIが保証）
+ * - Gate-B: pending中は新規インテントを発火させない（classifier側で制御）
+ * - 事故ゼロガード: all_ambiguous_resolved === true 必須 (confirm → 409)
  * 
  * フロー:
- * 1. contact.import.text → プレビュー生成 → pending.contact_import.confirm 設定
+ * 1. contact.import.text → POST /api/contacts/import/preview → pending 設定
  * 2. 曖昧一致あり → pending.person.select 設定（ユーザー選択待ち）
- * 3. 選択完了 → pending.contact_import.confirm に戻る
- * 4. confirm → /api/contacts/import/confirm 実行
- * 5. cancel → pending クリア
+ * 3. 番号入力 → POST /api/contacts/import/person-select → resolve/次へ
+ * 4. confirm → POST /api/contacts/import/confirm → contacts 書き込み
+ * 5. cancel → POST /api/contacts/import/cancel → pending クリア
  */
 
-import { contactsApi, type ImportCandidate, type AmbiguousMatch } from '../../api/contacts';
+import {
+  contactsImportApi,
+  type ContactImportNewPreviewResponse,
+} from '../../api/contacts';
 import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult, ExecutionContext } from './types';
 import type { PendingState } from '../pendingTypes';
 import { log } from '../../platform';
 
 // ============================================================
-// Type Definitions for Executor
+// Type Definitions
 // ============================================================
 
-/**
- * pending.contact_import.confirm の詳細型
- */
 type PendingContactImportConfirm = PendingState & {
   kind: 'pending.contact_import.confirm';
-  confirmation_token: string;
-  source: 'text' | 'email' | 'csv';
-  preview: {
-    ok: Array<{ index: number; display_name: string | null; email: string }>;
-    missing_email: Array<{ index: number; raw_line: string; display_name: string | null }>;
-    ambiguous: Array<{
-      index: number;
-      display_name: string | null;
-      email: string;
-      candidates: Array<{ id: string; display_name: string | null; email: string | null }>;
-      reason: 'same_name' | 'similar_name' | 'email_exists';
-    }>;
-  };
-  ambiguous_actions: Record<number, {
-    action: 'create_new' | 'skip' | 'update_existing';
-    existing_id?: string;
-  }>;
-  all_ambiguous_resolved: boolean;
 };
 
-/**
- * pending.person.select の詳細型
- */
 type PendingPersonSelect = PendingState & {
   kind: 'pending.person.select';
-  parent_kind: 'contact_import';
-  confirmation_token: string;
-  candidate_index: number;
-  input_name: string | null;
-  input_email: string;
-  reason: 'same_name' | 'similar_name' | 'email_exists';
-  options: Array<{
-    id: string;
-    display_name: string | null;
-    email: string | null;
-  }>;
-  allow_create_new: boolean;
-  allow_skip: boolean;
 };
 
 // ============================================================
@@ -76,10 +42,8 @@ type PendingPersonSelect = PendingState & {
 // ============================================================
 
 /**
- * contact.import.text: テキストから連絡先取り込み（プレビュー生成）
- * 
- * @param intentResult - rawText を含む IntentResult
- * @returns プレビュー結果と pending 設定
+ * contact.import.text: テキスト/CSVから連絡先取り込み（プレビュー生成）
+ * POST /api/contacts/import/preview
  */
 export async function executeContactImportPreview(
   intentResult: IntentResult
@@ -98,130 +62,39 @@ export async function executeContactImportPreview(
   }
 
   try {
-    log.info('[PR-D-1.1] Executing contact import preview', {
+    log.info('[PR-D-FE-1] Executing contact import preview via new API', {
       module: 'contactImport',
       textLength: rawText.length,
     });
 
-    // API呼び出し
-    const response = await contactsApi.importPreview({
-      text: rawText,
-      source: 'text',
+    // 新API呼び出し
+    const source = (intentResult.params?.source as 'text' | 'csv') || 'text';
+    const response = await contactsImportApi.preview({
+      source,
+      raw_text: rawText,
     });
 
-    // プレビュー結果を整形
-    const { preview, confirmation_token, requires_confirmation, message: apiMessage } = response;
+    // プレビューメッセージ生成
+    const message = buildPreviewMessage(response);
 
-    // ok / missing_email / ambiguous を分類
-    const okCandidates = preview.candidates
-      .filter(c => c.status === 'ok')
-      .map((c, i) => ({
-        index: i,
-        display_name: c.display_name,
-        email: c.email!,
-      }));
-
-    const missingEmailCandidates = preview.candidates
-      .filter(c => c.status === 'missing_email')
-      .map((c, i) => ({
-        index: i,
-        raw_line: c.raw_line,
-        display_name: c.display_name,
-      }));
-
-    // ambiguous をマッピング
-    const ambiguousList = preview.ambiguous_matches.map(m => ({
-      index: m.candidate_index,
-      display_name: m.candidate_name,
-      email: m.candidate_email!,
-      candidates: m.existing_contacts,
-      reason: m.reason,
-    }));
-
-    // メッセージ生成
-    let message = '📋 連絡先取り込みプレビュー\n\n';
-
-    // 有効件数
-    if (okCandidates.length > 0) {
-      message += `✅ 登録予定: ${okCandidates.length}件\n`;
-      okCandidates.slice(0, 5).forEach((c, i) => {
-        message += `  ${i + 1}. ${c.display_name || '(名前なし)'} <${c.email}>\n`;
-      });
-      if (okCandidates.length > 5) {
-        message += `  ... 他 ${okCandidates.length - 5}件\n`;
-      }
-      message += '\n';
-    }
-
-    // メール欠落
-    if (missingEmailCandidates.length > 0) {
-      message += `⚠️ メールなし（スキップ）: ${missingEmailCandidates.length}件\n`;
-      missingEmailCandidates.slice(0, 3).forEach((c, i) => {
-        message += `  • ${c.display_name || c.raw_line}\n`;
-      });
-      if (missingEmailCandidates.length > 3) {
-        message += `  ... 他 ${missingEmailCandidates.length - 3}件\n`;
-      }
-      message += '\n';
-    }
-
-    // 曖昧一致
-    if (ambiguousList.length > 0) {
-      message += `❓ 曖昧一致（要確認）: ${ambiguousList.length}件\n`;
-      ambiguousList.forEach((a, i) => {
-        const reasonLabel = a.reason === 'email_exists' ? 'メール重複' 
-          : a.reason === 'same_name' ? '同姓同名' 
-          : '類似名';
-        message += `  ${i + 1}. ${a.display_name || '(名前なし)'} <${a.email}> [${reasonLabel}]\n`;
-        a.candidates.forEach((c, j) => {
-          message += `     → ${j + 1}: ${c.display_name || '(名前なし)'} <${c.email || '(メールなし)'}>\n`;
-        });
-      });
-      message += '\n';
-    }
-
-    // 指示
-    if (requires_confirmation) {
-      if (ambiguousList.length > 0) {
-        message += '━━━━━━━━━━━━━━━━━━━━\n';
-        message += '曖昧一致が見つかりました。\n';
-        message += '各候補の番号で選択するか、以下から選んでください：\n';
-        message += '• 「はい」→ 曖昧分を新規作成として登録\n';
-        message += '• 「スキップして続行」→ 曖昧分をスキップして登録\n';
-        message += '• 「いいえ」→ キャンセル\n';
-      } else {
-        message += '━━━━━━━━━━━━━━━━━━━━\n';
-        message += '登録を実行しますか？\n';
-        message += '• 「はい」→ 登録\n';
-        message += '• 「いいえ」→ キャンセル\n';
-      }
-    } else {
-      message += apiMessage;
-    }
-
-    // 結果を返す（pending設定用のデータを含む）
     return {
       success: true,
       message,
       data: {
         kind: 'contact_import.preview',
         payload: {
-          confirmation_token,
-          source: 'text' as const,
-          preview: {
-            ok: okCandidates,
-            missing_email: missingEmailCandidates,
-            ambiguous: ambiguousList,
-          },
-          ambiguous_actions: {},
-          all_ambiguous_resolved: ambiguousList.length === 0,
-          requires_confirmation,
+          pending_action_id: response.pending_action_id,
+          expires_at: response.expires_at,
+          summary: response.summary,
+          parsed_entries: response.parsed_entries,
+          next_pending_kind: response.next_pending_kind,
+          source,
         },
       },
     } as ExecutionResult;
 
   } catch (error) {
-    log.error('[PR-D-1.1] Contact import preview failed', {
+    log.error('[PR-D-FE-1] Contact import preview failed', {
       module: 'contactImport',
       error: error instanceof Error ? error.message : String(error),
     });
@@ -234,96 +107,130 @@ export async function executeContactImportPreview(
 }
 
 /**
+ * contact.import.person_select: 曖昧一致時の人物選択
+ * POST /api/contacts/import/person-select
+ */
+export async function executeContactImportPersonSelect(
+  intentResult: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pending = context?.pendingForThread as PendingPersonSelect | null;
+  const pendingActionId = intentResult.params?.pending_action_id
+    || (context?.pendingForThread as any)?.pending_action_id;
+  const action = intentResult.params?.action;
+  const candidateIndex = intentResult.params?.candidate_index;
+  const selectedNumber = intentResult.params?.selected_number;
+
+  if (!pendingActionId || !action || candidateIndex === undefined) {
+    return {
+      success: false,
+      message: '❌ 選択情報が不完全です。',
+    };
+  }
+
+  try {
+    log.info('[PR-D-FE-1] Executing person select via new API', {
+      module: 'contactImport',
+      action,
+      candidateIndex,
+    });
+
+    const response = await contactsImportApi.personSelect({
+      pending_action_id: pendingActionId,
+      entry_index: candidateIndex,
+      action: action === 'create_new' ? 'new' : action === 'update_existing' ? 'select' : 'skip',
+      selected_number: selectedNumber,
+    });
+
+    return {
+      success: true,
+      message: response.message,
+      data: {
+        kind: 'contact_import.person_selected',
+        payload: {
+          pending_action_id: pendingActionId,
+          all_resolved: response.all_resolved,
+          remaining_unresolved: response.remaining_unresolved,
+          next_pending_kind: response.next_pending_kind,
+          updated_entry: response.updated_entry,
+        },
+      },
+    } as ExecutionResult;
+
+  } catch (error: any) {
+    // 404: 期限切れまたは他ユーザー
+    if (error?.status === 404) {
+      return {
+        success: false,
+        message: '❌ この操作は期限切れか、見つかりません。再度取り込みを実行してください。',
+        data: {
+          kind: 'contact_import.expired',
+          payload: {},
+        },
+      } as ExecutionResult;
+    }
+
+    log.error('[PR-D-FE-1] Person select failed', {
+      module: 'contactImport',
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      success: false,
+      message: `❌ 選択に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+    };
+  }
+}
+
+/**
  * contact.import.confirm: 取り込み確定
- * 
- * @param intentResult - confirmation_token, skip_ambiguous を含む IntentResult
- * @param context - pending を含む ExecutionContext
- * @returns 登録結果
+ * POST /api/contacts/import/confirm
+ * Gate-4: ここだけがcontacts書き込み
  */
 export async function executeContactImportConfirm(
   intentResult: IntentResult,
   context?: ExecutionContext
 ): Promise<ExecutionResult> {
-  const confirmationToken = intentResult.params?.confirmation_token;
-  const skipAmbiguous = intentResult.params?.skip_ambiguous === true;
+  const pendingActionId = intentResult.params?.pending_action_id
+    || (context?.pendingForThread as any)?.pending_action_id;
 
-  // pending から ambiguous_actions を取得
-  const pending = context?.pendingForThread as PendingContactImportConfirm | null;
-  const ambiguousActions = pending?.ambiguous_actions || {};
-
-  if (!confirmationToken) {
+  if (!pendingActionId) {
     return {
       success: false,
-      message: '❌ 確認トークンがありません。再度取り込みを実行してください。',
+      message: '❌ 確認IDがありません。再度取り込みを実行してください。',
     };
   }
 
   try {
-    log.info('[PR-D-1.1] Executing contact import confirm', {
+    log.info('[PR-D-FE-1] Executing contact import confirm via new API', {
       module: 'contactImport',
-      confirmationToken,
-      skipAmbiguous,
-      ambiguousActionsCount: Object.keys(ambiguousActions).length,
+      pendingActionId,
     });
 
-    // ambiguous_actions を API 形式に変換
-    const ambiguousActionsArray = Object.entries(ambiguousActions).map(([indexStr, action]) => ({
-      candidate_index: parseInt(indexStr, 10),
-      ...action,
-    }));
-
-    // skip_ambiguous の場合、未解決の曖昧一致をスキップとしてマーク
-    if (skipAmbiguous && pending?.preview.ambiguous) {
-      pending.preview.ambiguous.forEach(a => {
-        if (!ambiguousActions[a.index]) {
-          ambiguousActionsArray.push({
-            candidate_index: a.index,
-            action: 'skip',
-          });
-        }
-      });
-    }
-
-    // API呼び出し
-    const response = await contactsApi.importConfirm({
-      confirmation_token: confirmationToken,
-      skip_ambiguous: skipAmbiguous,
-      ambiguous_actions: ambiguousActionsArray,
+    const response = await contactsImportApi.confirm({
+      pending_action_id: pendingActionId,
     });
-
-    const { created, skipped, updated, errors, summary } = response;
 
     // 結果メッセージ生成
     let message = '✅ 連絡先取り込み完了\n\n';
 
-    if (created.length > 0) {
-      message += `📝 新規登録: ${created.length}件\n`;
-      created.slice(0, 5).forEach((c, i) => {
-        message += `  ${i + 1}. ${c.display_name || '(名前なし)'} <${c.email}>\n`;
+    if (response.created_count > 0) {
+      message += `📝 新規登録: ${response.created_count}件\n`;
+      response.created_contacts.slice(0, 5).forEach((c, i) => {
+        message += `  ${i + 1}. ${c.display_name} <${c.email || ''}>\n`;
       });
-      if (created.length > 5) {
-        message += `  ... 他 ${created.length - 5}件\n`;
+      if (response.created_contacts.length > 5) {
+        message += `  ... 他 ${response.created_contacts.length - 5}件\n`;
       }
       message += '\n';
     }
 
-    if (updated.length > 0) {
-      message += `🔄 更新: ${updated.length}件\n`;
-      updated.slice(0, 3).forEach((c, i) => {
-        message += `  • ${c.display_name || '(名前なし)'} <${c.email}>\n`;
-      });
-      message += '\n';
+    if (response.updated_count > 0) {
+      message += `🔄 更新: ${response.updated_count}件\n`;
     }
 
-    if (skipped.length > 0) {
-      message += `⏭️ スキップ: ${skipped.length}件\n`;
-    }
-
-    if (errors.length > 0) {
-      message += `❌ エラー: ${errors.length}件\n`;
-      errors.slice(0, 3).forEach((e, i) => {
-        message += `  • ${e.raw_line}: ${e.error}\n`;
-      });
+    if (response.skipped_count > 0) {
+      message += `⏭️ スキップ: ${response.skipped_count}件\n`;
     }
 
     return {
@@ -332,95 +239,79 @@ export async function executeContactImportConfirm(
       data: {
         kind: 'contact_import.confirmed',
         payload: {
-          created_count: created.length,
-          updated_count: updated.length,
-          skipped_count: skipped.length,
-          error_count: errors.length,
-          total_processed: summary.total_processed,
+          created_count: response.created_count,
+          updated_count: response.updated_count,
+          skipped_count: response.skipped_count,
         },
       },
     } as ExecutionResult;
 
-  } catch (error) {
-    log.error('[PR-D-1.1] Contact import confirm failed', {
+  } catch (error: any) {
+    // 409: 曖昧一致未解決
+    if (error?.status === 409) {
+      return {
+        success: false,
+        message: '⚠️ まだ未解決の曖昧一致があります。番号を選択するか、「スキップして続行」と入力してください。',
+        data: {
+          kind: 'contact_import.ambiguous_remaining',
+          payload: {},
+        },
+      } as ExecutionResult;
+    }
+
+    // 404: 期限切れまたは他ユーザー
+    if (error?.status === 404) {
+      return {
+        success: false,
+        message: '❌ この操作は期限切れか、見つかりません。再度取り込みを実行してください。',
+        data: {
+          kind: 'contact_import.expired',
+          payload: {},
+        },
+      } as ExecutionResult;
+    }
+
+    log.error('[PR-D-FE-1] Contact import confirm failed', {
       module: 'contactImport',
       error: error instanceof Error ? error.message : String(error),
     });
 
     return {
       success: false,
-      message: `❌ 登録に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      message: `❌ 登録に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}\nもう一度「はい」と入力してリトライできます。`,
     };
   }
 }
 
 /**
  * contact.import.cancel: 取り込みキャンセル
- * 
- * @returns キャンセル完了メッセージ
+ * POST /api/contacts/import/cancel
  */
-export function executeContactImportCancel(): ExecutionResult {
+export async function executeContactImportCancel(
+  _intentResult?: IntentResult,
+  context?: ExecutionContext
+): Promise<ExecutionResult> {
+  const pendingActionId = _intentResult?.params?.pending_action_id
+    || (context?.pendingForThread as any)?.pending_action_id;
+
+  if (pendingActionId) {
+    try {
+      await contactsImportApi.cancel({ pending_action_id: pendingActionId });
+    } catch (error) {
+      // cancel の失敗は無視（UIは即クリア）
+      log.warn('[PR-D-FE-1] Cancel API call failed (UI will clear pending)', {
+        module: 'contactImport',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     success: true,
-    message: '✅ 連絡先取り込みをキャンセルしました。',
+    message: '✅ 連絡先取り込みをキャンセルしました。データは書き込まれていません。',
     data: {
       kind: 'contact_import.cancelled',
       payload: {},
-    },
-  } as ExecutionResult;
-}
-
-/**
- * contact.import.person_select: 曖昧一致時の人物選択
- * 
- * @param intentResult - action, candidate_index, existing_id, confirmation_token を含む IntentResult
- * @param context - pending を含む ExecutionContext
- * @returns 選択結果（pending.contact_import.confirm への更新情報）
- */
-export async function executeContactImportPersonSelect(
-  intentResult: IntentResult,
-  context?: ExecutionContext
-): Promise<ExecutionResult> {
-  const { action, candidate_index, existing_id, confirmation_token } = intentResult.params || {};
-
-  if (!action || candidate_index === undefined || !confirmation_token) {
-    return {
-      success: false,
-      message: '❌ 選択情報が不完全です。',
-    };
-  }
-
-  log.info('[PR-D-1.1] Executing person select', {
-    module: 'contactImport',
-    action,
-    candidateIndex: candidate_index,
-  });
-
-  // 選択結果のメッセージ
-  let actionMessage = '';
-  switch (action) {
-    case 'create_new':
-      actionMessage = '新規作成として登録します。';
-      break;
-    case 'skip':
-      actionMessage = 'この候補をスキップします。';
-      break;
-    case 'update_existing':
-      actionMessage = '既存の連絡先を更新します。';
-      break;
-  }
-
-  return {
-    success: true,
-    message: `✅ ${actionMessage}\n\n次の曖昧一致を確認するか、「はい」で登録を実行してください。`,
-    data: {
-      kind: 'contact_import.person_selected',
-      payload: {
-        candidate_index,
-        action,
-        existing_id,
-        confirmation_token,
-      },
     },
   } as ExecutionResult;
 }
@@ -430,52 +321,142 @@ export async function executeContactImportPersonSelect(
 // ============================================================
 
 /**
- * pending.contact_import.confirm を生成
+ * プレビューメッセージを生成
+ */
+function buildPreviewMessage(response: ContactImportNewPreviewResponse): string {
+  const { summary, parsed_entries } = response;
+  let message = '📋 連絡先取り込みプレビュー\n\n';
+
+  // 新規
+  if (summary.new_count > 0) {
+    message += `✅ 新規登録予定: ${summary.new_count}件\n`;
+    parsed_entries
+      .filter(e => e.match_status === 'new')
+      .slice(0, 5)
+      .forEach((e, i) => {
+        message += `  ${i + 1}. ${e.name} <${e.email || ''}>\n`;
+      });
+    if (summary.new_count > 5) {
+      message += `  ... 他 ${summary.new_count - 5}件\n`;
+    }
+    message += '\n';
+  }
+
+  // メール完全一致（自動更新）
+  if (summary.exact_match_count > 0) {
+    message += `🔄 既存一致（自動更新）: ${summary.exact_match_count}件\n`;
+  }
+
+  // 曖昧一致
+  if (summary.ambiguous_count > 0) {
+    message += `❓ 曖昧一致（要確認）: ${summary.ambiguous_count}件\n`;
+    parsed_entries
+      .filter(e => e.match_status === 'ambiguous')
+      .forEach((e, i) => {
+        message += `  ${i + 1}. ${e.name} <${e.email || ''}>\n`;
+        if (e.ambiguous_candidates) {
+          e.ambiguous_candidates.forEach(c => {
+            message += `     → ${c.number}: ${c.display_name} <${c.email || ''}>\n`;
+          });
+        }
+      });
+    message += '\n';
+  }
+
+  // メール欠落
+  if (summary.missing_email_count > 0) {
+    message += `⚠️ メールなし（スキップ）: ${summary.missing_email_count}件\n\n`;
+  }
+
+  // 指示
+  message += '━━━━━━━━━━━━━━━━━━━━\n';
+  if (summary.ambiguous_count > 0) {
+    message += '曖昧一致が見つかりました。\n';
+    message += '番号で選択 / 0=新規 / s=スキップ\n';
+    message += '全て解決後に「はい」で登録を確定します。\n';
+  } else {
+    message += '登録を実行しますか？\n';
+    message += '• 「はい」→ 登録\n';
+    message += '• 「いいえ」→ キャンセル\n';
+  }
+
+  return message;
+}
+
+/**
+ * pending.contact_import.confirm を生成（PR-D-FE-1: 新API対応）
  */
 export function buildPendingContactImportConfirm(
   threadId: string,
   data: {
-    confirmation_token: string;
-    source: 'text' | 'email' | 'csv';
-    preview: PendingContactImportConfirm['preview'];
-    ambiguous_actions?: PendingContactImportConfirm['ambiguous_actions'];
-    all_ambiguous_resolved?: boolean;
+    pending_action_id: string;
+    source: 'text' | 'csv';
+    summary: ContactImportNewPreviewResponse['summary'];
+    parsed_entries: ContactImportNewPreviewResponse['parsed_entries'];
+    next_pending_kind: string;
   }
-): PendingContactImportConfirm {
+): PendingState & { kind: 'pending.contact_import.confirm' } {
+  // 旧型のpreview形式に変換して互換性維持
+  const okEntries = data.parsed_entries
+    .filter(e => e.match_status === 'new' || e.match_status === 'exact')
+    .map(e => ({ index: e.index, display_name: e.name, email: e.email || '' }));
+  const missingEntries = data.parsed_entries
+    .filter(e => e.missing_email)
+    .map(e => ({ index: e.index, raw_line: e.name, display_name: e.name }));
+  const ambiguousEntries = data.parsed_entries
+    .filter(e => e.match_status === 'ambiguous')
+    .map(e => ({
+      index: e.index,
+      display_name: e.name,
+      email: e.email || '',
+      candidates: (e.ambiguous_candidates || []).map(c => ({
+        id: c.contact_id,
+        display_name: c.display_name,
+        email: c.email || null,
+      })),
+      reason: 'similar_name' as const,
+    }));
+
   return {
     kind: 'pending.contact_import.confirm',
     threadId,
     createdAt: Date.now(),
-    confirmation_token: data.confirmation_token,
+    confirmation_token: '', // 旧API互換 — 新APIではpending_action_idを使う
     source: data.source,
-    preview: data.preview,
-    ambiguous_actions: data.ambiguous_actions || {},
-    all_ambiguous_resolved: data.all_ambiguous_resolved ?? data.preview.ambiguous.length === 0,
-  };
+    preview: {
+      ok: okEntries,
+      missing_email: missingEntries,
+      ambiguous: ambiguousEntries,
+    },
+    ambiguous_actions: {},
+    all_ambiguous_resolved: data.summary.ambiguous_count === 0,
+    // PR-D-FE-1: 新API用のフィールド
+    pending_action_id: data.pending_action_id,
+  } as any;
 }
 
 /**
- * pending.person.select を生成
+ * pending.person.select を生成（PR-D-FE-1: 新API対応）
  */
 export function buildPendingPersonSelect(
   threadId: string,
   data: {
-    confirmation_token: string;
+    pending_action_id: string;
     candidate_index: number;
     input_name: string | null;
     input_email: string;
     reason: 'same_name' | 'similar_name' | 'email_exists';
-    options: PendingPersonSelect['options'];
+    options: Array<{ id: string; display_name: string | null; email: string | null }>;
     allow_create_new?: boolean;
     allow_skip?: boolean;
   }
-): PendingPersonSelect {
+): PendingState & { kind: 'pending.person.select' } {
   return {
     kind: 'pending.person.select',
     threadId,
     createdAt: Date.now(),
     parent_kind: 'contact_import',
-    confirmation_token: data.confirmation_token,
+    confirmation_token: '', // 旧API互換
     candidate_index: data.candidate_index,
     input_name: data.input_name,
     input_email: data.input_email,
@@ -483,5 +464,7 @@ export function buildPendingPersonSelect(
     options: data.options,
     allow_create_new: data.allow_create_new ?? true,
     allow_skip: data.allow_skip ?? true,
-  };
+    // PR-D-FE-1: 新API用のフィールド
+    pending_action_id: data.pending_action_id,
+  } as any;
 }
