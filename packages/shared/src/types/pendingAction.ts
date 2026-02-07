@@ -14,6 +14,7 @@ export const PENDING_ACTION_TYPE = {
   SEND_INVITES: 'send_invites',           // 新規スレッド作成＋招待送信
   ADD_INVITES: 'add_invites',             // 既存スレッドへの追加招待
   SEND_FINALIZE_NOTICE: 'send_finalize_notice', // 確定通知送信
+  CONTACT_IMPORT: 'contact_import',       // 連絡先取り込み (PR-D-1.1/D-2)
 } as const;
 
 export type PendingActionType = typeof PENDING_ACTION_TYPE[keyof typeof PENDING_ACTION_TYPE];
@@ -200,3 +201,162 @@ export function generateExpiresAt(minutesFromNow: number = 15): string {
   expires.setMinutes(expires.getMinutes() + minutesFromNow);
   return expires.toISOString();
 }
+
+// ============================================================
+// Contact Import Types (PR-D-1.1, PR-D-2)
+// ============================================================
+
+/** 取り込みソース種別 */
+export type ContactImportSource = 'text' | 'csv';
+
+/** 取り込み対象の1人分のエントリ */
+export interface ContactImportEntry {
+  index: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
+  missing_email?: boolean;
+  match_status: ContactMatchStatus;
+  ambiguous_candidates?: AmbiguousCandidate[];
+  resolved_action?: AmbiguousResolvedAction;
+}
+
+/** 一致状態 */
+export type ContactMatchStatus = 'exact' | 'ambiguous' | 'new' | 'skipped';
+
+/** 曖昧一致候補 */
+export interface AmbiguousCandidate {
+  number: number;
+  contact_id: string;
+  display_name: string;
+  email?: string;
+  score: number;
+}
+
+/** 曖昧一致の解決アクション */
+export type AmbiguousResolvedAction =
+  | { type: 'select_existing'; contact_id: string }
+  | { type: 'create_new' }
+  | { type: 'skip' };
+
+/** ContactImport用Payload */
+export interface ContactImportPayload {
+  source: ContactImportSource;
+  raw_text: string;
+  parsed_entries: ContactImportEntry[];
+  unresolved_count: number;
+  all_ambiguous_resolved: boolean;
+  missing_email_count: number;
+}
+
+/** ContactImport用Summary */
+export interface ContactImportSummary {
+  total_count: number;
+  exact_match_count: number;
+  ambiguous_count: number;
+  new_count: number;
+  skipped_count: number;
+  missing_email_count: number;
+  source: ContactImportSource;
+  preview_entries: Array<{
+    name: string;
+    email?: string;
+    match_status: ContactMatchStatus;
+    candidate_count?: number;
+  }>;
+}
+
+// ============================================================
+// Pending Confirmation Kind (Classifier用)
+// ============================================================
+
+export const PENDING_CONFIRMATION_KIND = {
+  SEND_INVITES: 'send_invites',
+  CONTACT_IMPORT_CONFIRM: 'contact_import_confirm',
+  CONTACT_IMPORT_PERSON_SELECT: 'contact_import_person_select',
+  FINALIZE_THREAD: 'finalize_thread',
+  CANCEL_THREAD: 'cancel_thread',
+} as const;
+
+export type PendingConfirmationKind = typeof PENDING_CONFIRMATION_KIND[keyof typeof PENDING_CONFIRMATION_KIND];
+
+/** Chat UIのpending状態 */
+export interface PendingConfirmationState {
+  hasPending: boolean;
+  kind: PendingConfirmationKind | null;
+  pending_action_id: string | null;
+  ui_hint: string | null;
+}
+
+// ============================================================
+// Contact Import API Response Types
+// ============================================================
+
+export interface ContactImportPreviewResponse {
+  pending_action_id: string;
+  expires_at: string;
+  summary: ContactImportSummary;
+  parsed_entries: ContactImportEntry[];
+  message: string;
+  next_pending_kind: PendingConfirmationKind;
+}
+
+export interface ContactImportConfirmResponse {
+  success: boolean;
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  created_contacts: Array<{
+    id: string;
+    display_name: string;
+    email?: string;
+  }>;
+}
+
+export interface ContactImportPersonSelectResponse {
+  updated_entry: ContactImportEntry;
+  all_resolved: boolean;
+  remaining_unresolved: number;
+  next_pending_kind: PendingConfirmationKind;
+  message: string;
+}
+
+// ============================================================
+// Generic Pending Action (for Contact Import Executor)
+// ============================================================
+
+/** 汎用PendingAction DB行（CI Executor用） */
+export interface PendingActionGeneric {
+  id: string;
+  actor_user_id: string;
+  action_type: PendingActionType;
+  target_id: string;
+  payload_json: string;
+  summary_json: string;
+  status: PendingActionStatus;
+  expires_at: string;
+  executed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePendingActionInput {
+  actor_user_id: string;
+  action_type: PendingActionType;
+  target_id: string;
+  payload: ContactImportPayload;
+  summary: ContactImportSummary;
+  expires_in_minutes?: number;
+}
+
+export interface ExecutePendingActionInput {
+  pending_action_id: string;
+  actor_user_id: string;
+}
+
+/** Default expiration in minutes */
+export const DEFAULT_EXPIRATION_MINUTES = 15;
+
+/** Max preview count for summary */
+export const MAX_PREVIEW_COUNT = 5;
