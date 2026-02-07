@@ -93,6 +93,11 @@ export type IntentType =
   | 'pool_booking.create_confirm' // G2-A: プール作成確認
   | 'pool_booking.create_cancel'  // G2-A: プール作成キャンセル
   | 'pool_booking.member_selected' // G2-A: メンバー選択完了
+  // PR-D-1.1: 連絡先取り込み
+  | 'contact.import.text'          // PR-D-1.1: テキストからの連絡先取り込み
+  | 'contact.import.confirm'       // PR-D-1.1: 取り込み確認
+  | 'contact.import.cancel'        // PR-D-1.1: 取り込みキャンセル
+  | 'contact.import.person_select' // PR-D-1.1: 曖昧一致時の人物選択
   | 'unknown';
 
 export interface IntentResult {

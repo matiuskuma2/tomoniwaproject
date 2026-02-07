@@ -152,6 +152,17 @@ export {
   type PoolCreateDraft,
 } from './pool/create';
 
+// Contact Import executors (PR-D-1.1: 連絡先取り込み)
+export {
+  executeContactImportPreview,
+  executeContactImportConfirm,
+  executeContactImportCancel,
+  executeContactImportPersonSelect,
+  // Helpers
+  buildPendingContactImportConfirm,
+  buildPendingPersonSelect,
+} from './contactImport';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

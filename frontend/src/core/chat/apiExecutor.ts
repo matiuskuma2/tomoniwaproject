@@ -31,6 +31,9 @@ import {
   // Phase 1-2: isPendingAction は executors/pending.ts に移動
   // Phase 1-3a: isPendingSplit, isPendingAutoPropose は executors/autoPropose.ts に移動
   isPendingNotify,
+  // PR-D-1.1: 連絡先取り込み
+  isPendingContactImportConfirm,
+  isPendingPersonSelect,
 } from './pendingTypes';
 
 // P1-1: 分割した executor をインポート
@@ -96,6 +99,11 @@ import {
   executePoolCreateFinalize,
   executePoolCreateCancel,
   executePoolMemberSelected,
+  // PR-D-1.1: 連絡先取り込み
+  executeContactImportPreview,
+  executeContactImportConfirm,
+  executeContactImportCancel,
+  executeContactImportPersonSelect,
 } from './executors';
 import type { PoolCreateDraft } from './executors/pool/create';
 // PendingState import removed - already imported at line 23
@@ -709,6 +717,19 @@ export async function executeIntent(
     
     case 'pool_booking.member_selected':
       return executePoolMemberSelectedFromExecutors(intentResult, context);
+    
+    // PR-D-1.1: 連絡先取り込み
+    case 'contact.import.text':
+      return executeContactImportPreview(intentResult);
+    
+    case 'contact.import.confirm':
+      return executeContactImportConfirm(intentResult, context);
+    
+    case 'contact.import.cancel':
+      return executeContactImportCancel();
+    
+    case 'contact.import.person_select':
+      return executeContactImportPersonSelect(intentResult, context);
     
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）

@@ -18,6 +18,8 @@ export type PendingKind =
   | 'pending.channel.select'   // Phase 3: チャネル選択待ち
   | 'pending.pool.create'      // G2-A: Pool作成確認待ち
   | 'pending.pool.member_select' // G2-A: Pool作成時のメンバー選択待ち
+  | 'pending.contact_import.confirm'  // PR-D-1.1: 連絡先取り込み確認待ち
+  | 'pending.person.select'    // PR-D-1.1: 曖昧一致時の人物選択待ち
   | 'remind.pending'           // Phase Next-6 Day1: 未回答者リマインド
   | 'remind.need_response'     // Phase2 P2-D1: 再回答依頼リマインド
   | 'remind.responded'         // Phase2 P2-D2: 最新回答済み者リマインド
@@ -187,6 +189,65 @@ export type PendingState =
       reason: string;                     // 選択が必要な理由
       intent_to_resume: string;           // 選択後に再実行する intent
       original_params: Record<string, unknown>;  // 元の params
+    })
+
+  // PR-D-1.1: 連絡先取り込み確認待ち
+  | (PendingBase & {
+      kind: 'pending.contact_import.confirm';
+      confirmation_token: string;
+      source: 'text' | 'email' | 'csv';
+      preview: {
+        /** 登録予定の連絡先 */
+        ok: Array<{
+          index: number;
+          display_name: string | null;
+          email: string;
+        }>;
+        /** メール欠落でスキップ */
+        missing_email: Array<{
+          index: number;
+          raw_line: string;
+          display_name: string | null;
+        }>;
+        /** 曖昧一致（要選択） */
+        ambiguous: Array<{
+          index: number;
+          display_name: string | null;
+          email: string;
+          candidates: Array<{
+            id: string;
+            display_name: string | null;
+            email: string | null;
+          }>;
+          reason: 'same_name' | 'similar_name' | 'email_exists';
+        }>;
+      };
+      /** 曖昧一致の選択結果（index → action） */
+      ambiguous_actions: Record<number, {
+        action: 'create_new' | 'skip' | 'update_existing';
+        existing_id?: string;
+      }>;
+      /** すべての曖昧一致が解決済みかどうか */
+      all_ambiguous_resolved: boolean;
+    })
+
+  // PR-D-1.1: 曖昧一致時の人物選択待ち
+  | (PendingBase & {
+      kind: 'pending.person.select';
+      parent_kind: 'contact_import';
+      confirmation_token: string;
+      candidate_index: number;            // 現在選択中の候補のインデックス
+      input_name: string | null;          // 入力された名前
+      input_email: string;                // 入力されたメール
+      reason: 'same_name' | 'similar_name' | 'email_exists';
+      options: Array<{
+        id: string;
+        display_name: string | null;
+        email: string | null;
+      }>;
+      /** 「新規」「スキップ」も選択肢に含める */
+      allow_create_new: boolean;
+      allow_skip: boolean;
     });
 
 // ============================================================
@@ -263,6 +324,15 @@ export function isPendingPoolMemberSelect(pending: PendingState | null): pending
   return pending?.kind === 'pending.pool.member_select';
 }
 
+// PR-D-1.1: 連絡先取り込み用 type guards
+export function isPendingContactImportConfirm(pending: PendingState | null): pending is PendingState & { kind: 'pending.contact_import.confirm' } {
+  return pending?.kind === 'pending.contact_import.confirm';
+}
+
+export function isPendingPersonSelect(pending: PendingState | null): pending is PendingState & { kind: 'pending.person.select' } {
+  return pending?.kind === 'pending.person.select';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -274,6 +344,8 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'pending.channel.select',  // Phase 3
     'pending.pool.create',     // G2-A
     'pending.pool.member_select', // G2-A
+    'pending.contact_import.confirm',  // PR-D-1.1
+    'pending.person.select',   // PR-D-1.1
     'remind.pending',
     'remind.need_response',
     'remind.responded',
@@ -318,6 +390,11 @@ export function describePending(pending: PendingState | null): string {
       return `プール作成確認待ち (${pending.draft.pool_name})`;
     case 'pending.pool.member_select':
       return `メンバー選択待ち (「${pending.query_name}」${pending.candidates.length}件)`;
+    // PR-D-1.1: 連絡先取り込み
+    case 'pending.contact_import.confirm':
+      return `連絡先取り込み確認待ち (${pending.preview.ok.length}件)`;
+    case 'pending.person.select':
+      return `人物選択待ち (「${pending.input_name || pending.input_email}」${pending.options.length}件)`;
     default:
       return `不明な状態`;
   }

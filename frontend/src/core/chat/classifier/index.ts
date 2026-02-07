@@ -29,6 +29,7 @@ import { classifyPreference } from './preference';
 import { classifyOneOnOne } from './oneOnOne';
 import { classifyRelation } from './relation';  // D0: 関係性管理
 import { classifyPool } from './pool';          // G2-A: Pool Booking
+import { classifyContactImport } from './contactImport'; // PR-D-1.1: 連絡先取り込み
 
 /**
  * 分類器チェーン（固定順序）
@@ -36,16 +37,17 @@ import { classifyPool } from './pool';          // G2-A: Pool Booking
  */
 const classifierChain: ClassifierFn[] = [
   classifyPendingDecision,  // 1. pending.action 決定フロー（最優先）
-  classifyConfirmCancel,    // 2. はい/いいえ系（split/notify/remind の優先順）
-  classifyLists,            // 3. Beta A リスト5コマンド
-  classifyCalendar,         // 4. P1 カレンダー読み取り
-  classifyPreference,       // 5. P3-PREF 好み設定
-  classifyOneOnOne,         // 6. v1.0: 1対1予定調整（固定日時）
-  classifyPropose,          // 7. 候補提案系
-  classifyRemind,           // 8. リマインド系
-  classifyRelation,         // 9. D0: 関係性管理（仕事仲間申請）
-  classifyPool,             // 10. G2-A: Pool Booking（予約）
-  classifyThread,           // 11. スレッド操作系
+  classifyContactImport,    // 2. PR-D-1.1: 連絡先取り込み（pending.contact_import/person.select 優先）
+  classifyConfirmCancel,    // 3. はい/いいえ系（split/notify/remind の優先順）
+  classifyLists,            // 4. Beta A リスト5コマンド
+  classifyCalendar,         // 5. P1 カレンダー読み取り
+  classifyPreference,       // 6. P3-PREF 好み設定
+  classifyOneOnOne,         // 7. v1.0: 1対1予定調整（固定日時）
+  classifyPropose,          // 8. 候補提案系
+  classifyRemind,           // 9. リマインド系
+  classifyRelation,         // 10. D0: 関係性管理（仕事仲間申請）
+  classifyPool,             // 11. G2-A: Pool Booking（予約）
+  classifyThread,           // 12. スレッド操作系
 ];
 
 /**
