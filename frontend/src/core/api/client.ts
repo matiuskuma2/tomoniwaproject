@@ -36,10 +36,16 @@ async function request<T>(
   const { skipAuth = false, ...fetchConfig } = config;
 
   // Build headers
+  // PR-D-3: FormDataの場合はContent-Typeを設定しない（ブラウザがboundary付きで自動設定）
+  const isFormData = fetchConfig.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(fetchConfig.headers as Record<string, string>),
   };
+  // FormDataの場合はContent-Typeを削除（空文字列が設定されている可能性があるため）
+  if (isFormData) {
+    delete headers['Content-Type'];
+  }
 
   // Add Bearer token if authenticated and not skipped
   if (!skipAuth) {
@@ -111,6 +117,17 @@ export const api = {
 
   delete: <T>(endpoint: string, config?: RequestConfig) =>
     request<T>(endpoint, { ...config, method: 'DELETE' }),
+
+  /**
+   * PR-D-3: POST with FormData (multipart/form-data)
+   * Content-Type はブラウザが boundary 付きで自動設定するため省略
+   */
+  postForm: <T>(endpoint: string, formData: FormData, config?: RequestConfig) =>
+    request<T>(endpoint, {
+      ...config,
+      method: 'POST',
+      body: formData,
+    }),
 };
 
 // ============================================================

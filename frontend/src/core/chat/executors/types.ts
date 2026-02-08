@@ -241,7 +241,10 @@ export type ExecutionResultData =
       summary: any;
       parsed_entries: any[];
       next_pending_kind: string;
-      source: 'text' | 'csv';
+      source: 'text' | 'csv' | 'business_card';
+      business_card_ids?: string[];
+      /** PR-D-FE-3.1: アップロード時の意図コンテキスト */
+      contact_import_context?: ContactImportContext;
     } }
   | { kind: 'contact_import.person_selected'; payload: {
       pending_action_id: string;
@@ -254,10 +257,39 @@ export type ExecutionResultData =
       created_count: number;
       updated_count: number;
       skipped_count: number;
+      /** PR-D-FE-3.1: confirm完了後の次手提示用コンテキスト */
+      contact_import_context?: ContactImportContext;
+      /** PR-D-FE-3.1: 取り込み済み連絡先の一覧 */
+      imported_contacts?: Array<{ display_name: string; email: string }>;
     } }
   | { kind: 'contact_import.cancelled'; payload: {} }
   | { kind: 'contact_import.expired'; payload: {} }
-  | { kind: 'contact_import.ambiguous_remaining'; payload: {} };
+  | { kind: 'contact_import.ambiguous_remaining'; payload: {} }
+  // PR-D-FE-3.1: 名刺取り込み完了後の次手フロー
+  | { kind: 'post_import.next_step.created'; payload: {
+      intent: PostImportIntent;
+      userMessage?: string;
+      importSummary: {
+        created_count: number;
+        updated_count: number;
+        skipped_count: number;
+        imported_contacts: Array<{ display_name: string; email: string }>;
+      };
+      source: 'text' | 'csv' | 'business_card';
+    } }
+  | { kind: 'post_import.next_step.selected'; payload: {
+      action: 'send_invite' | 'schedule' | 'completed';
+      emails: string[];
+    } }
+  | { kind: 'post_import.next_step.cancelled'; payload: {} };
+
+// PR-D-FE-3.1: アップロード時の意図コンテキスト
+export type PostImportIntent = 'send_invite' | 'schedule' | 'message_only' | 'unknown';
+
+export interface ContactImportContext {
+  intent: PostImportIntent;
+  message?: string;
+}
 
 export interface ExecutionResult {
   success: boolean;

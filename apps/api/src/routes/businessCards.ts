@@ -2,8 +2,13 @@
  * Business Cards API Routes
  * 
  * MVP: 名刺写メ → 即登録 → 「名刺登録」リスト自動追加
- * - POST /api/business-cards: 画像アップ + contacts登録 + list追加
- * - GET /api/business-cards/:id: 署名付きURL返却（画像表示用）
+ * PR-D-3: 名刺写メ → OCR抽出 → pending確認フロー（事故ゼロ設計）
+ * 
+ * Endpoints:
+ *   POST /api/business-cards       — MVP: 即登録（従来フロー）
+ *   POST /api/business-cards/scan  — PR-D-3: OCR → preview → pending
+ *   GET  /api/business-cards/:id/image — 画像表示
+ *   GET  /api/business-cards       — 一覧取得
  */
 
 import { Hono } from 'hono';
@@ -12,12 +17,25 @@ import { BusinessCardsRepository } from '../repositories/businessCardsRepository
 import { ContactsRepository } from '../repositories/contactsRepository';
 import { ListsRepository } from '../repositories/listsRepository';
 import { getUserIdFromContext } from '../middleware/auth';
+import { getTenant } from '../utils/workspaceContext';
 import { createLogger } from '../utils/logger';
+import { GeminiService, type BusinessCardExtraction } from '../services/geminiService';
+import {
+  type ContactImportPayload,
+  type ContactImportEntry,
+  PENDING_CONFIRMATION_KIND,
+} from '../../../../packages/shared/src/types/pendingAction';
+import {
+  detectAmbiguousMatches,
+  buildSummary,
+  IMPORT_EXPIRATION_MINUTES,
+} from './contactImport';
 
 const DEFAULT_WORKSPACE = 'ws-default';
 const BUSINESS_CARD_LIST_NAME = '名刺登録';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGES_PER_SCAN = 5;
 
 type Variables = {
   userId?: string;
@@ -25,6 +43,238 @@ type Variables = {
 };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+/**
+ * POST /api/business-cards/scan
+ * 
+ * PR-D-3: 名刺画像 → OCR抽出 → pending確認フロー
+ * 事故ゼロ設計:
+ *   - Gate-1: emailが取れない名刺は登録しない（Hard fail → missing_email_count++）
+ *   - Gate-2: 曖昧一致は必ず pending.person.select で止める
+ *   - Gate-3: owner_user_id一致（pending_action_idで絞る）
+ *   - Gate-4: confirm以外は contacts書き込みゼロ
+ * 
+ * @body multipart/form-data
+ *   - images: 名刺画像1枚以上（最大5枚）
+ */
+app.post('/scan', async (c) => {
+  const { env } = c;
+  const log = createLogger(env, { module: 'BusinessCards', handler: 'scan' });
+  const { workspaceId, ownerUserId } = getTenant(c);
+
+  try {
+    // GEMINI_API_KEY チェック
+    if (!env.GEMINI_API_KEY) {
+      return c.json({ error: 'OCR service not configured (GEMINI_API_KEY missing)' }, 503);
+    }
+
+    const formData = await c.req.formData();
+
+    // 画像収集（複数対応: images[] or image）
+    const imageFiles: File[] = [];
+    const allEntries = formData.getAll('images');
+    for (const entry of allEntries) {
+      if (typeof entry !== 'string' && entry !== null) imageFiles.push(entry as File);
+    }
+    // 単数フォールバック
+    if (imageFiles.length === 0) {
+      const single = formData.get('image');
+      if (single && typeof single !== 'string') imageFiles.push(single as File);
+    }
+
+    if (imageFiles.length === 0) {
+      return c.json({ error: 'At least one image is required (field: images or image)' }, 400);
+    }
+
+    if (imageFiles.length > MAX_IMAGES_PER_SCAN) {
+      return c.json({ error: `Maximum ${MAX_IMAGES_PER_SCAN} images per scan` }, 400);
+    }
+
+    // バリデーション
+    for (const file of imageFiles) {
+      if (file.size > MAX_FILE_SIZE) {
+        return c.json({ error: `File ${file.name} exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit` }, 400);
+      }
+      if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+        return c.json({ error: `Invalid file type: ${file.type}. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}` }, 400);
+      }
+    }
+
+    const gemini = new GeminiService(env.GEMINI_API_KEY);
+    const allExtractions: BusinessCardExtraction[] = [];
+    const r2Keys: string[] = [];
+    const bcIds: string[] = [];
+
+    // 各画像を処理
+    for (const file of imageFiles) {
+      // 1. R2にアップロード（audit用）
+      const arrayBuffer = await file.arrayBuffer();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const id = crypto.randomUUID();
+      const r2ObjectKey = `business_cards/${workspaceId}/${ownerUserId}/${year}/${month}/${id}.${ext}`;
+
+      await env.STORAGE.put(r2ObjectKey, arrayBuffer, {
+        httpMetadata: { contentType: file.type },
+      });
+      r2Keys.push(r2ObjectKey);
+
+      log.debug('Image uploaded to R2', { r2ObjectKey, size: file.size });
+
+      // 2. Gemini Vision OCRで抽出
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+
+      let extractions: BusinessCardExtraction[];
+      try {
+        extractions = await gemini.extractBusinessCard(base64, file.type);
+      } catch (ocrError) {
+        log.warn('OCR extraction failed for image', {
+          filename: file.name,
+          error: ocrError instanceof Error ? ocrError.message : String(ocrError),
+        });
+        // OCR失敗 → この画像はスキップ（全体は止めない）
+        extractions = [];
+      }
+
+      // 3. business_cards レコード作成（extraction_status記録）
+      const bcRepo = new BusinessCardsRepository(env.DB);
+      const businessCard = await bcRepo.create({
+        workspace_id: workspaceId,
+        owner_user_id: ownerUserId,
+        r2_object_key: r2ObjectKey,
+        original_filename: file.name,
+        mime_type: file.type,
+        byte_size: file.size,
+        occurred_at: now.toISOString(),
+      });
+      bcIds.push(businessCard.id);
+
+      // extracted_json を更新
+      await env.DB.prepare(
+        `UPDATE business_cards SET extracted_json = ?, extraction_status = ? WHERE id = ?`
+      ).bind(
+        JSON.stringify(extractions),
+        extractions.length > 0 ? 'done' : 'failed',
+        businessCard.id
+      ).run();
+
+      allExtractions.push(...extractions);
+    }
+
+    if (allExtractions.length === 0) {
+      return c.json({
+        error: 'No contacts could be extracted from the images',
+        business_card_ids: bcIds,
+        message: '名刺から情報を読み取れませんでした。画像が鮮明か確認してください。',
+      }, 422);
+    }
+
+    // 4. ContactImportEntry に変換
+    const entries: ContactImportEntry[] = allExtractions.map((ext, idx) => {
+      const hasEmail = !!ext.email && ext.email.includes('@');
+      return {
+        index: idx,
+        name: ext.name,
+        email: hasEmail ? ext.email!.toLowerCase() : undefined,
+        phone: ext.phone || undefined,
+        company: ext.company || undefined,
+        title: ext.title || undefined,
+        missing_email: !hasEmail,
+        match_status: hasEmail ? 'new' as const : 'skipped' as const,
+        resolved_action: hasEmail ? { type: 'create_new' as const } : { type: 'skip' as const },
+        notes: [ext.company, ext.title].filter(Boolean).join(' / ') || undefined,
+      };
+    });
+
+    // 5. 曖昧一致検出（既存contactImportロジック再利用）
+    const contactsRepo = new ContactsRepository(env.DB);
+    const enrichedEntries = await detectAmbiguousMatches(entries, contactsRepo, workspaceId, ownerUserId);
+
+    // 6. unresolved計算
+    const unresolvedCount = enrichedEntries.filter(
+      e => e.match_status === 'ambiguous' && !e.resolved_action
+    ).length;
+    const allResolved = unresolvedCount === 0;
+    const missingEmailCount = enrichedEntries.filter(e => e.missing_email).length;
+
+    // 7. Payload/Summary
+    const payload: ContactImportPayload = {
+      source: 'business_card',
+      raw_text: JSON.stringify(allExtractions), // OCR生データ保存
+      parsed_entries: enrichedEntries,
+      unresolved_count: unresolvedCount,
+      all_ambiguous_resolved: allResolved,
+      missing_email_count: missingEmailCount,
+    };
+    const summary = buildSummary(enrichedEntries, 'business_card');
+
+    // 8. pending_action 作成
+    const pendingId = crypto.randomUUID();
+    const confirmToken = crypto.randomUUID().replace(/-/g, '');
+    const expiresAt = new Date(Date.now() + IMPORT_EXPIRATION_MINUTES * 60 * 1000).toISOString();
+    const nowStr = new Date().toISOString();
+
+    await env.DB.prepare(`
+      INSERT INTO pending_actions
+        (id, workspace_id, owner_user_id, thread_id,
+         action_type, source_type,
+         payload_json, summary_json,
+         confirm_token, status, expires_at, created_at)
+      VALUES (?, ?, ?, NULL,
+              'contact_import', 'contacts',
+              ?, ?,
+              ?, 'pending', ?, ?)
+    `).bind(
+      pendingId,
+      workspaceId,
+      ownerUserId,
+      JSON.stringify(payload),
+      JSON.stringify(summary),
+      confirmToken,
+      expiresAt,
+      nowStr
+    ).run();
+
+    const nextKind = allResolved
+      ? PENDING_CONFIRMATION_KIND.CONTACT_IMPORT_CONFIRM
+      : PENDING_CONFIRMATION_KIND.CONTACT_IMPORT_PERSON_SELECT;
+
+    log.info('Business card scan completed', {
+      pending_action_id: pendingId,
+      images_count: imageFiles.length,
+      extractions_count: allExtractions.length,
+      ambiguous: unresolvedCount,
+      missing_email: missingEmailCount,
+      business_card_ids: bcIds,
+    });
+
+    return c.json({
+      pending_action_id: pendingId,
+      expires_at: expiresAt,
+      summary,
+      parsed_entries: enrichedEntries,
+      business_card_ids: bcIds,
+      next_pending_kind: nextKind,
+      message: allResolved
+        ? missingEmailCount > 0
+          ? `${enrichedEntries.length}件中${missingEmailCount}件はメール未取得のためスキップされます。残りの内容を確認して「はい」で確定してください。`
+          : '名刺の内容を確認してください。「はい」で確定します。'
+        : `${unresolvedCount}件の曖昧な一致があります。番号を選択してください。`,
+    }, 201);
+  } catch (error) {
+    log.error('Business card scan failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return c.json({
+      error: 'Business card scan failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
 
 /**
  * POST /api/business-cards

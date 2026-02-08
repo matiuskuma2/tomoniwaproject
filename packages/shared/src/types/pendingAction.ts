@@ -207,7 +207,7 @@ export function generateExpiresAt(minutesFromNow: number = 15): string {
 // ============================================================
 
 /** 取り込みソース種別 */
-export type ContactImportSource = 'text' | 'csv';
+export type ContactImportSource = 'text' | 'csv' | 'business_card';
 
 /** 取り込み対象の1人分のエントリ */
 export interface ContactImportEntry {
@@ -215,6 +215,8 @@ export interface ContactImportEntry {
   name: string;
   email?: string;
   phone?: string;
+  company?: string;
+  title?: string;
   notes?: string;
   missing_email?: boolean;
   match_status: ContactMatchStatus;

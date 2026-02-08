@@ -26,6 +26,8 @@ import type { PendingState } from '../../core/chat/pendingTypes';
 import { getPendingForThread } from '../../core/chat/pendingTypes';
 // PR-D-FE-1: Contact Import pending builder (静的import — require()はブラウザ非互換)
 import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
+// PR-D-FE-3.1: 次手フロー用 context 型
+import type { ContactImportContext } from '../../core/chat/executors/types';
 
 // ============================================================
 // State Types
@@ -114,7 +116,20 @@ export type ChatAction =
   | { type: 'DISABLE_PERSISTENCE' }
   
   // PR-D-FE-1: Contact Import 曖昧一致解決（reducer内で既存pendingを安全に更新）
-  | { type: 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS'; payload: { threadId: string; pending_action_id: string } };
+  | { type: 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS'; payload: { threadId: string; pending_action_id: string } }
+  // PR-D-FE-3.1: 名刺取り込み完了後の次手選択 pending 設定
+  | { type: 'SET_POST_IMPORT_NEXT_STEP'; payload: {
+      threadId: string;
+      intent: 'send_invite' | 'schedule' | 'message_only' | 'unknown';
+      userMessage?: string;
+      importSummary: {
+        created_count: number;
+        updated_count: number;
+        skipped_count: number;
+        imported_contacts: Array<{ display_name: string; email: string }>;
+      };
+      source: 'text' | 'csv' | 'business_card';
+    } };
 
 // ============================================================
 // Reducer
@@ -239,6 +254,26 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
     
+    // PR-D-FE-3.1: 名刺取り込み完了後の次手選択 pending
+    case 'SET_POST_IMPORT_NEXT_STEP': {
+      const { threadId, intent, userMessage, importSummary, source } = action.payload;
+      return {
+        ...state,
+        pendingByThreadId: {
+          ...state.pendingByThreadId,
+          [threadId]: {
+            kind: 'pending.post_import.next_step' as const,
+            threadId,
+            createdAt: Date.now(),
+            intent,
+            userMessage,
+            importSummary,
+            source,
+          },
+        },
+      };
+    }
+
     // PR-D-FE-1: Contact Import 曖昧一致全解決時の pending 更新
     // stale closure 回避: reducer内で state.pendingByThreadId を直接参照
     case 'RESOLVE_CONTACT_IMPORT_AMBIGUOUS': {
@@ -621,6 +656,10 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
         parsed_entries: payload.parsed_entries,
         next_pending_kind: payload.next_pending_kind,
       });
+      // PR-D-FE-3.1: アップロード時の意図コンテキストをpendingに保存
+      if (payload.contact_import_context) {
+        (pending as any).contact_import_context = payload.contact_import_context;
+      }
       dispatch({
         type: 'SET_PENDING_FOR_THREAD',
         payload: { threadId, pending },
@@ -640,8 +679,39 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       }
       // 未解決の場合は pending.person.select を維持（次の曖昧一致へ）
     }
-    else if (kind === 'contact_import.confirmed' || kind === 'contact_import.cancelled') {
-      // 完了/キャンセル → pending クリア
+    else if (kind === 'contact_import.confirmed') {
+      const threadId = currentThreadId || 'temp';
+      // PR-D-FE-3.1: context付きのconfirm完了→次手提示へ
+      const importContext = payload.contact_import_context as ContactImportContext | undefined;
+      if (importContext && importContext.intent !== 'message_only') {
+        // 次手選択 pending をセット（message_onlyの場合は完了のみで次手なし）
+        dispatch({
+          type: 'SET_POST_IMPORT_NEXT_STEP',
+          payload: {
+            threadId,
+            intent: importContext.intent,
+            userMessage: importContext.message,
+            importSummary: {
+              created_count: payload.created_count,
+              updated_count: payload.updated_count,
+              skipped_count: payload.skipped_count,
+              imported_contacts: payload.imported_contacts || [],
+            },
+            source: (state.pendingByThreadId[threadId] as any)?.source || 'text',
+          },
+        });
+      } else {
+        // contextなし or message_only → pendingクリア
+        dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+      }
+    }
+    else if (kind === 'contact_import.cancelled') {
+      // キャンセル → pending クリア
+      const threadId = currentThreadId || 'temp';
+      dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+    }
+    // PR-D-FE-3.1: 次手選択完了 or キャンセル → pending クリア
+    else if (kind === 'post_import.next_step.selected' || kind === 'post_import.next_step.cancelled') {
       const threadId = currentThreadId || 'temp';
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
     }

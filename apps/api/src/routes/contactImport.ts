@@ -27,6 +27,7 @@ import {
   type ContactImportPayload,
   type ContactImportSummary,
   type ContactImportEntry,
+  type ContactImportSource,
   type ContactMatchStatus,
   PENDING_CONFIRMATION_KIND,
 } from '../../../../packages/shared/src/types/pendingAction';
@@ -37,7 +38,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 // ============================================================
 // Constants
 // ============================================================
-const IMPORT_EXPIRATION_MINUTES = 15;
+export const IMPORT_EXPIRATION_MINUTES = 15;
 const MAX_TEXT_LINES = 100;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -104,7 +105,7 @@ async function getPendingForUser(
 // ============================================================
 // Text Parser (simple: 1行1人)
 // ============================================================
-function parseTextLines(rawText: string): ContactImportEntry[] {
+export function parseTextLines(rawText: string): ContactImportEntry[] {
   const lines = rawText.split(/[\r\n]+/).filter(l => l.trim());
   const entries: ContactImportEntry[] = [];
 
@@ -135,7 +136,7 @@ function parseTextLines(rawText: string): ContactImportEntry[] {
 // ============================================================
 // 曖昧一致検出
 // ============================================================
-async function detectAmbiguousMatches(
+export async function detectAmbiguousMatches(
   entries: ContactImportEntry[],
   repo: ContactsRepository,
   workspaceId: string,
@@ -190,7 +191,7 @@ async function detectAmbiguousMatches(
   return entries;
 }
 
-function isSimilarName(a: string | null, b: string): boolean {
+export function isSimilarName(a: string | null, b: string): boolean {
   if (!a) return false;
   const la = a.toLowerCase().replace(/\s+/g, '');
   const lb = b.toLowerCase().replace(/\s+/g, '');
@@ -200,9 +201,9 @@ function isSimilarName(a: string | null, b: string): boolean {
 // ============================================================
 // Summary Builder
 // ============================================================
-function buildSummary(
+export function buildSummary(
   entries: ContactImportEntry[],
-  source: 'text' | 'csv'
+  source: ContactImportSource
 ): ContactImportSummary {
   let exact = 0, ambiguous = 0, newCount = 0, skipped = 0, missingEmail = 0;
 

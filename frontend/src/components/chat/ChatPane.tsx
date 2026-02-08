@@ -6,14 +6,16 @@
  * Messages are now managed per-thread by ChatLayout
  */
 
-import { useRef, useEffect } from 'react';
-import { useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { extractErrorMessage } from '../../core/api/client';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
+// PR-D-FE-3: 名刺OCRスキャン executor
+// PR-D-FE-3.1: classifyUploadIntent でアップロード時の意図を抽出
+import { executeBusinessCardScan, classifyUploadIntent } from '../../core/chat/executors/contactImport';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { 
@@ -93,7 +95,67 @@ export function ChatPane({
   const [message, setMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // Phase Next-4 Day2.5: 音声補正中フラグ
+  // PR-D-FE-3: 名刺画像添付
+  const [attachedImages, setAttachedImages] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // PR-D-FE-3: 画像添付ハンドラ
+  const MAX_IMAGES = 5;
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles: File[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        errors.push(`${file.name}: JPEG/PNG/WebPのみ対応`);
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`${file.name}: 10MBを超えています`);
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    // 最大5枚制限
+    const remaining = MAX_IMAGES - attachedImages.length;
+    const toAdd = newFiles.slice(0, remaining);
+    if (newFiles.length > remaining) {
+      errors.push(`最大${MAX_IMAGES}枚まで添付できます`);
+    }
+
+    if (errors.length > 0) {
+      // エラーメッセージをアシスタントメッセージとして表示
+      const targetThreadId = threadId || 'temp';
+      onAppend(targetThreadId, {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `⚠️ 画像添付エラー:\n${errors.join('\n')}`,
+        timestamp: new Date(),
+      });
+    }
+
+    if (toAdd.length > 0) {
+      setAttachedImages(prev => [...prev, ...toAdd]);
+    }
+
+    // inputをリセット（同じファイル再選択対応）
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [attachedImages.length, threadId, onAppend]);
+
+  const removeImage = useCallback((index: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -120,7 +182,65 @@ export function ChatPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, status?.thread?.id, loading]);
 
+  // PR-D-FE-3: 名刺スキャン専用ハンドラ（画像添付時はテキスト分類をバイパス）
+  // PR-D-FE-3.1: 意図メモ（テキスト入力）を context として渡す
+  const handleBusinessCardScan = async (images: File[], intentMemo: string) => {
+    const targetThreadId = threadId || 'temp';
+    const imageNames = images.map(f => f.name).join(', ');
+    const memoDisplay = intentMemo ? ` | ${intentMemo}` : '';
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: `📎 名刺スキャン: ${images.length}枚 (${imageNames})${memoDisplay}`,
+      timestamp: new Date(),
+    };
+    onAppend(targetThreadId, userMsg);
+    setAttachedImages([]);
+    setMessage(''); // PR-D-FE-3.1: 意図メモもクリア
+    setIsProcessing(true);
+
+    // PR-D-FE-3.1: アップロード時の意図を抽出
+    const context = classifyUploadIntent(intentMemo);
+    console.log('[PR-D-FE-3.1] Upload intent:', context.intent, 'message:', context.message);
+
+    try {
+      console.log('[PR-D-FE-3] Executing business card scan:', images.length, 'images');
+      const result = await executeBusinessCardScan(images, context);
+      console.log('[PR-D-FE-3] Scan result:', result.success, result.message);
+
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: result.message,
+        timestamp: new Date(),
+      };
+      onAppend(targetThreadId, assistantMessage);
+
+      // pending UI へ接続
+      if (result.data && onExecutionResult) {
+        onExecutionResult(result);
+      }
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ 名刺スキャンエラー: ${extractErrorMessage(error)}`,
+        timestamp: new Date(),
+      };
+      onAppend(targetThreadId, errorMessage);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleSendClick = async () => {
+    // PR-D-FE-3: 画像添付があれば名刺スキャンへ
+    // PR-D-FE-3.1: テキスト入力を意図メモとして渡す
+    if (attachedImages.length > 0) {
+      await handleBusinessCardScan(attachedImages, message.trim());
+      return;
+    }
+
     if (!message.trim() || isProcessing) return;
     
     const userMessage: ChatMessage = {
@@ -378,7 +498,51 @@ export function ChatPane({
 
       {/* Input Area (Phase Next-2: Enabled, Phase Next-4 Day1: Voice input added) */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
+        {/* PR-D-FE-3: 添付画像プレビュー */}
+        {attachedImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {attachedImages.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="relative group">
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt={file.name}
+                  className="w-16 h-16 object-cover rounded-lg border border-gray-300"
+                />
+                <button
+                  onClick={() => removeImage(index)}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label={`${file.name}を削除`}
+                >
+                  ×
+                </button>
+                <p className="text-[10px] text-gray-500 text-center truncate w-16">{file.name}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Hidden file input for image attachment */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          data-testid="chat-file-input"
+        />
         <div className="flex items-center space-x-2">
+          {/* PR-D-FE-3: 名刺画像添付ボタン */}
+          <button
+            data-testid="chat-attach-button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isProcessing || attachedImages.length >= MAX_IMAGES}
+            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={`名刺画像を添付（最大${MAX_IMAGES}枚）`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
           {/* Input field - 標準的なチャットUIに合わせて左側に配置 */}
           <input
             type="text"
@@ -387,11 +551,14 @@ export function ChatPane({
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              getPendingPlaceholder(pendingForThread || globalPendingAction)
-              || (threadId ? "メッセージを入力..." : "メールアドレスを入力してスレッドを作成 (例: tanaka@example.com)")
+              attachedImages.length > 0
+                ? `📎 ${attachedImages.length}枚添付済み — 送信で名刺スキャン開始`
+                : getPendingPlaceholder(pendingForThread || globalPendingAction)
+                || (threadId ? "メッセージを入力..." : "メールアドレスを入力してスレッドを作成 (例: tanaka@example.com)")
             }
             disabled={isProcessing}
             className={`flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 ${
+              attachedImages.length > 0 ? 'border-blue-400 bg-blue-50' :
               (pendingForThread || globalPendingAction) ? 'border-yellow-400 bg-yellow-50' : 'border-gray-300'
             }`}
           />
@@ -407,16 +574,17 @@ export function ChatPane({
           />
           
           {/* Send button - 最も右側に配置 */}
-          {/* Phase Next-4 Day2.5: 音声補正中もロック */}
+          {/* PR-D-FE-3: 画像添付時はテキスト無しでも送信可能 */}
           <button
             data-testid="chat-send-button"
             onClick={handleSendClick}
-            disabled={isProcessing || isVoiceProcessing || !message.trim()}
+            disabled={isProcessing || isVoiceProcessing || (!message.trim() && attachedImages.length === 0)}
             className={`px-4 py-2 text-white rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed ${
+              attachedImages.length > 0 ? 'bg-green-600 hover:bg-green-700' :
               (pendingForThread || globalPendingAction) ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : (getPendingSendButtonLabel(pendingForThread || globalPendingAction) || '送信')}
+            {isProcessing ? '処理中...' : isVoiceProcessing ? '補正中...' : attachedImages.length > 0 ? '📷 スキャン' : (getPendingSendButtonLabel(pendingForThread || globalPendingAction) || '送信')}
           </button>
         </div>
         {/* PR-D-FE-1: SSOT ベースの pending ヒントバナー */}
@@ -428,7 +596,7 @@ export function ChatPane({
           </div>
         )}
         <p className="text-xs text-gray-500 mt-2">
-          💡 使い方: 「〇〇さんに日程調整送って」「状況教えて」「1番で確定して」
+          💡 使い方: 「〇〇さんに日程調整送って」「状況教えて」「1番で確定して」 | 📎 名刺画像を添付してスキャン
         </p>
       </div>
     </div>
