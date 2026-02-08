@@ -311,6 +311,73 @@ Private
 
 ---
 
+## 📇 PR-D: 連絡先取り込み（Contact Import）— 2026-02-08 更新
+
+### 概要
+チャットから連絡先を取り込む機能。テキスト / CSV / 名刺画像の3入力に対応し、**事故ゼロ設計（Gate 1–4）** を全フローに適用。
+
+### フロー
+```
+入力（テキスト/CSV/名刺画像）
+  → preview（パース結果確認）
+  → person-select（曖昧一致解決）
+  → confirm（登録実行）
+  → post-import next step（次の一手提示）  ← PR-D-FE-4
+```
+
+### 事故ゼロ Gate
+| Gate | ルール | 実装 |
+|------|--------|------|
+| Gate-1 | email 欠落 = hard fail | `missing_email: true` → `resolved_action: skip` |
+| Gate-2 | 曖昧一致 = 必ず止める | `pending.person.select` で人が選ぶまで待つ |
+| Gate-3 | owner_user_id 一致 | `getPendingForUser()` で検証 |
+| Gate-4 | confirm 以外の書き込みゼロ | `/confirm` API のみが書き込み |
+
+### PR 進捗
+
+| PR | タイトル | 状態 | 概要 |
+|----|---------|------|------|
+| #115 | Classifier Chain + CSV Parser | ✅ merged | 分類器チェイン + CSV パーサー |
+| #116 | Contact Import API統合 | ✅ merged | 事故ゼロ API（preview/confirm/cancel） |
+| #117 | Contact Import フロントUI接続 | ✅ merged | pending 種別別 UI 切替 |
+| #118 | 名刺OCR → Chat UI統合 | ✅ merged | Gemini Vision OCR + ChatPane画像添付 |
+| #120 | Post-Import Intent + 次手分岐 | 🔄 open | FEのみ。confirm後の「次どうする？」 |
+
+### PR-D-FE-4 (#120): Post-Import Intent Extraction
+
+**変更: FEのみ、DB/API追加なし（+321行、6ファイル）**
+
+アーキテクチャ:
+```
+confirm 完了 → contact_import_context あり?
+  → YES: reducer が pending.post_import.next_step をセット
+    → classifier(Case 0) が post_import.next_step.decide を分類
+      → executor が parseNextStepSelection で判定
+        → selected / cancelled / unclear（ガイダンス再表示）
+  → NO: pending クリア（従来通り）
+```
+
+Intent 抽出ルール（classifyUploadIntent）:
+| 優先度 | Intent | キーワード例 | 例文 |
+|--------|--------|-------------|------|
+| 1 | send_invite | 招待・案内・送って | 「この人たちに案内送って」 |
+| 2 | schedule | 日程・スケジュール・調整 | 「日程調整して」 |
+| 3 | message_only | 登録だけ・追加だけ | 「とりあえず登録だけ」 |
+| 4 | unknown | 上記なし or 空文字 | 「」「よろしく」 |
+
+テスト: **FE 309 tests (13 files) ALL PASSED** / tsc zero errors
+
+### API エンドポイント
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| POST | `/api/contacts/import/preview` | テキスト/CSV → パース + 曖昧検出 |
+| POST | `/api/contacts/import/confirm` | 登録実行（Gate-4 唯一の書き込み） |
+| POST | `/api/contacts/import/cancel` | キャンセル（書き込みゼロ） |
+| POST | `/api/business-cards/scan` | 名刺画像 → Gemini OCR → pending |
+
+---
+
 ## 🆕 v1.0 AI秘書（1対1予定調整）
 
 ### 概要
