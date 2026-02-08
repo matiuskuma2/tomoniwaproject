@@ -249,7 +249,7 @@ test.describe.serial('D0-R1: workmate API flow (request → accept → active)',
             });
           }
         }
-      } catch (e) {
+      } catch (_e) {
         // ignore cleanup errors
       }
       

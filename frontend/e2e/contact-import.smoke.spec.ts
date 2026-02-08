@@ -17,7 +17,7 @@ const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
 test.describe('PR-D-1: contact.import.text チャット取り込み', () => {
   // テスト用の認証トークン（E2E環境で設定）
   let authToken: string;
-  let workspaceId: string;
+  let _workspaceId: string;
 
   test.beforeAll(async ({ request }) => {
     // E2Eテスト用のユーザーセットアップ
@@ -32,9 +32,9 @@ test.describe('PR-D-1: contact.import.text チャット取り込み', () => {
       if (fixtureResponse.ok()) {
         const fixture = await fixtureResponse.json();
         authToken = fixture.user_a?.token;
-        workspaceId = fixture.user_a?.workspace_id || 'ws-default';
+        _workspaceId = fixture.user_a?.workspace_id || 'ws-default';
       }
-    } catch (e) {
+    } catch (_e) {
       console.warn('Fixture setup failed, using mock auth');
     }
   });

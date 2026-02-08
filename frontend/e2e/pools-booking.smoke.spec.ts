@@ -34,12 +34,6 @@ interface FixtureResult {
   user_b: UserInfo;
 }
 
-interface PoolInfo {
-  id: string;
-  name: string;
-  workspace_id: string;
-}
-
 interface SlotInfo {
   id: string;
   pool_id: string;

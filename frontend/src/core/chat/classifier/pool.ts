@@ -88,7 +88,7 @@ const POOL_NAME_PATTERNS = [
 const SLOT_LABEL_PATTERNS = [
   /「([^」]+)」(の|を)?(枠|時間)?/,
   /(\d{1,2}月\d{1,2}日)/,
-  /(\d{1,2}[\/\-]\d{1,2})/,
+  /(\d{1,2}[/-]\d{1,2})/,
   /(\d{1,2}:\d{2})/,
 ];
 
@@ -357,7 +357,7 @@ function extractCreateParams(input: string, normalizedInput: string): Record<str
   const membersMatch = input.match(/メンバー[はは：:]\s*([^。]+)/);
   if (membersMatch) {
     const memberNames = membersMatch[1]
-      .split(/[\/、,]/)
+      .split(/[/、,]/)
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
     if (memberNames.length > 0) {
@@ -383,7 +383,7 @@ function extractCreateParams(input: string, normalizedInput: string): Record<str
   }
   
   // 時間帯抽出（10-18、10時〜18時など）
-  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:\-]?[-〜~](\d{1,2})時?/);
+  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:-]?[-〜~](\d{1,2})時?/);
   if (timeRangeMatch) {
     params.start_hour = parseInt(timeRangeMatch[1], 10);
     params.end_hour = parseInt(timeRangeMatch[2], 10);
@@ -418,7 +418,7 @@ function extractSlotConfigParams(input: string, normalizedInput: string): Record
   }
   
   // 時間帯
-  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:\-]?[-〜~](\d{1,2})時?/);
+  const timeRangeMatch = normalizedInput.match(/(\d{1,2})[時:-]?[-〜~](\d{1,2})時?/);
   if (timeRangeMatch) {
     params.start_hour = parseInt(timeRangeMatch[1], 10);
     params.end_hour = parseInt(timeRangeMatch[2], 10);
