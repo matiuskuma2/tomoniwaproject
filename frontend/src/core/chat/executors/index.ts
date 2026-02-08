@@ -154,12 +154,14 @@ export {
 
 // Contact Import executors (PR-D-1.1: 連絡先取り込み)
 // PR-D-3: 名刺OCRスキャン追加
+// PR-D-FE-4: 取り込み後の次手選択
 export {
   executeContactImportPreview,
   executeContactImportConfirm,
   executeContactImportCancel,
   executeContactImportPersonSelect,
   executeBusinessCardScan,
+  executePostImportNextStepDecide,
   // Helpers
   buildPendingContactImportConfirm,
   buildPendingPersonSelect,

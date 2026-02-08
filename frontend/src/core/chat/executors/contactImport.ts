@@ -479,6 +479,89 @@ export async function executeContactImportCancel(
 }
 
 /**
+ * PR-D-FE-4: 取り込み完了後の次手選択
+ * 
+ * 事故ゼロ: この関数ではAPIコールなし。結果のkindに応じてuseChatReducerが
+ * pendingクリア or 次のフロー（招待/日程調整）を開始する。
+ */
+export function executePostImportNextStepDecide(
+  intentResult: IntentResult,
+): ExecutionResult {
+  const userInput = intentResult.params?.userInput as string || '';
+  const currentIntent = intentResult.params?.currentIntent as PostImportIntent || 'unknown';
+  const importSummary = intentResult.params?.importSummary as {
+    created_count: number;
+    updated_count: number;
+    skipped_count: number;
+    imported_contacts: Array<{ display_name: string; email: string }>;
+  } | undefined;
+
+  const selection = parseNextStepSelection(userInput, currentIntent);
+
+  log.info('[PR-D-FE-4] Post-import next step decision', {
+    module: 'contactImport',
+    userInput,
+    currentIntent,
+    action: selection.action,
+  });
+
+  if (selection.action === 'unclear') {
+    // 入力が不明確 → ガイダンス再表示
+    let guidance: string;
+    if (currentIntent === 'send_invite') {
+      guidance = '招待を送りますか？\n• 「はい」→ 招待送信へ\n• 「いいえ」→ 完了';
+    } else if (currentIntent === 'schedule') {
+      guidance = '日程調整を始めますか？\n• 「はい」→ 日程調整へ\n• 「いいえ」→ 完了';
+    } else {
+      guidance = '次は何をしますか？\n1️⃣ 招待を送る\n2️⃣ 日程調整を始める\n3️⃣ 完了（このまま終わる）';
+    }
+
+    return {
+      success: true,
+      message: guidance,
+      needsClarification: {
+        field: 'next_step',
+        message: guidance,
+      },
+    };
+  }
+
+  if (selection.action === 'completed' || selection.action === 'cancel') {
+    return {
+      success: true,
+      message: '✅ 完了しました。',
+      data: {
+        kind: 'post_import.next_step.cancelled',
+        payload: {},
+      },
+    } as ExecutionResult;
+  }
+
+  // send_invite or schedule → 次のアクションへ
+  const emails = (importSummary?.imported_contacts || []).map(c => c.email).filter(Boolean);
+  const names = (importSummary?.imported_contacts || []).map(c => c.display_name).filter(Boolean);
+
+  let message: string;
+  if (selection.action === 'send_invite') {
+    message = `📨 ${names.slice(0, 3).join('、')}${names.length > 3 ? ` 他${names.length - 3}名` : ''} に招待を送る準備ができました。\n\n招待するスレッドを選択するか、新しいスレッドを作成してください。`;
+  } else {
+    message = `📅 ${names.slice(0, 3).join('、')}${names.length > 3 ? ` 他${names.length - 3}名` : ''} と日程調整を始めます。\n\n「○○さんと日程調整して」と入力してください。`;
+  }
+
+  return {
+    success: true,
+    message,
+    data: {
+      kind: 'post_import.next_step.selected',
+      payload: {
+        action: selection.action,
+        emails,
+      },
+    },
+  } as ExecutionResult;
+}
+
+/**
  * PR-D-3: 名刺スキャン → OCR抽出 → pending確認フロー
  * POST /api/business-cards/scan
  * 

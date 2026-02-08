@@ -57,6 +57,7 @@ import {
   executeBusinessCardScan,
   executeContactImportConfirm,
   buildPendingContactImportConfirm,
+  executePostImportNextStepDecide,
 } from '../core/chat/executors/contactImport';
 
 import type { BusinessCardScanResponse } from '../core/api/contacts';
@@ -431,5 +432,213 @@ describe('PR-D-FE-3.1: E2E - scan with intent → confirm → next_step', () => 
     expect(selection.action).toBe('completed');
     // No writes happened → ゼロ writes confirmed
     expect(mockConfirm).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// PR-D-FE-4: executePostImportNextStepDecide Integration Tests
+// ============================================================
+
+describe('PR-D-FE-4: executePostImportNextStepDecide', () => {
+  // FE4-1: 「はい」+ intent=send_invite → selected(send_invite) + メール一覧
+  it('FE4-1: "はい" + intent=send_invite → send_invite selected', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'はい',
+        currentIntent: 'send_invite',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.kind).toBe('post_import.next_step.selected');
+    expect(result.data?.payload?.action).toBe('send_invite');
+    expect(result.data?.payload?.emails).toEqual(['suzuki@test.com', 'sato@test.com']);
+    expect(result.message).toContain('招待');
+    // 事故ゼロ: APIコールなし
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  // FE4-2: 「2」+ intent=unknown → schedule selected
+  it('FE4-2: "2" + intent=unknown → schedule selected', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: '2',
+        currentIntent: 'unknown',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.kind).toBe('post_import.next_step.selected');
+    expect(result.data?.payload?.action).toBe('schedule');
+    expect(result.message).toContain('日程調整');
+  });
+
+  // FE4-3: 「3」+ intent=unknown → completed (cancelled)
+  it('FE4-3: "3" + intent=unknown → completed', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: '3',
+        currentIntent: 'unknown',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.kind).toBe('post_import.next_step.cancelled');
+    expect(result.message).toContain('完了');
+  });
+
+  // FE4-4: 「いいえ」+ intent=schedule → completed
+  it('FE4-4: "いいえ" + intent=schedule → completed', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'いいえ',
+        currentIntent: 'schedule',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.kind).toBe('post_import.next_step.cancelled');
+  });
+
+  // FE4-5: 不明入力 → ガイダンス再表示（pendingクリアしない）
+  it('FE4-5: unclear input → guidance with needsClarification', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'あああ',
+        currentIntent: 'unknown',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBeUndefined(); // pendingクリアしない
+    expect(result.needsClarification).toBeDefined();
+    expect(result.message).toContain('1️⃣');
+    expect(result.message).toContain('2️⃣');
+    expect(result.message).toContain('3️⃣');
+  });
+
+  // FE4-6: intent=send_invite で不明入力 → 招待専用ガイダンス
+  it('FE4-6: unclear input + intent=send_invite → invite guidance', () => {
+    const result = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'あああ',
+        currentIntent: 'send_invite',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBeUndefined();
+    expect(result.message).toContain('招待を送りますか');
+    expect(result.message).toContain('「はい」');
+  });
+
+  // FE4-7: E2E フルフロー: scan(intent) → confirm → next_step → decide → selected
+  it('FE4-7: E2E: scan→confirm→next_step decide→selected', async () => {
+    mockBusinessCardScan.mockResolvedValue(SCAN_RESPONSE);
+    mockConfirm.mockResolvedValue({
+      success: true,
+      created_count: 2,
+      updated_count: 0,
+      skipped_count: 0,
+      created_contacts: [
+        { id: 'c-1', display_name: '鈴木一郎', email: 'suzuki@test.com' },
+        { id: 'c-2', display_name: '佐藤花子', email: 'sato@test.com' },
+      ],
+    });
+
+    // 1. Scan with intent
+    const context: ContactImportContext = { intent: 'schedule', message: '日程調整したい' };
+    const file = new File(['img'], 'card.jpg', { type: 'image/jpeg' });
+    const scanResult = await executeBusinessCardScan([file], context);
+    expect(scanResult.data?.payload?.contact_import_context).toEqual(context);
+
+    // 2. Build pending → confirm
+    const pending = buildPendingContactImportConfirm('temp', {
+      pending_action_id: 'pa-nx-001',
+      source: 'business_card',
+      summary: SCAN_RESPONSE.summary,
+      parsed_entries: SCAN_RESPONSE.parsed_entries,
+      next_pending_kind: 'contact_import_confirm',
+    });
+    (pending as any).contact_import_context = context;
+
+    const confirmResult = await executeContactImportConfirm(
+      { intent: 'contact.import.confirm', confidence: 1, params: { pending_action_id: 'pa-nx-001' } },
+      { pendingForThread: pending as any },
+    );
+    expect(confirmResult.data?.kind).toBe('contact_import.confirmed');
+
+    // 3. Next step decide: 「はい」
+    const decideResult = executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'はい',
+        currentIntent: 'schedule',
+        importSummary: {
+          created_count: 2,
+          updated_count: 0,
+          skipped_count: 0,
+          imported_contacts: [
+            { display_name: '鈴木一郎', email: 'suzuki@test.com' },
+            { display_name: '佐藤花子', email: 'sato@test.com' },
+          ],
+        },
+        source: 'business_card',
+      },
+    });
+
+    expect(decideResult.success).toBe(true);
+    expect(decideResult.data?.kind).toBe('post_import.next_step.selected');
+    expect(decideResult.data?.payload?.action).toBe('schedule');
+    expect(decideResult.data?.payload?.emails).toEqual(['suzuki@test.com', 'sato@test.com']);
+    expect(decideResult.message).toContain('日程調整');
+  });
+
+  // FE4-8: 事故ゼロ確認 — executePostImportNextStepDecide は APIコールゼロ
+  it('FE4-8: 事故ゼロ — API calls = 0', () => {
+    vi.clearAllMocks();
+
+    executePostImportNextStepDecide({
+      intent: 'post_import.next_step.decide' as any,
+      confidence: 1,
+      params: {
+        userInput: 'はい',
+        currentIntent: 'send_invite',
+        importSummary: IMPORT_SUMMARY,
+        source: 'business_card',
+      },
+    });
+
+    // 全APIモックがコールされていないこと
+    expect(mockBusinessCardScan).not.toHaveBeenCalled();
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockPersonSelect).not.toHaveBeenCalled();
   });
 });

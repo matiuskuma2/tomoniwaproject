@@ -104,6 +104,25 @@ export const classifyContactImport: ClassifierFn = (
 ): IntentResult | null => {
   
   // ============================================================
+  // Case 0: pending.post_import.next_step がある場合
+  // PR-D-FE-4: 取り込み完了後の次手選択
+  // ============================================================
+  if (activePending?.kind === 'pending.post_import.next_step') {
+    const pending = activePending as PendingState & { kind: 'pending.post_import.next_step' };
+    
+    return {
+      intent: 'post_import.next_step.decide' as IntentResult['intent'],
+      confidence: 1.0,
+      params: {
+        userInput: input,
+        currentIntent: pending.intent,
+        importSummary: pending.importSummary,
+        source: pending.source,
+      },
+    };
+  }
+
+  // ============================================================
   // Case 1: pending.person.select がある場合
   // 曖昧一致の解決フロー
   // ============================================================

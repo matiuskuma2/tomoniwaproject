@@ -98,6 +98,8 @@ export type IntentType =
   | 'contact.import.confirm'       // PR-D-1.1: 取り込み確認
   | 'contact.import.cancel'        // PR-D-1.1: 取り込みキャンセル
   | 'contact.import.person_select' // PR-D-1.1: 曖昧一致時の人物選択
+  // PR-D-FE-4: 取り込み完了後の次手選択
+  | 'post_import.next_step.decide'  // PR-D-FE-4: 次手選択（招待/日程/完了）
   | 'unknown';
 
 export interface IntentResult {
