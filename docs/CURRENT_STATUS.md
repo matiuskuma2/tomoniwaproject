@@ -1,7 +1,7 @@
 # 現在の実装状況
 
-> **最終更新**: 2026-02-05
-> **最新コミット**: d7ae20f (main)
+> **最終更新**: 2026-02-08
+> **最新コミット**: 262abd2 (main)
 
 ---
 
@@ -33,11 +33,16 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **1対1 Freebusy** | 空き時間自動検出 | - |
 | **D0 関係性管理** | workmate申請→承諾フロー | PR #112 |
 | **G2-A Pool Booking** | 受付プール予約システム | PR #113 |
+| **PR-D: Contact Import** | Classifier Chain + CSV Parser + List Operation | PR #115 |
+| **PR-D-API-1** | Contact Import API統合 — 事故ゼロ設計 | PR #116 |
+| **PR-D-FE-1** | Contact Import フロントUI接続 — pending種別別UI切替 | PR #117 |
+| **PR-D-FE-3** | 名刺OCR → Chat UI統合 → pending接続 — 事故ゼロ設計 | PR #118 |
 
 ### 🔄 進行中
 
 | 機能 | 説明 | 状況 |
 |------|------|------|
+| **PR-D-FE-4** | 取り込み完了後 intent 抽出 + 次手チャット分岐（FEのみ） | PR #120 レビュー待ち |
 | **pool_booking.create** | 管理者用プール作成executor | 設計済み |
 
 ### ❌ 対象外
