@@ -350,7 +350,8 @@ export async function executeContactImportConfirm(
 
     // PR-D-FE-3.1: pending stateからcontextを取得
     const importContext = (context?.pendingForThread as any)?.contact_import_context as ContactImportContext | undefined;
-    const source = (context?.pendingForThread as any)?.source as 'text' | 'csv' | 'business_card' | undefined;
+    const _source = (context?.pendingForThread as any)?.source as 'text' | 'csv' | 'business_card' | undefined;
+    void _source; // PR-D-FE-4 で intent 抽出に使用予定
     
     // 取り込み済み連絡先一覧
     const importedContacts = (response.created_contacts || []).map((c: any) => ({

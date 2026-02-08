@@ -481,14 +481,16 @@ export type ExecutionResultData =
       }>;
       query_label?: string;
     } }
-  // PR-D-FE-1: Contact Import
+  // PR-D-FE-1 + PR-D-3: Contact Import (business_card 追加)
   | { kind: 'contact_import.preview'; payload: {
       pending_action_id: string;
       expires_at: string;
       summary: any;
       parsed_entries: any[];
       next_pending_kind: string;
-      source: 'text' | 'csv';
+      source: 'text' | 'csv' | 'business_card';
+      business_card_ids?: string[];
+      contact_import_context?: import('./executors/types').ContactImportContext;
     } }
   | { kind: 'contact_import.person_selected'; payload: {
       pending_action_id: string;
@@ -501,10 +503,29 @@ export type ExecutionResultData =
       created_count: number;
       updated_count: number;
       skipped_count: number;
+      contact_import_context?: import('./executors/types').ContactImportContext;
+      imported_contacts?: Array<{ display_name: string; email: string }>;
     } }
   | { kind: 'contact_import.cancelled'; payload: {} }
   | { kind: 'contact_import.expired'; payload: {} }
-  | { kind: 'contact_import.ambiguous_remaining'; payload: {} };
+  | { kind: 'contact_import.ambiguous_remaining'; payload: {} }
+  // PR-D-FE-3.1: 名刺取り込み完了後の次手フロー
+  | { kind: 'post_import.next_step.created'; payload: {
+      intent: import('./executors/types').PostImportIntent;
+      userMessage?: string;
+      importSummary: {
+        created_count: number;
+        updated_count: number;
+        skipped_count: number;
+        imported_contacts: Array<{ display_name: string; email: string }>;
+      };
+      source: 'text' | 'csv' | 'business_card';
+    } }
+  | { kind: 'post_import.next_step.selected'; payload: {
+      action: 'send_invite' | 'schedule' | 'completed';
+      emails: string[];
+    } }
+  | { kind: 'post_import.next_step.cancelled'; payload: {} };
 
 export interface ExecutionResult {
   success: boolean;
