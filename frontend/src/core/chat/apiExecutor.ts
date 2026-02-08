@@ -101,6 +101,8 @@ import {
   executeContactImportConfirm,
   executeContactImportCancel,
   executeContactImportPersonSelect,
+  // PR-D-FE-4: 取り込み後の次手選択
+  executePostImportNextStepDecide,
 } from './executors';
 import type { PoolCreateDraft } from './executors/pool/create';
 // PendingState import removed - already imported at line 23
@@ -773,6 +775,10 @@ export async function executeIntent(
     case 'contact.import.person_select':
       return executeContactImportPersonSelect(intentResult, context);
     
+    // PR-D-FE-4: 取り込み後の次手選択
+    case 'post_import.next_step.decide':
+      return executePostImportNextStepDecide(intentResult);
+
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）
       return executeUnknownWithNlRouter(intentResult, context);
