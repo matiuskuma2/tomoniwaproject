@@ -27,7 +27,8 @@ export default defineConfig([
       // E2E テストで未使用の page パラメータを許可
       '@typescript-eslint/no-unused-vars': ['error', { 
         argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_'
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
       }],
       // 初期化時の setState は許可（無限ループではないケース）
       // useEffect 内での setState は注意が必要だが、初期化パターンは許容

@@ -35,7 +35,7 @@ test.describe('Thread Create: SSOT Empty State', () => {
   // Test: 新規スレッド作成時に invites=0, slots=0 を検証
   // ============================================================
   
-  test('新規スレッド作成後、invites=0, slots=0 であること', async ({ page, request }) => {
+  test('新規スレッド作成後、invites=0, slots=0 であること', async ({ request }) => {
     const authToken = process.env.E2E_AUTH_TOKEN;
     if (!authToken) {
       test.skip();
@@ -102,7 +102,7 @@ test.describe('Thread Create: SSOT Empty State', () => {
   // Test: seed_mode が未指定でもデフォルトで empty になること
   // ============================================================
 
-  test('seed_mode 未指定時もデフォルトで空状態', async ({ page, request }) => {
+  test('seed_mode 未指定時もデフォルトで空状態', async ({ request }) => {
     const authToken = process.env.E2E_AUTH_TOKEN;
     if (!authToken) {
       test.skip();
@@ -196,7 +196,7 @@ test.describe('Thread Create: SSOT Empty State', () => {
   // Test: legacy_default_slots モードで旧挙動が再現されること
   // ============================================================
 
-  test('legacy_default_slots モードでデフォルトスロットが作成される', async ({ page, request }) => {
+  test('legacy_default_slots モードでデフォルトスロットが作成される', async ({ request }) => {
     const authToken = process.env.E2E_AUTH_TOKEN;
     if (!authToken) {
       test.skip();

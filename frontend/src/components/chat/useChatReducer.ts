@@ -474,6 +474,7 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
   // ============================================================
   // ExecutionResult Handler (P0-1: 正規化された pending 辞書を使用)
   // ============================================================
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- 巨大callback（280行）でcompilerが最適化不可。手動useCallbackで十分
   const handleExecutionResult = useCallback((result: ExecutionResult) => {
     if (!result.data) return;
     

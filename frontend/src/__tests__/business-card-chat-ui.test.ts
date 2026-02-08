@@ -51,7 +51,7 @@ import {
   buildPendingPersonSelect,
 } from '../core/chat/executors/contactImport';
 
-import type { BusinessCardScanResponse, ContactImportNewPreviewResponse } from '../core/api/contacts';
+import type { BusinessCardScanResponse } from '../core/api/contacts';
 
 // ============================================================
 // Test Data
