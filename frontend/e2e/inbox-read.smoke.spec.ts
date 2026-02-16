@@ -75,7 +75,8 @@ async function setupPageAuth(page: Page, token: string): Promise<void> {
     const url = new URL(route.request().url());
     const apiUrl = `${API_BASE_URL}${url.pathname}${url.search}`;
     const method = route.request().method();
-    console.log(`[E2E] API proxy: ${method} ${url.pathname} → ${apiUrl}`);
+    const hasAuth = !!headers['authorization'];
+    console.log(`[E2E] API proxy: ${method} ${url.pathname} → ${apiUrl} auth=${hasAuth}`);
     
     try {
       const headers = { ...route.request().headers() };
