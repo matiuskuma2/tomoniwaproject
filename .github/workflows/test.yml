@@ -136,9 +136,6 @@ jobs:
           echo "Created .dev.vars with ENVIRONMENT=development for E2E fixture access"
 
       - name: Start API server
-
-
-      - name: Start API server
         run: |
           npx wrangler dev --local --port 3000 &
           API_PID=$!
