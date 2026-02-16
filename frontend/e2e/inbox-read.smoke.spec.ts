@@ -14,7 +14,7 @@
 import { test, expect, Page, APIRequestContext } from '@playwright/test';
 
 // API ベース URL
-const API_BASE_URL = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.E2E_API_BASE_URL || process.env.E2E_API_URL || 'http://localhost:3000';
 
 // フィクスチャで作成したユーザー情報
 interface UserInfo {
@@ -55,12 +55,36 @@ async function cleanupUserPair(request: APIRequestContext, userIds: string[]): P
 }
 
 /**
- * 認証トークンをセットするヘルパー
+ * 認証トークンをセットし、API プロキシを設定するヘルパー
+ * 
+ * CI環境: フロントエンド(4173) と API(3000) が別サーバーで動作
+ * production ビルドの VITE_API_BASE_URL='' なので /api/* は相対パスになる
+ * → Vite preview にはプロキシがないため page.route で API サーバーに転送
  */
-async function setAuthToken(page: Page, token: string): Promise<void> {
+async function setupPageAuth(page: Page, token: string): Promise<void> {
+  // 1. sessionStorage にトークンを設定
   await page.addInitScript((t) => {
     sessionStorage.setItem('tomoniwao_token', t);
   }, token);
+  
+  // 2. /api/** リクエストを API サーバーに転送（production ビルド対応）
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    const apiUrl = `${API_BASE_URL}${url.pathname}${url.search}`;
+    
+    try {
+      const response = await route.fetch({
+        url: apiUrl,
+        headers: {
+          ...route.request().headers(),
+        },
+      });
+      await route.fulfill({ response });
+    } catch (error) {
+      console.error(`[E2E] API proxy failed: ${apiUrl}`, error);
+      await route.abort();
+    }
+  });
 }
 
 /**
@@ -137,29 +161,30 @@ test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
     const notification = await createTestNotification(request, fixture.user_a.id);
     console.log('[E2E] Created notification:', notification.id);
     
-    // 2. ユーザーA としてログイン
-    await setAuthToken(page, fixture.user_a.token);
+    // 2. ユーザーA としてログイン + API プロキシ設定
+    await setupPageAuth(page, fixture.user_a.token);
     
     // 3. チャットページへ遷移
     await page.goto('/chat');
     await page.waitForLoadState('networkidle');
     
-    // 4. NotificationBell をクリックしてドロワーを開く
-    const bellButton = page.locator('button').filter({ has: page.locator('svg path[d*="M15 17h5"]') });
-    await bellButton.click();
-    
-    // 5. 未読バッジが表示されていることを確認
+    // 4. 未読バッジが表示されるまで待つ（inbox API の応答を待つ）
     const unreadBadge = page.locator('span.bg-red-600');
-    await expect(unreadBadge).toBeVisible();
+    await expect(unreadBadge).toBeVisible({ timeout: 15000 });
     const initialCount = await unreadBadge.textContent();
     expect(parseInt(initialCount || '0')).toBeGreaterThan(0);
     
-    // 6. 通知アイテムをクリック
-    const notificationItem = page.locator('.bg-blue-50').first(); // 未読は青背景
+    // 5. NotificationBell をクリックしてドロワーを開く
+    const bellButton = page.locator('button').filter({ has: page.locator('svg path[d*="M15 17h5"]') });
+    await bellButton.click();
+    
+    // 6. 通知アイテムをクリック（未読は青背景）
+    const notificationItem = page.locator('.bg-blue-50').first();
+    await expect(notificationItem).toBeVisible({ timeout: 5000 });
     await notificationItem.click();
     
     // 7. 少し待って状態を確認（即ローカル既読なのですぐ反映されるはず）
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
     
     // 8. API で既読になっていることを確認
     const item = await getInboxItem(request, notification.id, fixture.user_a.token);
@@ -174,26 +199,30 @@ test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
     const notification2 = await createTestNotification(request, fixture.user_a.id);
     console.log('[E2E] Created notifications:', notification1.id, notification2.id);
     
-    // 2. ユーザーA としてログイン
-    await setAuthToken(page, fixture.user_a.token);
+    // 2. ユーザーA としてログイン + API プロキシ設定
+    await setupPageAuth(page, fixture.user_a.token);
     
     // 3. チャットページへ遷移
     await page.goto('/chat');
     await page.waitForLoadState('networkidle');
     
-    // 4. NotificationBell をクリックしてドロワーを開く
+    // 4. 未読バッジが表示されるまで待つ
+    const unreadBadge = page.locator('span.bg-red-600');
+    await expect(unreadBadge).toBeVisible({ timeout: 15000 });
+    
+    // 5. NotificationBell をクリックしてドロワーを開く
     const bellButton = page.locator('button').filter({ has: page.locator('svg path[d*="M15 17h5"]') });
     await bellButton.click();
     
-    // 5. 「すべて既読」ボタンをクリック
+    // 6. 「すべて既読」ボタンをクリック
     const markAllReadButton = page.locator('button:text("すべて既読")');
-    await expect(markAllReadButton).toBeVisible();
+    await expect(markAllReadButton).toBeVisible({ timeout: 5000 });
     await markAllReadButton.click();
     
-    // 6. 少し待って状態を確認
-    await page.waitForTimeout(1000);
+    // 7. 少し待って状態を確認
+    await page.waitForTimeout(1500);
     
-    // 7. API で全て既読になっていることを確認
+    // 8. API で全て既読になっていることを確認
     const item1 = await getInboxItem(request, notification1.id, fixture.user_a.token);
     const item2 = await getInboxItem(request, notification2.id, fixture.user_a.token);
     expect(item1.is_read).toBe(1);
@@ -207,8 +236,8 @@ test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
     await createTestNotification(request, fixture.user_a.id);
     await createTestNotification(request, fixture.user_a.id);
     
-    // 2. ユーザーA としてログイン
-    await setAuthToken(page, fixture.user_a.token);
+    // 2. ユーザーA としてログイン + API プロキシ設定
+    await setupPageAuth(page, fixture.user_a.token);
     
     // 3. チャットページへ遷移
     await page.goto('/chat');
@@ -218,8 +247,8 @@ test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
     const bellButton = page.locator('button').filter({ has: page.locator('svg path[d*="M15 17h5"]') });
     const unreadBadge = bellButton.locator('span.bg-red-600');
     
-    // 5. 初期の未読数を取得
-    await expect(unreadBadge).toBeVisible();
+    // 5. 初期の未読数を取得（API応答を待つ）
+    await expect(unreadBadge).toBeVisible({ timeout: 15000 });
     const initialCount = parseInt(await unreadBadge.textContent() || '0');
     expect(initialCount).toBeGreaterThanOrEqual(2);
     
@@ -228,10 +257,11 @@ test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
     
     // 7. 「すべて既読」をクリック
     const markAllReadButton = page.locator('button:text("すべて既読")');
+    await expect(markAllReadButton).toBeVisible({ timeout: 5000 });
     await markAllReadButton.click();
     
     // 8. 未読バッジが消えるか0になることを確認
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
     
     // バッジが非表示になるか確認
     const badgeVisible = await unreadBadge.isVisible().catch(() => false);
