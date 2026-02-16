@@ -74,7 +74,8 @@ async function setupPageAuth(page: Page, token: string): Promise<void> {
   await page.route(/\/api\//, async (route) => {
     const url = new URL(route.request().url());
     const apiUrl = `${API_BASE_URL}${url.pathname}${url.search}`;
-    console.log(`[E2E] API proxy: ${url.pathname} → ${apiUrl}`);
+    const method = route.request().method();
+    console.log(`[E2E] API proxy: ${method} ${url.pathname} → ${apiUrl}`);
     
     try {
       const headers = { ...route.request().headers() };
@@ -82,15 +83,33 @@ async function setupPageAuth(page: Page, token: string): Promise<void> {
       delete headers['host'];
       
       const fetchResponse = await fetch(apiUrl, {
-        method: route.request().method(),
+        method,
         headers,
-        body: route.request().method() !== 'GET' ? route.request().postData() : undefined,
+        body: method !== 'GET' && method !== 'HEAD' ? route.request().postData() : undefined,
       });
       
       const body = await fetchResponse.text();
+      const status = fetchResponse.status;
+      
+      // デバッグ: inbox APIのレスポンスを記録
+      if (url.pathname.includes('/inbox')) {
+        console.log(`[E2E] API proxy response: ${status} ${url.pathname} body_length=${body.length}`);
+        if (status !== 200) {
+          console.log(`[E2E] API proxy error body: ${body.substring(0, 200)}`);
+        }
+      }
+      
+      const responseHeaders: Record<string, string> = {};
+      fetchResponse.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      // content-encoding を除外（圧縮されたレスポンスをそのまま返すと問題になる）
+      delete responseHeaders['content-encoding'];
+      delete responseHeaders['content-length'];
+      
       await route.fulfill({
-        status: fetchResponse.status,
-        headers: Object.fromEntries(fetchResponse.headers.entries()),
+        status,
+        headers: responseHeaders,
         body,
       });
     } catch (error) {
