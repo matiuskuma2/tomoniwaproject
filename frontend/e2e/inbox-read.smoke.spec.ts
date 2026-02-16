@@ -75,44 +75,34 @@ async function setupPageAuth(page: Page, token: string): Promise<void> {
     const url = new URL(route.request().url());
     const apiUrl = `${API_BASE_URL}${url.pathname}${url.search}`;
     const method = route.request().method();
-    const hasAuth = !!headers['authorization'];
-    console.log(`[E2E] API proxy: ${method} ${url.pathname} → ${apiUrl} auth=${hasAuth}`);
+    const reqHeaders = { ...route.request().headers() };
+    
+    // host ヘッダーを削除（API サーバーに合わせる）
+    delete reqHeaders['host'];
+    // Authorization ヘッダーがない場合はトークンを追加
+    if (!reqHeaders['authorization']) {
+      reqHeaders['authorization'] = `Bearer ${token}`;
+    }
     
     try {
-      const headers = { ...route.request().headers() };
-      // host ヘッダーを API サーバーに合わせる
-      delete headers['host'];
-      
       const fetchResponse = await fetch(apiUrl, {
         method,
-        headers,
+        headers: reqHeaders,
         body: method !== 'GET' && method !== 'HEAD' ? route.request().postData() : undefined,
       });
       
       const body = await fetchResponse.text();
       const status = fetchResponse.status;
       
-      // デバッグ: inbox APIのレスポンスを記録
-      if (url.pathname.includes('/inbox')) {
-        console.log(`[E2E] API proxy response: ${status} ${url.pathname} body_length=${body.length}`);
-        if (status !== 200) {
-          console.log(`[E2E] API proxy error body: ${body.substring(0, 200)}`);
-        }
-      }
-      
       const responseHeaders: Record<string, string> = {};
       fetchResponse.headers.forEach((value, key) => {
         responseHeaders[key] = value;
       });
-      // content-encoding を除外（圧縮されたレスポンスをそのまま返すと問題になる）
+      // 圧縮関連ヘッダーを除外
       delete responseHeaders['content-encoding'];
       delete responseHeaders['content-length'];
       
-      await route.fulfill({
-        status,
-        headers: responseHeaders,
-        body,
-      });
+      await route.fulfill({ status, headers: responseHeaders, body });
     } catch (error) {
       console.error(`[E2E] API proxy failed: ${apiUrl}`, error);
       await route.abort();
