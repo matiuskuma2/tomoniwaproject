@@ -68,18 +68,31 @@ async function setupPageAuth(page: Page, token: string): Promise<void> {
   }, token);
   
   // 2. /api/** リクエストを API サーバーに転送（production ビルド対応）
-  await page.route('**/api/**', async (route) => {
+  // CI環境: フロントエンド(:4173) と API(:3000) が別ポートで動作
+  // production ビルドの VITE_API_BASE_URL='' → /api/* は http://127.0.0.1:4173/api/* になる
+  // Vite preview にはプロキシがないため page.route で API サーバーに転送
+  await page.route(/\/api\//, async (route) => {
     const url = new URL(route.request().url());
     const apiUrl = `${API_BASE_URL}${url.pathname}${url.search}`;
+    console.log(`[E2E] API proxy: ${url.pathname} → ${apiUrl}`);
     
     try {
-      const response = await route.fetch({
-        url: apiUrl,
-        headers: {
-          ...route.request().headers(),
-        },
+      const headers = { ...route.request().headers() };
+      // host ヘッダーを API サーバーに合わせる
+      delete headers['host'];
+      
+      const fetchResponse = await fetch(apiUrl, {
+        method: route.request().method(),
+        headers,
+        body: route.request().method() !== 'GET' ? route.request().postData() : undefined,
       });
-      await route.fulfill({ response });
+      
+      const body = await fetchResponse.text();
+      await route.fulfill({
+        status: fetchResponse.status,
+        headers: Object.fromEntries(fetchResponse.headers.entries()),
+        body,
+      });
     } catch (error) {
       console.error(`[E2E] API proxy failed: ${apiUrl}`, error);
       await route.abort();
