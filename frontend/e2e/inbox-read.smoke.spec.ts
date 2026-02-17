@@ -85,9 +85,14 @@ async function clearInbox(request: APIRequestContext, userId: string): Promise<v
 
 /**
  * 認証付きリクエストヘルパー
+ * 
+ * NOTE: fixture の token は userId そのもの（Development mode 用）
+ * Development mode では x-user-id ヘッダーで認証する
+ * Bearer token は sessions テーブルのセッショントークンが必要だが
+ * fixture は session を作成しないため x-user-id を使用
  */
 function authHeaders(token: string): Record<string, string> {
-  return { 'Authorization': `Bearer ${token}` };
+  return { 'x-user-id': token };
 }
 
 test.describe('PR-P0-INBOX-READ: 通知の既読SSOT E2Eテスト', () => {
