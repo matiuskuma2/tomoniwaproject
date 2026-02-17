@@ -82,6 +82,8 @@ import {
   executeOneOnOneCandidates as executeOneOnOneCandidatesFromExecutors,
   // v1.2: Phase B-2 freebusy から候補生成
   executeOneOnOneFreebusy as executeOneOnOneFreebusyFromExecutors,
+  // v1.3: Phase B-4 Open Slots（公開枠）
+  executeOneOnOneOpenSlots as executeOneOnOneOpenSlotsFromExecutors,
   // D0: 関係性管理
   executeRelationRequestWorkmate as executeRelationRequestWorkmateFromExecutors,
   executeRelationApprove as executeRelationApproveFromExecutors,
@@ -725,6 +727,10 @@ export async function executeIntent(
     // v1.2: Phase B-2 freebusy から候補生成
     case 'schedule.1on1.freebusy':
       return executeOneOnOneFreebusyFromExecutors(intentResult);
+    
+    // v1.3: Phase B-4 Open Slots（公開枠）
+    case 'schedule.1on1.open_slots':
+      return executeOneOnOneOpenSlotsFromExecutors(intentResult);
     
     // D0: 関係性管理（仕事仲間申請/承諾/拒否）
     case 'relation.request.workmate':

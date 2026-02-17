@@ -120,11 +120,12 @@ export {
   formatProposalLabel,
 } from './autoPropose';
 
-// OneOnOne executors (v1.0: 1対1予定調整, v1.1: Phase B-1 候補3つ, v1.2: Phase B-2 freebusy)
+// OneOnOne executors (v1.0: 1対1予定調整, v1.1: Phase B-1 候補3つ, v1.2: Phase B-2 freebusy, v1.3: Phase B-4 open_slots)
 export {
   executeOneOnOneFixed,
   executeOneOnOneCandidates,
   executeOneOnOneFreebusy,
+  executeOneOnOneOpenSlots,
   formatDateTimeJP,
 } from './oneOnOne';
 
