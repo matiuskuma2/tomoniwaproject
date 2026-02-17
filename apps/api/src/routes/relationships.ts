@@ -944,11 +944,9 @@ relationships.post('/block', async (c) => {
   }
   
   // Get workspace_id from user context (simplified for MVP)
-  const userWorkspace = await env.DB.prepare(`
-    SELECT workspace_id FROM workspace_members WHERE user_id = ? LIMIT 1
-  `).bind(userId).first<{ workspace_id: string }>();
-  
-  const workspaceId = userWorkspace?.workspace_id || 'default';
+  // Phase 1: Single-tenant mode — use default workspace
+  // workspace_members table does not exist yet; will be added in multi-tenant phase
+  const workspaceId = 'ws-default';
   
   // Create block record
   const blockId = uuidv4();
