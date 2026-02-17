@@ -1,10 +1,10 @@
 # PRD: FE-5 Post-Import Auto-Connect
 ## post-import 完了 → schedule / send_invite executor 自動接続
 
-**Version**: 2.0 (B戦略: 止めない・聞き直さない)
+**Version**: 2.1 (B戦略: 止めない・聞き直さない)
 **Author**: AI Developer
 **Date**: 2026-02-17
-**Status**: APPROVED
+**Status**: APPROVED — 3点確定済み (v2.1)
 **Depends on**: FE-4 (完了), 1on1 全4モード接続 (b5ce1f8 で完了)
 **Design Review**: B戦略採択 — 人数で止めない、ガイドメッセージ不要
 
@@ -87,10 +87,15 @@ post-import からの自動接続時は、ユーザーが条件を指定して�
 slots は空配列を渡し、次のステップ (`/send`) で freebusy 生成した候補を追加する設計。
 ただし、**slots 必須** のバリデーションがあるため (L98-101)、最低限のデフォルト候補を bridge 側で生成する必要がある。
 
-→ **設計判断**: bridge で freebusy API を先に呼んで候補を取得し、それを oneToMany.prepare に渡す。これにより:
-1. 主催者のカレンダー空きを自動反映
-2. slots バリデーション通過
-3. ユーザーに即座に候補が見える
+→ **設計判断 (v2.1 確定)**: bridge で `generateDefaultSlots(constraints?)` を呼び、デフォルト候補を生成して oneToMany.prepare に渡す。
+
+**デフォルト枠生成ルール (v2.1 確定)**:
+1. constraints あり → それを使う（例: 来週木金午後 → 木/金の14:00, 15:00, 16:00）
+2. constraints なし → 次の5営業日から3枠、14:00 / 15:00 / 16:00（午後集中がビジネスに合う）
+
+**注意**: post-import bridge 時点では constraints は持っていない（名刺取り込み→「はい」の流れに条件入力なし）。
+なので post-import からは常に「constraints なし → デフォルト3枠」。constraints 付きは FE-6 (チャット自然言語経由) で活きる。
+bridge の `generateDefaultSlots` はパラメータとして constraints を受け取れる設計にしておき、今は null を渡す。
 
 ---
 
@@ -120,17 +125,17 @@ slots は空配列を渡し、次のステップ (`/send`) で freebusy 生成�
   POST         POST            POST
   /threads/    /one-on-one/    /one-to-many/
   prepare      freebusy/       prepare
-               prepare
-      │          │               │
-      ▼          ▼               ▼
-  pending.     結果表示        結果表示
-  action       (候補日時+URL)  (スレッド作成+招待者)
-  created                          │
-  (送る/                           ▼
-  キャンセル)               POST /one-to-many/:id/send
-                                   │
-                                   ▼
-                              招待送信完了
+               prepare              │
+      │          │               ▼
+      ▼          ▼          POST /one-to-many/:id/send
+  pending.     結果表示           │
+  action       (候補日時+URL)     ▼
+  created                    招待送信完了
+  (送る/                     (prepare+send 一気通貫
+  キャンセル)                  = 可逆操作なので確認不要)
+  ↑ 不可逆操作
+  なので確認
+  ステップ残す
 ```
 
 ---
@@ -248,6 +253,14 @@ Bot:  ⚠️ 2週間以内に空き枠が見つかりませんでした。
 | apiExecutor switch | ✅ 4モード接続済 | ❌ **未接続** | FE-5 scope 外 (bridge 経由) |
 
 **重要**: oneToMany の executor/classifier がないが、FE-5 では **bridge が直接 API クライアントを呼ぶ** ため問題ない。チャットからの自然言語呼び出し (classifier → executor → apiExecutor) は FE-6 以降のスコープ。
+
+**アーキテクチャ方針 (v2.1 確定)**: A方式 (ブリッジ直呼び) + TODOコメントで FE-6 リファクタを明示。
+```typescript
+// TODO(FE-6): Refactor to unified schedule.1toN intent flow via apiExecutor.
+// Currently bridge calls oneToManyApi directly. When oneToMany executor/classifier
+// are implemented, this should generate a synthetic IntentResult and route through
+// apiExecutor for unified scheduling architecture.
+```
 
 ### 5.2 変更ファイル一覧
 
@@ -575,24 +588,49 @@ oneToMany の executor/classifier はまだ存在しない。作る選択肢は2
 
 **選択: B**。理由: post-import bridge は「コンテキストが完全に確定した状態」で呼ばれるため、classifier/executor を経由する意味がない。
 
-#### 5.5.2 oneToMany prepare → send の2ステップ
+#### 5.5.2 可逆性に基づく確認ステップの判断 (v2.1 確定)
 
-oneToMany API は prepare → send の2段階設計。post-import bridge では **両方を一気に実行** する。
-理由: ユーザーは既に「はい」で confirm しているため、prepare 後に再度 「送る？」と聞くのは体験が悪い。
+| 操作 | 可逆性 | 確認ステップ |
+|------|--------|-------------|
+| schedule (oneOnOne/oneToMany) | **可逆** (repropose で候補変更可) | なし。prepare → send 一気通貫 |
+| send_invite | **不可逆** (メール送信は戻せない) | あり。prepare → pending.action → 「送る/キャンセル」 |
 
-#### 5.5.3 デフォルト候補日時の生成
+oneToMany: ユーザーは既に「はい」で confirm 済み。候補は後から repropose で変更可能。なので prepare → send を一気に実行。
+send_invite: `executeInvitePrepareEmails` → `pending.action.created` → 既存の確認フローに合流。
 
-freebusy API を呼ぶ代わりに `generateDefaultSlots()` でデフォルト候補を生成する判断:
+#### 5.5.3 デフォルト候補日時の生成 (v2.1 確定)
 
+**生成ルール**:
+1. `constraints` あり → それを使う (FE-6 で活用予定)
+2. `constraints` なし → 次の5営業日から3枠、14:00 / 15:00 / 16:00
+
+**なぜ freebusy API を呼ばないか**:
 | 方式 | メリット | デメリット |
 |------|---------|-----------|
-| freebusy 先呼び | カレンダー空きを反映 | API 2回呼び (遅い)、カレンダー未接続で失敗 |
+| freebusy 先呼び | カレンダー空きを反映 | API 2回 (遅い)、カレンダー未接続で失敗 |
 | **デフォルト候補** | 即座に完了、カレンダー不要 | 空きを反映しない |
 
 **選択: デフォルト候補**。理由: 
-- 1対N は「主催者が候補を出す → 参加者が回答」のフロー。主催者の空き確認は別途やればいい
-- カレンダー未接続でも日程調整は開始できるべき
-- 速度が体験に直結する
+- 1対N は「主催者が候補を出す → 参加者が回答」のフロー
+- カレンダー未接続でも日程調整を開始できるべき
+- 速度が体験に直結
+- 空きとの衝突は repropose で対応可
+- FE-6b で freebusy 連携を追加予定
+
+**`generateDefaultSlots` のシグネチャ**:
+```typescript
+function generateDefaultSlots(
+  count: number,
+  durationMinutes: number,
+  constraints?: {
+    time_min?: string;
+    time_max?: string;
+    prefer?: 'morning' | 'afternoon' | 'evening' | 'business';
+    days?: number[];  // 0=日, 1=月, ...
+  } | null
+): Array<{ start_at: string; end_at: string; label?: string }>
+```
+post-import bridge では `constraints = null` で呼ぶ。
 
 #### 5.5.4 names の取得タイミング
 
@@ -714,12 +752,13 @@ S6: completed → pending クリアのみ、API 呼び出しなし
 
 ---
 
-## Appendix: v1.0 → v2.0 変更差分
+## Appendix: v1.0 → v2.0 → v2.1 変更差分
 
-| 項目 | v1.0 (A戦略) | v2.0 (B戦略) |
-|------|-------------|-------------|
-| 2名+ schedule | ガイドメッセージで停止 | **oneToMany 自動実行** |
-| oneToMany 呼び出し | FE-6 以降 | **FE-5 で bridge 経由** |
-| 候補日時生成 | N/A | **デフォルト平日3枠** |
-| 招待送信 | N/A | **prepare + send 一気通貫** |
-| 設計思想 | 安全重視 | **体験重視: 止めない** |
+| 項目 | v1.0 (A戦略) | v2.0 (B戦略) | v2.1 (確定) |
+|------|-------------|-------------|-------------|
+| 2名+ schedule | ガイドメッセージ | oneToMany 自動実行 | 同左 |
+| oneToMany 呼び出し | FE-6 以降 | bridge 経由 | **bridge + TODO(FE-6)** |
+| 候補日時生成 | N/A | 固定10/14/16 | **constraints対応 + デフォルト14/15/16** |
+| schedule 確認 | N/A | prepare+send一気 | **同左 (可逆なので確認不要)** |
+| send_invite 確認 | N/A | prepare+send一気 | **prepareまで+確認ステップ (不可逆ガード)** |
+| 設計思想 | 安全重視 | 体験重視 | **体験重視 + 可逆性ベースの確認判断** |

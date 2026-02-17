@@ -168,6 +168,13 @@ export {
   buildPendingPersonSelect,
 } from './contactImport';
 
+// Post-Import Auto-Connect Bridge (FE-5: post-import → schedule/invite 自動接続)
+export {
+  executePostImportAutoConnect,
+  generateDefaultSlots,
+  type PostImportAutoConnectParams,
+} from './postImportBridge';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

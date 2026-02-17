@@ -28,6 +28,8 @@ import { getPendingForThread } from '../../core/chat/pendingTypes';
 import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
 // PR-D-FE-3.1: 次手フロー用 context 型
 import type { ContactImportContext } from '../../core/chat/executors/types';
+// FE-5: Post-Import Auto-Connect Bridge
+import { executePostImportAutoConnect } from '../../core/chat/executors/postImportBridge';
 
 // ============================================================
 // State Types
@@ -711,8 +713,79 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       const threadId = currentThreadId || 'temp';
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
     }
-    // PR-D-FE-3.1: 次手選択完了 or キャンセル → pending クリア
-    else if (kind === 'post_import.next_step.selected' || kind === 'post_import.next_step.cancelled') {
+    // FE-5: Post-Import Auto-Connect Bridge
+    // 次手選択完了 → 人数に関係なく適切な executor / API を自動起動
+    else if (kind === 'post_import.next_step.selected') {
+      const threadId = currentThreadId || 'temp';
+
+      // FE-5: names を pending クリア前に取得（クリア後は消える）
+      const pendingState = state.pendingByThreadId[threadId] as any;
+      const savedNames: string[] = pendingState?.importSummary?.imported_contacts?.map(
+        (c: { display_name: string }) => c.display_name
+      ) || [];
+
+      dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+
+      // FE-5: Auto-connect — 人数に関係なく次の executor を自動起動
+      const { action, emails } = payload as {
+        action: 'send_invite' | 'schedule' | 'completed';
+        emails: string[];
+      };
+
+      if (action !== 'completed' && emails && emails.length > 0) {
+        // Loading メッセージ
+        const loadingMsg = action === 'send_invite'
+          ? '📨 招待を準備しています...'
+          : emails.length > 1
+            ? `📅 ${emails.length}名との日程調整を準備しています...`
+            : `📅 ${savedNames[0] || ''}さんとの日程調整を準備しています...`;
+
+        appendMessage(threadId, {
+          id: `assistant-loading-${Date.now()}`,
+          role: 'assistant',
+          content: loadingMsg,
+          timestamp: new Date(),
+        });
+
+        // 非同期で bridge を起動（reducer 外の副作用）
+        (async () => {
+          try {
+            const bridgeResult = await executePostImportAutoConnect({
+              action,
+              emails,
+              names: savedNames,
+            });
+
+            // 結果メッセージをチャットに追加
+            appendMessage(threadId, {
+              id: `assistant-bridge-${Date.now()}`,
+              role: 'assistant',
+              content: bridgeResult.message,
+              timestamp: new Date(),
+            });
+
+            // ExecutionResult に data があれば状態更新
+            // (thread.create → navigate, pending.action.created → 確認UI, etc.)
+            if (bridgeResult.data) {
+              handleExecutionResult(bridgeResult);
+            }
+          } catch (error) {
+            // フォールバック: 手動入力ガイダンス
+            const fallbackMsg = action === 'send_invite'
+              ? '❌ 招待の準備に失敗しました。\n「○○に招待送って」と入力してください。'
+              : '❌ 日程調整の準備に失敗しました。\n「○○さんと日程調整して」と入力してください。';
+            appendMessage(threadId, {
+              id: `assistant-error-${Date.now()}`,
+              role: 'assistant',
+              content: fallbackMsg,
+              timestamp: new Date(),
+            });
+          }
+        })();
+      }
+    }
+    // PR-D-FE-3.1: 次手キャンセル → pending クリア
+    else if (kind === 'post_import.next_step.cancelled') {
       const threadId = currentThreadId || 'temp';
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
     }
