@@ -100,6 +100,8 @@ export type IntentType =
   | 'contact.import.person_select' // PR-D-1.1: 曖昧一致時の人物選択
   // PR-D-FE-4: 取り込み完了後の次手選択
   | 'post_import.next_step.decide'  // PR-D-FE-4: 次手選択（招待/日程/完了）
+  // FE-6: 1対N (Broadcast) スケジューリング
+  | 'schedule.1toN.prepare'         // FE-6: 1対N 日程調整準備（チャットから直接）
   | 'unknown';
 
 export interface IntentResult {

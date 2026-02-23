@@ -105,6 +105,8 @@ import {
   executeContactImportPersonSelect,
   // PR-D-FE-4: 取り込み後の次手選択
   executePostImportNextStepDecide,
+  // FE-6: 1対N (Broadcast) スケジューリング
+  executeOneToManySchedule as executeOneToManyScheduleFromExecutors,
 } from './executors';
 import type { PoolCreateDraft } from './executors/pool/create';
 // PendingState import removed - already imported at line 23
@@ -784,6 +786,10 @@ export async function executeIntent(
     // PR-D-FE-4: 取り込み後の次手選択
     case 'post_import.next_step.decide':
       return executePostImportNextStepDecide(intentResult);
+
+    // FE-6: 1対N (Broadcast) スケジューリング
+    case 'schedule.1toN.prepare':
+      return executeOneToManyScheduleFromExecutors(intentResult);
 
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）

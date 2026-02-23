@@ -281,7 +281,21 @@ export type ExecutionResultData =
       action: 'send_invite' | 'schedule' | 'completed';
       emails: string[];
     } }
-  | { kind: 'post_import.next_step.cancelled'; payload: {} };
+  | { kind: 'post_import.next_step.cancelled'; payload: {} }
+  // FE-6: 1対N (Broadcast) スケジューリング
+  | { kind: '1toN.prepared'; payload: {
+      threadId: string;
+      mode: 'candidates' | 'fixed' | 'open_slots' | 'range_auto';
+      inviteesCount: number;
+      slotsCount: number;
+      title: string;
+    } }
+  | { kind: '1toN.sent'; payload: {
+      threadId: string;
+      sentCount: number;
+      total: number;
+      channel: string;
+    } };
 
 // PR-D-FE-3.1: アップロード時の意図コンテキスト
 export type PostImportIntent = 'send_invite' | 'schedule' | 'message_only' | 'unknown';

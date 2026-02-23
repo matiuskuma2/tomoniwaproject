@@ -30,6 +30,7 @@ import { classifyOneOnOne } from './oneOnOne';
 import { classifyRelation } from './relation';  // D0: 関係性管理
 import { classifyPool } from './pool';          // G2-A: Pool Booking
 import { classifyContactImport } from './contactImport'; // PR-D-1.1: 連絡先取り込み
+import { classifyOneToMany } from './oneToMany'; // FE-6: 1対N スケジューリング
 
 /**
  * 分類器チェーン（固定順序）
@@ -42,12 +43,13 @@ const classifierChain: ClassifierFn[] = [
   classifyLists,            // 4. Beta A リスト5コマンド
   classifyCalendar,         // 5. P1 カレンダー読み取り
   classifyPreference,       // 6. P3-PREF 好み設定
-  classifyOneOnOne,         // 7. v1.0: 1対1予定調整（固定日時）
-  classifyPropose,          // 8. 候補提案系
-  classifyRemind,           // 9. リマインド系
-  classifyRelation,         // 10. D0: 関係性管理（仕事仲間申請）
-  classifyPool,             // 11. G2-A: Pool Booking（予約）
-  classifyThread,           // 12. スレッド操作系
+  classifyOneToMany,        // 7. FE-6: 1対N日程調整（2名以上）— oneOnOneより先に判定
+  classifyOneOnOne,         // 8. v1.0: 1対1予定調整（固定日時）
+  classifyPropose,          // 9. 候補提案系
+  classifyRemind,           // 10. リマインド系
+  classifyRelation,         // 11. D0: 関係性管理（仕事仲間申請）
+  classifyPool,             // 12. G2-A: Pool Booking（予約）
+  classifyThread,           // 13. スレッド操作系
 ];
 
 /**

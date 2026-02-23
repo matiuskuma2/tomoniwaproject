@@ -175,6 +175,11 @@ export {
   type PostImportAutoConnectParams,
 } from './postImportBridge';
 
+// OneToMany executor (FE-6: チャットから直接1対N日程調整)
+export {
+  executeOneToManySchedule,
+} from './oneToMany';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';
