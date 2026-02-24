@@ -52,15 +52,16 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 ### 📋 将来の計画
 
-| 機能 | フェーズ |
-|------|----------|
-| **UI モード選択** | Phase 1 |
-| **Slack/Chatwork 自動チャンネル** | Phase 1 |
-| **N対N 調整** | Phase 2 |
-| **音声入力** | Phase 1 |
-| **AI スロット生成** | Phase 2 |
-| **OCR 高度化** | Phase 2 |
-| **ネイティブアプリ** | Phase 3 |
+| 機能 | フェーズ | 計画書 |
+|------|----------|--------|
+| **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | [PR-B6](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
+| **UI モード選択** | Phase 1 | - |
+| **Slack/Chatwork 自動チャンネル** | Phase 1 | - |
+| **N対N 調整** | Phase 2 | - |
+| **音声入力** | Phase 1 | - |
+| **AI スロット生成** | Phase 2 | - |
+| **OCR 高度化** | Phase 2 | - |
+| **ネイティブアプリ** | Phase 3 | - |
 
 ---
 
@@ -74,6 +75,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **Candidates3** | `schedule.1on1.candidates3` | 候補3つ提示 | デフォルト(制約なし) |
 | **FreeBusy** | `schedule.1on1.freebusy` | カレンダー空き時間検出 | 制約あり時 |
 | **Open Slots** | `schedule.1on1.open_slots` | 相手に選んでもらう公開枠 | 明示的指定時 |
+| **Reverse Availability** | `schedule.1on1.reverse_availability` | 🔜 相手の空きから候補を出してもらう（ご都合伺い） | [PR-B6 計画](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
 
 ### 1対N (FE-5 + FE-6 完了)
 
