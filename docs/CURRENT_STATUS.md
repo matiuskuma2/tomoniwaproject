@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-05
-> **最新コミット**: PR-B6 逆アベイラビリティ Phase 1 実装完了
-> **前回コミット**: c162ae4 (FE-6b ホストFreeBusy統合)
+> **最新コミット**: PR-B6 Phase 2 — ゲストOAuth + FreeBusy自動取得
+> **前回コミット**: PR-B6 Phase 1 逆アベイラビリティ実装完了
 
 ---
 
@@ -44,13 +44,14 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **FE-5** | Post-Import Auto-Connect Bridge | 46d5a2f |
 | **FE-6** | 1対N チャット直接スケジューリング (classifier + executor) | 6f926c2 |
 | **FE-6b** | ホストFreeBusy → スロット生成統合 | c162ae4 |
-| **PR-B6 逆アベイラビリティ** | 目上の相手にご都合を伺うモード（Phase 1: 手動候補選択） | 今回 |
+| **PR-B6 逆アベイラビリティ Phase 1** | 目上の相手にご都合を伺うモード（手動候補選択） | b847769 |
+| **PR-B6 Phase 2 ゲストOAuth** | ゲストOAuth → FreeBusy自動取得 → 空きスロットのみ表示 | 今回 |
 
 ### 🔄 進行中
 
 | 機能 | 説明 | 状況 |
 |------|------|------|
-| *(なし — 次タスク選択待ち)* | | |
+| *(なし — 次タスク選択待ち)* | PR-B6 Phase 2 完了、次の優先度を選択 | |
 
 ### PR-B6: 逆アベイラビリティ Phase 1 (完了)
 
@@ -69,12 +70,25 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | B6-11 | apps/api/src/index.ts ルーティング登録 | ✅ |
 | B6-12 | TypeScript全通過 + テスト 398/398 pass | ✅ |
 
+### PR-B6: 逆アベイラビリティ Phase 2 (完了)
+
+| ID | タスク | 状況 |
+|----|--------|------|
+| B6P2-1 | DBマイグレーション (0094_add_guest_oauth_for_reverse_availability.sql) | ✅ |
+| B6P2-2 | OAuth start: GET /ra/:token/oauth/start | ✅ |
+| B6P2-3 | OAuth callback: GET /api/ra-oauth/callback (固定URI) | ✅ |
+| B6P2-4 | OAuth skip: POST /ra/:token/oauth/skip | ✅ |
+| B6P2-5 | FreeBusy取得 + busy除外スロット計算 (generateFreeBusyFilteredSlots) | ✅ |
+| B6P2-6 | ゲストページUI改修（OAuth案内 + 自動スロット表示 + フォールバック） | ✅ |
+| B6P2-7 | index.ts ルート登録 (raOAuth public + callback) | ✅ |
+| B6P2-8 | Unit tests: 12/12 pass (raOAuth.test.ts) | ✅ |
+| B6P2-9 | 回帰テスト: 410/410 pass (0 regression from Phase 1) | ✅ |
+
 ### 📋 将来の計画
 
 | 機能 | フェーズ | 計画書 |
 |------|----------|--------|
-| **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | ✅ 実装済み (Phase 1) |
-| **PR-B6 Phase 2: ゲストOAuthカレンダー自動取得** | Phase 2 | [PR-B6](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
+| **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | ✅ Phase 1 & Phase 2 完了 |
 | **UI モード選択** | Phase 1 | - |
 | **Slack/Chatwork 自動チャンネル** | Phase 1 | - |
 | **N対N 調整** | Phase 2 | - |
@@ -95,7 +109,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **Candidates3** | `schedule.1on1.candidates3` | 候補3つ提示 | デフォルト(制約なし) |
 | **FreeBusy** | `schedule.1on1.freebusy` | カレンダー空き時間検出 | 制約あり時 |
 | **Open Slots** | `schedule.1on1.open_slots` | 相手に選んでもらう公開枠 | 明示的指定時 |
-| **Reverse Availability** | `schedule.1on1.reverse_availability` | ✅ 相手の空きから候補を出してもらう（ご都合伺い） | PR-B6 実装済み |
+| **Reverse Availability** | `schedule.1on1.reverse_availability` | ✅ 相手の空きから候補（Phase 1: 手動 / Phase 2: OAuth自動） | PR-B6 Phase 1&2 完了 |
 
 ### 1対N (FE-5 + FE-6 完了)
 
@@ -113,7 +127,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 19 | 398 | ✅ All Pass |
+| **Unit Tests (vitest)** | 20 | 410 | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -139,6 +153,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | `business-card-scan-fe.test.ts` | 6 | 名刺スキャンテスト |
 | `reverseAvailability.test.ts (classifier)` | 11 | PR-B6 classifier テスト |
 | `reverseAvailability.test.ts (executor)` | 9 | PR-B6 executor テスト |
+| `raOAuth.test.ts` | 12 | PR-B6 Phase 2 OAuth + FreeBusy filtering テスト |
 
 ---
 

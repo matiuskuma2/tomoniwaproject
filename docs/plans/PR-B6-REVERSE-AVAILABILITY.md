@@ -1,14 +1,15 @@
 # PR-B6 実装PRD：逆アベイラビリティ（Reverse Availability）
 
-## ステータス: ✅ Phase 1 実装完了
+## ステータス: ✅ Phase 1 & Phase 2 実装完了
 
 > **起案日**: 2026-02-23
 > **PRD確定日**: 2026-03-05
 > **Phase 1 完了日**: 2026-03-05
+> **Phase 2 完了日**: 2026-03-05
 > **起案者**: モギモギ（関屋紘之）
 > **優先度**: Phase 1-2（1対1拡張）
-> **見積り**: DB 1h + API 4h + FE(classifier/executor) 2h + ゲストUI 3h + テスト 3h ≈ 13h
-> **残り**: Phase 2（ゲストOAuth + FreeBusy自動取得）は将来実装
+> **見積り**: Phase 1: ~13h, Phase 2: ~9h
+> **Phase 2 PRD**: [PR-B6-PHASE2-GUEST-OAUTH-FREEBUSY.md](./PR-B6-PHASE2-GUEST-OAUTH-FREEBUSY.md)
 
 ---
 
@@ -410,16 +411,22 @@ B6-1 (DB) → B6-2 (prepare API) → B6-6+B6-7 (FE classifier/executor)
 
 ---
 
-## 5. Phase 2: カレンダー自動取得（将来拡張）
+## 5. Phase 2: カレンダー自動取得（✅ 実装完了 2026-03-05）
 
-Phase 1完了後、ゲストのGoogle OAuth認証を追加:
+ゲストのGoogle OAuth認証を追加:
 
 - `/ra/:token` ページにカレンダー認証ステップを追加
-- `calendar.readonly` or `calendar.freebusy` スコープ
+- `calendar.freebusy` スコープ（最小権限、読み取り専用）
 - 認証後、自動でfreebusyを取得して空き枠を表示
 - 認証スキップも可能（手動選択にフォールバック）
 
-これは **差分PR** で対応可能。Phase 1の構造を壊さない。
+**実装ファイル:**
+- `db/migrations/0094_add_guest_oauth_for_reverse_availability.sql` — `guest_google_tokens` テーブル + RA カラム追加
+- `apps/api/src/routes/raOAuth.ts` — OAuth start, callback, skip, FreeBusy filtering
+- `apps/api/src/routes/reverseAvailability.ts` — ゲストページUI拡張
+- `apps/api/src/routes/__tests__/raOAuth.test.ts` — 12テスト
+
+**詳細PRD:** [PR-B6-PHASE2-GUEST-OAUTH-FREEBUSY.md](./PR-B6-PHASE2-GUEST-OAUTH-FREEBUSY.md)
 
 ---
 

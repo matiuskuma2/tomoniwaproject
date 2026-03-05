@@ -770,13 +770,24 @@ const publicApp = new Hono<{ Bindings: Env }>();
 /**
  * GET /ra/:token — ゲスト向け時間枠選択ページ
  *
- * 2週間分のカレンダー、平日09:00-18:00、duration刻み。
- * ゲストが2-3候補を選択して送信する。
+ * Phase 1: 2週間分のカレンダー、平日09:00-18:00、duration刻み。
+ * Phase 2: OAuth認証済みならFreeBusy除外済みスロットのみ表示。
+ *          未認証ならOAuth案内 + Phase 1フォールバック。
+ *
+ * Query params:
+ *   ?oauth=done        OAuth成功（FreeBusy取得済み）
+ *   ?oauth=error       OAuth失敗 → Phase 1フォールバック
+ *   ?oauth=denied      OAuth拒否 → Phase 1フォールバック
+ *   ?oauth=unavailable OAuth設定なし → Phase 1のみ
+ *   ?oauth=freebusy_error FreeBusy取得失敗 → Phase 1フォールバック
+ *   ?mode=manual       スキップ → Phase 1表示
  */
 publicApp.get('/:token', async (c) => {
   const { env } = c;
   const log = createLogger(env, { module: 'ReverseAvailability', handler: 'guestPage' });
   const token = c.req.param('token');
+  const oauthParam = c.req.query('oauth');
+  const modeParam = c.req.query('mode');
 
   try {
     // 1. RA取得
@@ -808,84 +819,183 @@ publicApp.get('/:token', async (c) => {
     ).bind(ra.requester_user_id).first<{ display_name: string | null; email: string }>();
     const organizerName = organizer?.display_name || organizer?.email?.split('@')[0] || '主催者';
 
-    // 4. 時間枠を生成（time_min ～ time_max, 平日 09:00-18:00, duration刻み）
+    // ── Phase 2: FreeBusy済みスロットチェック ──
+    let useFreeBusySlots = false;
+    let freebusySlotsByDate: Map<string, { start: string; end: string; label: string }[]> | null = null;
+    let guestEmail: string | null = null;
+
+    if (oauthParam === 'done' || (ra as any).guest_oauth_status === 'authenticated') {
+      // FreeBusy結果を取得
+      try {
+        const ggt = await env.DB.prepare(`
+          SELECT available_slots_json, google_email, status
+          FROM guest_google_tokens
+          WHERE token = ? AND reverse_availability_id = ? AND status = 'freebusy_fetched'
+          ORDER BY created_at DESC LIMIT 1
+        `).bind(token, ra.id).first<{
+          available_slots_json: string | null;
+          google_email: string | null;
+          status: string;
+        }>();
+
+        if (ggt?.available_slots_json) {
+          const slotsObj = JSON.parse(ggt.available_slots_json) as Record<string, { start: string; end: string; label: string }[]>;
+          freebusySlotsByDate = new Map(Object.entries(slotsObj));
+          useFreeBusySlots = freebusySlotsByDate.size > 0;
+          guestEmail = ggt.google_email;
+          log.debug('Using FreeBusy filtered slots', { token, days: freebusySlotsByDate.size });
+        }
+      } catch (err) {
+        log.warn('Failed to load FreeBusy slots, falling back to Phase 1', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // ── Phase 2: OAuth案内表示判定 ──
+    const isManualMode = modeParam === 'manual' || (ra as any).guest_oauth_status === 'skipped';
+    const isOAuthError = oauthParam === 'error' || oauthParam === 'denied' || oauthParam === 'freebusy_error';
+    const isOAuthUnavailable = oauthParam === 'unavailable';
+    const hasOAuthConfig = !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+    const showOAuthPrompt = hasOAuthConfig
+      && !useFreeBusySlots
+      && !isManualMode
+      && !isOAuthError
+      && !isOAuthUnavailable
+      && !(ra as any).guest_oauth_status;
+
+    // 4. 時間枠を生成
+    // Phase 2: FreeBusy済みスロットがある場合はそれを使う
     const timeMin = new Date(ra.time_min);
     const timeMax = new Date(ra.time_max);
     const duration = ra.duration_minutes;
     const interval = ra.slot_interval_minutes || 60;
 
-    // 日ごとにスロットを生成
     interface SlotData {
-      start: string; // ISO8601
+      start: string;
       end: string;
       label: string;
     }
-    const slotsByDate = new Map<string, SlotData[]>();
+    let slotsByDate: Map<string, SlotData[]>;
 
-    const current = new Date(timeMin);
-    // 日の開始を00:00に揃える（JSTベース）
-    const jstOffset = 9 * 60 * 60 * 1000;
+    if (useFreeBusySlots && freebusySlotsByDate) {
+      slotsByDate = freebusySlotsByDate;
+    } else {
+      // Phase 1: 全スロット生成（既存ロジック）
+      slotsByDate = new Map<string, SlotData[]>();
+      const jstOffset = 9 * 60 * 60 * 1000;
+      const current = new Date(timeMin);
 
-    while (current < timeMax) {
-      const jstDate = new Date(current.getTime() + jstOffset);
-      const dayOfWeek = jstDate.getUTCDay();
+      while (current < timeMax) {
+        const jstDate = new Date(current.getTime() + jstOffset);
+        const dayOfWeek = jstDate.getUTCDay();
 
-      // 平日のみ
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        const dateKey = `${jstDate.getUTCFullYear()}-${String(jstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(jstDate.getUTCDate()).padStart(2, '0')}`;
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+          const dateKey = `${jstDate.getUTCFullYear()}-${String(jstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(jstDate.getUTCDate()).padStart(2, '0')}`;
 
-        // 09:00-18:00 (JST) のスロット
-        for (let hour = 9; hour < 18; hour++) {
-          for (let minute = 0; minute < 60; minute += interval) {
-            // スロット終了がduration分後
-            const slotStartJST = new Date(Date.UTC(
-              jstDate.getUTCFullYear(),
-              jstDate.getUTCMonth(),
-              jstDate.getUTCDate(),
-              hour - 9, // UTC = JST - 9
-              minute,
-              0
-            ));
-            const slotEnd = new Date(slotStartJST.getTime() + duration * 60 * 1000);
+          for (let hour = 9; hour < 18; hour++) {
+            for (let minute = 0; minute < 60; minute += interval) {
+              const slotStartJST = new Date(Date.UTC(
+                jstDate.getUTCFullYear(),
+                jstDate.getUTCMonth(),
+                jstDate.getUTCDate(),
+                hour - 9,
+                minute,
+                0
+              ));
+              const slotEnd = new Date(slotStartJST.getTime() + duration * 60 * 1000);
+              const endLimitUTC = new Date(Date.UTC(
+                jstDate.getUTCFullYear(),
+                jstDate.getUTCMonth(),
+                jstDate.getUTCDate(),
+                18 - 9,
+                0,
+                0
+              ));
 
-            // 18:00 JST (= 09:00 UTC) を超えないようにする
-            const endLimitUTC = new Date(Date.UTC(
-              jstDate.getUTCFullYear(),
-              jstDate.getUTCMonth(),
-              jstDate.getUTCDate(),
-              18 - 9, // 18:00 JST = 09:00 UTC
-              0,
-              0
-            ));
+              if (slotEnd > endLimitUTC) continue;
+              if (slotStartJST < timeMin || slotEnd > timeMax) continue;
+              if (slotStartJST < new Date()) continue;
 
-            if (slotEnd > endLimitUTC) continue;
-
-            // time_min / time_max 範囲チェック
-            if (slotStartJST < timeMin || slotEnd > timeMax) continue;
-
-            // 過去のスロットはスキップ
-            if (slotStartJST < new Date()) continue;
-
-            if (!slotsByDate.has(dateKey)) {
-              slotsByDate.set(dateKey, []);
+              if (!slotsByDate.has(dateKey)) {
+                slotsByDate.set(dateKey, []);
+              }
+              slotsByDate.get(dateKey)!.push({
+                start: slotStartJST.toISOString(),
+                end: slotEnd.toISOString(),
+                label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+              });
             }
-            slotsByDate.get(dateKey)!.push({
-              start: slotStartJST.toISOString(),
-              end: slotEnd.toISOString(),
-              label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
-            });
           }
         }
-      }
 
-      // 次の日へ
-      current.setDate(current.getDate() + 1);
-      current.setHours(0, 0, 0, 0);
+        current.setDate(current.getDate() + 1);
+        current.setHours(0, 0, 0, 0);
+      }
     }
 
     // 5. HTML生成
     const preferredCount = ra.preferred_slots_count || 3;
     const targetName = ra.target_name || 'ゲスト';
+
+    // ── Phase 2: FreeBusyバッジ ──
+    const freebusyBadgeHtml = useFreeBusySlots
+      ? `<div class="bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4 flex items-center gap-2">
+           <svg class="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+           </svg>
+           <span class="text-sm text-green-700">カレンダーの空き時間を表示しています${guestEmail ? `（${guestEmail}）` : ''}</span>
+         </div>`
+      : '';
+
+    // ── Phase 2: OAuthエラーメッセージ ──
+    let oauthErrorHtml = '';
+    if (isOAuthError) {
+      const errorMsg = oauthParam === 'denied'
+        ? 'カレンダー認証がキャンセルされました。手動で日時をお選びください。'
+        : oauthParam === 'freebusy_error'
+        ? '空き時間の取得に失敗しました。手動で日時をお選びください。'
+        : 'カレンダー連携でエラーが発生しました。手動で日時をお選びください。';
+      oauthErrorHtml = `
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 mb-4 flex items-center gap-2">
+          <svg class="w-5 h-5 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span class="text-sm text-yellow-700">${errorMsg}</span>
+        </div>`;
+    }
+
+    // ── Phase 2: OAuth案内セクション ──
+    const oauthPromptHtml = showOAuthPrompt
+      ? `<div class="bg-white rounded-2xl shadow-lg p-6 mb-4">
+           <div class="text-center">
+             <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+               <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+               </svg>
+             </div>
+             <h2 class="text-base font-bold text-gray-800 mb-2">カレンダーから空き時間を自動表示</h2>
+             <p class="text-sm text-gray-500 mb-4">Googleカレンダーの予定を確認して、空いている時間帯だけを表示します。</p>
+             <a
+               href="/ra/${token}/oauth/start"
+               class="inline-flex items-center gap-2 px-6 py-3 bg-white border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:border-blue-400 hover:bg-blue-50 transition-all shadow-sm"
+             >
+               <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+               Googleカレンダーで確認
+             </a>
+             <p class="mt-3">
+               <a
+                 href="/ra/${token}?mode=manual"
+                 class="text-xs text-gray-400 hover:text-gray-600 underline"
+                 onclick="fetch('/ra/${token}/oauth/skip', {method:'POST'}).catch(()=>{})"
+               >
+                 スキップして手動で選ぶ
+               </a>
+             </p>
+             <p class="text-xs text-gray-300 mt-2">※ 空き時間の確認のみ（予定の変更は行いません）</p>
+           </div>
+         </div>`
+      : '';
 
     let slotsHtml = '';
     for (const [dateKey, daySlots] of slotsByDate) {
@@ -911,6 +1021,13 @@ publicApp.get('/:token', async (c) => {
     }
 
     if (slotsByDate.size === 0) {
+      if (useFreeBusySlots) {
+        // Phase 2: FreeBusy除外で空きがない → フォールバック案内
+        return c.html(renderErrorPage(
+          '空き時間が見つかりません',
+          'カレンダーの予定と照合した結果、この期間に空きがありませんでした。<br><a href="/ra/' + token + '?mode=manual" class="text-purple-600 underline">全ての時間枠から手動で選ぶ</a>'
+        ));
+      }
       return c.html(renderErrorPage('選択可能な枠がありません', '現在選択可能な時間枠がありません。主催者に連絡してください。'));
     }
 
@@ -938,9 +1055,17 @@ publicApp.get('/:token', async (c) => {
             </div>
           </div>
 
+          <!-- Phase 2: OAuth案内（条件付き表示） -->
+          ${oauthPromptHtml}
+
+          <!-- Phase 2: OAuthエラーメッセージ -->
+          ${oauthErrorHtml}
+
           <!-- 時間枠一覧 -->
           <div class="bg-white rounded-2xl shadow-lg p-6 mb-4">
-            <h2 class="text-sm font-semibold text-gray-700 mb-4">日時を選択</h2>
+            <!-- Phase 2: FreeBusyバッジ -->
+            ${freebusyBadgeHtml}
+            <h2 class="text-sm font-semibold text-gray-700 mb-4">${useFreeBusySlots ? '空いている日時を選択' : '日時を選択'}</h2>
             ${slotsHtml}
           </div>
 
