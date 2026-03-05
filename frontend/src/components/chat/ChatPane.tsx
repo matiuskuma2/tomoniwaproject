@@ -49,7 +49,7 @@ export interface ChatMessage {
 interface ChatPaneProps {
   threadId: string | null;
   status: ThreadStatus_API | null;
-  loading: boolean;  // PR-UX-1: initialLoading のみ受け取る
+  initialLoading: boolean;  // PR-UX-2: 初回ロードのみ true（refreshing では false）
   refreshing?: boolean;  // PR-UX-2: バックグラウンド再取得中
   
   // NEW: thread-specific messages passed from ChatLayout
@@ -81,7 +81,7 @@ interface ChatPaneProps {
 export function ChatPane({ 
   threadId, 
   status, 
-  loading, 
+  initialLoading, 
   refreshing = false,
   messages, 
   onAppend, 
@@ -198,7 +198,7 @@ export function ChatPane({
   useEffect(() => {
     if (!threadId) return;
     if (!status) return;
-    if (loading) return;
+    if (initialLoading) return;
 
     // Only seed if this thread has no messages
     if (messages.length === 0) {
@@ -212,7 +212,7 @@ export function ChatPane({
       onSeedIfEmpty(threadId, seed);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, status?.thread?.id, loading]);
+  }, [threadId, status?.thread?.id, initialLoading]);
 
   // PR-D-FE-3: 名刺スキャン専用ハンドラ（画像添付時はテキスト分類をバイパス）
   // PR-D-FE-3.1: 意図メモ（テキスト入力）を context として渡す
@@ -443,10 +443,11 @@ export function ChatPane({
     return msgs;
   };
 
-  // PR-UX-1: skeleton は「初回ロード（initialLoading）+ メッセージ0件」のみ
+  // PR-UX-2: skeleton は「初回ロード（initialLoading=true）+ メッセージ0件」のみ
   // メッセージが既にある状態では、refreshing でも UI を維持（LINE/Slack 方式）
   // これにより送信後の onThreadUpdate → refresh で画面が白くならない
-  if (loading && messages.length === 0) {
+  // NOTE: prop名を loading → initialLoading に統一して混乱を排除
+  if (initialLoading && messages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
         <div className="text-center">

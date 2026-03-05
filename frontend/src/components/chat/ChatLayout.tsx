@@ -222,7 +222,7 @@ export function ChatLayout() {
             <ChatPane 
               threadId={threadId || null}
               status={status} 
-              loading={initialLoading}
+              initialLoading={initialLoading}
               refreshing={refreshing}
               messages={currentMessages}
               onAppend={appendMessage}
@@ -240,7 +240,7 @@ export function ChatLayout() {
           <div className="w-96 flex-shrink-0">
             <CardsPane 
               status={status} 
-              loading={initialLoading}
+              initialLoading={initialLoading}
               refreshing={refreshing}
               calendarData={calendarData}
               viewerTz={viewerTz}
@@ -255,7 +255,7 @@ export function ChatLayout() {
             <ChatPane 
               threadId={threadId || null}
               status={status} 
-              loading={initialLoading}
+              initialLoading={initialLoading}
               refreshing={refreshing}
               messages={currentMessages}
               onAppend={appendMessage}
@@ -271,7 +271,7 @@ export function ChatLayout() {
           {mobileTab === 'cards' && (
             <CardsPane 
               status={status} 
-              loading={initialLoading}
+              initialLoading={initialLoading}
               refreshing={refreshing}
               calendarData={calendarData}
               viewerTz={viewerTz}
