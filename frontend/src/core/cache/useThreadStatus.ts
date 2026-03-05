@@ -5,9 +5,18 @@
  * SWR-like interface with automatic revalidation
  * 
  * PR-UX-2: loading を initialLoading / refreshing に分離
- * - initialLoading: 初回ロード（キャッシュなし、status=null）→ 全画面スピナー用
+ * - initialLoading: 初回ロード（キャッシュなし、status=null）→ skeleton表示用
  * - refreshing: バックグラウンド再取得（既にデータあり）→ tiny indicator用
  * - loading: 後方互換（initialLoading || refreshing）
+ * 
+ * 根本原因:
+ *   旧実装では fetchStatus() のたびに setLoading(true) → ChatPane if(loading) return spinner
+ *   → メッセージが全部消えて白画面+くるくる
+ *   送信成功 → onThreadUpdate → refresh → fetchStatus(true) → loading=true → 全画面スピナー
+ * 
+ * 修正:
+ *   loading を initialLoading（初回のみ skeleton OK）と refreshing（バックグラウンド）に分離
+ *   refresh() は常に isBackground=true → refreshing のみ変化 → ChatPane はメッセージを保持
  * 
  * 使い方:
  * const { status, initialLoading, refreshing, loading, error, refresh, mutate } = useThreadStatus(threadId);
@@ -147,7 +156,8 @@ export function useThreadStatus(
     
     if (skip || !threadId) {
       setStatus(null);
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
       return;
     }
     

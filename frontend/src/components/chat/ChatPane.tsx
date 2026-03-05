@@ -443,12 +443,16 @@ export function ChatPane({
     return msgs;
   };
 
-  // PR-UX-1: 全画面スピナーは「初回ロード + メッセージ0件」のみ
-  // メッセージが既にある場合はスピナーを出さずUIを維持（LINE方式）
+  // PR-UX-1: skeleton は「初回ロード（initialLoading）+ メッセージ0件」のみ
+  // メッセージが既にある状態では、refreshing でも UI を維持（LINE/Slack 方式）
+  // これにより送信後の onThreadUpdate → refresh で画面が白くならない
   if (loading && messages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+          <p className="text-sm text-gray-400">スレッドを読み込み中...</p>
+        </div>
       </div>
     );
   }
