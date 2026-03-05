@@ -8,6 +8,29 @@
 import type { PendingState } from '../pendingTypes';
 
 // ============================================================
+// FE-7: Scheduling Mode (Mode Chip UI)
+// ============================================================
+
+/**
+ * FE-7: スケジューリングモード
+ * Mode Chip UI から選択され、classifierChain の oneOnOne / reverseAvailability をオーバーライドする
+ * 
+ * - 'auto': 従来どおり NL で分類（デフォルト）
+ * - 'fixed': schedule.1on1.fixed を強制
+ * - 'candidates': schedule.1on1.candidates3 を強制
+ * - 'freebusy': schedule.1on1.freebusy を強制
+ * - 'open_slots': schedule.1on1.open_slots を強制
+ * - 'reverse_availability': schedule.1on1.reverse_availability を強制
+ */
+export type SchedulingMode =
+  | 'auto'
+  | 'fixed'
+  | 'candidates'
+  | 'freebusy'
+  | 'open_slots'
+  | 'reverse_availability';
+
+// ============================================================
 // Intent Types
 // ============================================================
 
@@ -126,6 +149,9 @@ export interface IntentContext {
   // P0-1: 正規化された pending
   pendingForThread?: PendingState | null;
   globalPendingAction?: PendingState | null;
+  // FE-7: ユーザーが明示的に選択したスケジューリングモード
+  // undefined / null / 'auto' → 従来どおり NL で分類
+  preferredMode?: SchedulingMode | null;
 }
 
 // ============================================================

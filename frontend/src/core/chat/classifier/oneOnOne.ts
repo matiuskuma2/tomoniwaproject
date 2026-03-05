@@ -24,7 +24,7 @@
  * - title: string - 予定タイトル（省略時: 打ち合わせ）
  */
 
-import type { IntentResult, IntentContext, ClassifierFn } from './types';
+import type { IntentResult, IntentContext, ClassifierFn, SchedulingMode } from './types';
 import type { PendingState } from '../pendingTypes';
 
 // ============================================================
@@ -497,6 +497,150 @@ function extractMultipleSlots(input: string, durationMinutes: number): Array<{st
 }
 
 // ============================================================
+// FE-7: Mode Chip 強制ルーティング
+// ============================================================
+
+/**
+ * FE-7: preferredMode に基づいて強制的に intent を返す
+ * 
+ * - person / trigger word は確認済みの前提で呼び出す
+ * - 日時情報がない場合は clarification を返す（candidates3 は slots 不足、fixed は date 不足）
+ * - freebusy / open_slots は日時不要（カレンダーから自動生成）
+ */
+function buildForcedModeResult(
+  mode: Exclude<SchedulingMode, 'auto'>,
+  input: string,
+  person: { name?: string; email?: string },
+  durationMinutes: number,
+  title: string,
+): IntentResult {
+  const baseParams = {
+    person,
+    duration_minutes: durationMinutes,
+    title,
+    rawInput: input,
+  };
+
+  switch (mode) {
+    case 'fixed': {
+      // 日付・時刻があれば完全な fixed、なければ clarification
+      const date = extractDate(input);
+      const time = extractTime(input);
+      if (date && time) {
+        const startAt = new Date(date);
+        startAt.setHours(time.hours, time.minutes, 0, 0);
+        const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+        return {
+          intent: 'schedule.1on1.fixed',
+          confidence: 0.95,
+          params: {
+            ...baseParams,
+            start_at: startAt.toISOString(),
+            end_at: endAt.toISOString(),
+          },
+        };
+      }
+      // 日時不足 → clarification
+      return {
+        intent: 'schedule.1on1.fixed',
+        confidence: 0.85,
+        params: baseParams,
+        needsClarification: {
+          field: date ? 'time' : 'date',
+          message: date
+            ? `${person.name || person.email}さんとの予定、何時からがいいですか？（例: 17時から）`
+            : `${person.name || person.email}さんとの予定、いつがいいですか？（例: 来週木曜17時から）`,
+        },
+      };
+    }
+
+    case 'candidates': {
+      // 複数スロットがあれば使う、なければ clarification
+      const slots = extractMultipleSlots(input, durationMinutes);
+      if (slots && slots.length >= 2) {
+        return {
+          intent: 'schedule.1on1.candidates3',
+          confidence: 0.95,
+          params: {
+            ...baseParams,
+            slots: slots.slice(0, 5),
+          },
+        };
+      }
+      return {
+        intent: 'schedule.1on1.candidates3',
+        confidence: 0.85,
+        params: baseParams,
+        needsClarification: {
+          field: 'slots',
+          message: `${person.name || person.email}さんとの予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
+        },
+      };
+    }
+
+    case 'freebusy': {
+      // freebusy は日時不要（カレンダーから自動生成）
+      const prefer = extractPrefer(input);
+      const timeRange = extractTimeRange(input);
+      const constraints: Record<string, unknown> = {};
+      if (timeRange) {
+        constraints.time_min = timeRange.time_min.toISOString();
+        constraints.time_max = timeRange.time_max.toISOString();
+      }
+      if (prefer) constraints.prefer = prefer;
+      if (durationMinutes !== 60) constraints.duration = durationMinutes;
+
+      return {
+        intent: 'schedule.1on1.freebusy',
+        confidence: 0.95,
+        params: {
+          ...baseParams,
+          constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+        },
+      };
+    }
+
+    case 'open_slots': {
+      // open_slots は日時不要（公開枠を相手に選んでもらう）
+      const prefer = extractPrefer(input);
+      const timeRange = extractTimeRange(input);
+      const constraints: Record<string, unknown> = {};
+      if (timeRange) {
+        constraints.time_min = timeRange.time_min.toISOString();
+        constraints.time_max = timeRange.time_max.toISOString();
+      }
+      if (prefer) constraints.prefer = prefer;
+      if (durationMinutes !== 60) constraints.duration = durationMinutes;
+
+      return {
+        intent: 'schedule.1on1.open_slots',
+        confidence: 0.95,
+        params: {
+          ...baseParams,
+          constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+        },
+      };
+    }
+
+    case 'reverse_availability': {
+      // reverse_availability は oneOnOne ではなく reverseAvailability classifier で処理
+      // ここに来た場合はフォールバックとして処理
+      return {
+        intent: 'schedule.1on1.reverse_availability',
+        confidence: 0.95,
+        params: {
+          ...baseParams,
+          target: {
+            name: person.name,
+            email: person.email,
+          },
+        },
+      };
+    }
+  }
+}
+
+// ============================================================
 // Main Classifier
 // ============================================================
 
@@ -511,6 +655,8 @@ function extractMultipleSlots(input: string, durationMinutes: number): Array<{st
  * Phase B-2: freebusy 判定ロジック
  * - 「空いてるところから」「空き時間から」などのキーワード
  * - 主催者のカレンダーから空き枠を自動生成
+ * 
+ * FE-7: preferredMode != auto の場合、既存判定をスキップして強制ルーティング
  * 
  * 重要: 日時トークンが2つ以上ある場合のみ candidates3 化
  */
@@ -545,6 +691,13 @@ export const classifyOneOnOne: ClassifierFn = (
   if (input.includes('会議')) title = '会議';
   if (input.includes('面談')) title = '面談';
   if (input.includes('相談')) title = '相談';
+
+  // ★ FE-7: preferredMode オーバーライド
+  // auto 以外が指定されている場合、キーワード判定をスキップして強制ルーティング
+  const mode = _context?.preferredMode;
+  if (mode && mode !== 'auto') {
+    return buildForcedModeResult(mode, input, person, durationMinutes, title);
+  }
 
   // ============================================================
   // Phase B-4: Open Slots 判定（最優先）

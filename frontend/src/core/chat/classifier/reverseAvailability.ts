@@ -158,8 +158,11 @@ export const classifyReverseAvailability: ClassifierFn = (
     return null;
   }
 
-  // トリガーキーワードチェック
-  if (!hasReverseKeyword(input)) {
+  // ★ FE-7: preferredMode が reverse_availability ならキーワード不要
+  const forcedRA = _context?.preferredMode === 'reverse_availability';
+
+  // トリガーキーワードチェック（FE-7: forcedRA なら skip）
+  if (!forcedRA && !hasReverseKeyword(input)) {
     return null;
   }
 
