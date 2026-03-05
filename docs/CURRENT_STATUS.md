@@ -51,7 +51,21 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 | 機能 | 説明 | 状況 |
 |------|------|------|
-| *(なし — 次タスク選択待ち)* | PR-B6 Phase 2 完了、次の優先度を選択 | |
+| **FE-7 Mode Chip UI** | チャット入力上部のモード選択チップ（Auto/Fixed/候補/空き/公開枠/ご都合伺い） | PRD確定、実装待ち |
+
+### 📋 FE-7: Mode Chip UI (PRD確定)
+
+| ID | タスク | 状況 | PR |
+|----|--------|------|----|
+| FE7-T1 | `types.ts` に `SchedulingMode` + `IntentContext.preferredMode` | ⏳ | PR-FE7-a |
+| FE7-T2 | `oneOnOne.ts` に override ロジック | ⏳ | PR-FE7-a |
+| FE7-T3 | `reverseAvailability.ts` に keyword スキップ | ⏳ | PR-FE7-a |
+| FE7-T4 | Unit tests: FE7-1〜FE7-12 | ⏳ | PR-FE7-a |
+| FE7-T5 | 回帰テスト（410/410 pass維持） | ⏳ | PR-FE7-a |
+| FE7-T6 | `ModeChip.tsx` UI コンポーネント | ⏳ | PR-FE7-b |
+| FE7-T7 | `useChatReducer.ts` に selectedMode state | ⏳ | PR-FE7-b |
+| FE7-T8 | ChatLayout / apiExecutor 統合 | ⏳ | PR-FE7-b |
+| FE7-T9 | Component tests + ドキュメント更新 | ⏳ | PR-FE7-b |
 
 ### PR-B6: 逆アベイラビリティ Phase 1 (完了)
 
@@ -89,7 +103,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | 機能 | フェーズ | 計画書 |
 |------|----------|--------|
 | **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | ✅ Phase 1 & Phase 2 完了 |
-| **UI モード選択** | Phase 1 | - |
+| **UI モード選択** | Phase 1 | [FE-7 PRD](./plans/FE-7-MODE-CHIP-UI.md) — PRD確定 |
+| **プロダクトヘルスチェック** | - | [2026-03 スナップショット](./PRODUCT_HEALTH_CHECK_2026_03.md) |
 | **Slack/Chatwork 自動チャンネル** | Phase 1 | - |
 | **N対N 調整** | Phase 2 | - |
 | **音声入力** | Phase 1 | - |
@@ -301,11 +316,11 @@ tomoniwaproject/
 
 ## 次のステップ
 
-1. **PR-B6 Phase 2: ゲストOAuth**: ゲスト側Google OAuth→FreeBusy自動取得（差分実装）
-2. **UI モード選択**: ユーザーが調整モードを明示的に選択可能に
-3. **Slack/Chatwork 自動チャンネル**: send_via のプリコンフィグ拡張
-4. **E2E テスト拡充**: 1対N + RA フローの統合テスト
-5. **UX改善**: メッセージテンプレート改善、レスポンシブUI
+1. **FE-7 Mode Chip UI**: チャット入力上部のモード選択チップ（PRD確定、~8h）
+2. **TD-10/TD-11 リファクタ**: apiExecutor.ts 分割 + ExecutionResultData 重複解消
+3. **E2E テスト基盤**: Playwright 導入、フルフロー統合テスト
+4. **Phase 3 FreeBusy交差**: ホスト+ゲスト双方のカレンダー空き時間を交差
+5. **Slack/Chatwork 自動チャンネル**: send_via のプリコンフィグ拡張
 
 ---
 
