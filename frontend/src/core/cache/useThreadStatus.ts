@@ -4,8 +4,13 @@
  * React Hook for cached thread status
  * SWR-like interface with automatic revalidation
  * 
+ * PR-UX-2: loading を initialLoading / refreshing に分離
+ * - initialLoading: 初回ロード（キャッシュなし、status=null）→ 全画面スピナー用
+ * - refreshing: バックグラウンド再取得（既にデータあり）→ tiny indicator用
+ * - loading: 後方互換（initialLoading || refreshing）
+ * 
  * 使い方:
- * const { status, loading, error, refresh, mutate } = useThreadStatus(threadId);
+ * const { status, initialLoading, refreshing, loading, error, refresh, mutate } = useThreadStatus(threadId);
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -26,7 +31,11 @@ import type { ThreadStatus_API } from '../models';
 interface UseThreadStatusResult {
   /** Current status (null if not loaded) */
   status: ThreadStatus_API | null;
-  /** Loading state */
+  /** PR-UX-2: Initial loading (no cached data yet, status=null) — use for full-screen skeleton */
+  initialLoading: boolean;
+  /** PR-UX-2: Background refreshing (already have data) — use for tiny sync indicator */
+  refreshing: boolean;
+  /** Loading state (backward compat: initialLoading || refreshing) */
   loading: boolean;
   /** Error state */
   error: Error | null;
@@ -62,7 +71,9 @@ export function useThreadStatus(
     // Initialize with cached value if available
     return threadId ? getCached(threadId) : null;
   });
-  const [loading, setLoading] = useState(false);
+  // PR-UX-2: loading を2種類に分離
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   
   // Refs for cleanup
@@ -90,13 +101,19 @@ export function useThreadStatus(
   }, [threadId, onStatusChange]);
   
   // Fetch status
-  const fetchStatus = useCallback(async (force: boolean = false) => {
+  // PR-UX-2: isBackground パラメータで initialLoading/refreshing を使い分け
+  const fetchStatus = useCallback(async (force: boolean = false, isBackground: boolean = false) => {
     if (!threadId) {
       setStatus(null);
       return;
     }
     
-    setLoading(true);
+    // PR-UX-2: 初回ロード vs バックグラウンド再取得を分離
+    if (isBackground) {
+      setRefreshing(true);
+    } else {
+      setInitialLoading(true);
+    }
     setError(null);
     
     try {
@@ -115,7 +132,11 @@ export function useThreadStatus(
       }
     } finally {
       if (mountedRef.current) {
-        setLoading(false);
+        if (isBackground) {
+          setRefreshing(false);
+        } else {
+          setInitialLoading(false);
+        }
       }
     }
   }, [threadId, ttl, onStatusChange]);
@@ -134,10 +155,11 @@ export function useThreadStatus(
     const cached = getCached(threadId);
     if (cached) {
       setStatus(cached);
-      // Still fetch in background to revalidate
-      fetchStatus(false);
+      // PR-UX-2: キャッシュあり → バックグラウンドで再検証（UIは残す）
+      fetchStatus(false, /* isBackground */ true);
     } else {
-      fetchStatus(false);
+      // PR-UX-2: キャッシュなし → 初回ロード（スピナー表示OK）
+      fetchStatus(false, /* isBackground */ false);
     }
     
     return () => {
@@ -146,8 +168,9 @@ export function useThreadStatus(
   }, [threadId, skip, fetchStatus]);
   
   // Refresh function (force fetch)
+  // PR-UX-2: refresh は常にバックグラウンド（既にデータがある前提）
   const refresh = useCallback(async () => {
-    await fetchStatus(true);
+    await fetchStatus(true, /* isBackground */ true);
   }, [fetchStatus]);
   
   // Optimistic update
@@ -168,8 +191,13 @@ export function useThreadStatus(
     }
   }, [threadId]);
   
+  // PR-UX-2: 後方互換の loading（どちらかが true なら true）
+  const loading = initialLoading || refreshing;
+
   return {
     status,
+    initialLoading,
+    refreshing,
     loading,
     error,
     refresh,

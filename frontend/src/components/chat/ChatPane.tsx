@@ -49,7 +49,8 @@ export interface ChatMessage {
 interface ChatPaneProps {
   threadId: string | null;
   status: ThreadStatus_API | null;
-  loading: boolean;
+  loading: boolean;  // PR-UX-1: initialLoading のみ受け取る
+  refreshing?: boolean;  // PR-UX-2: バックグラウンド再取得中
   
   // NEW: thread-specific messages passed from ChatLayout
   messages: ChatMessage[];
@@ -81,6 +82,7 @@ export function ChatPane({
   threadId, 
   status, 
   loading, 
+  refreshing = false,
   messages, 
   onAppend, 
   onSeedIfEmpty, 
@@ -97,8 +99,19 @@ export function ChatPane({
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // Phase Next-4 Day2.5: 音声補正中フラグ
   // PR-D-FE-3: 名刺画像添付
   const [attachedImages, setAttachedImages] = useState<File[]>([]);
+  // PR-UX-3: Blob URL のトラッキング（メモリリーク防止）
+  const blobUrlsRef = useRef<Map<File, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // PR-UX-3: File → Blob URL のマッピング（同一Fileは同じURLを再利用）
+  const getBlobUrl = useCallback((file: File): string => {
+    const existing = blobUrlsRef.current.get(file);
+    if (existing) return existing;
+    const url = URL.createObjectURL(file);
+    blobUrlsRef.current.set(file, url);
+    return url;
+  }, []);
 
   // PR-D-FE-3: 画像添付ハンドラ
   const MAX_IMAGES = 5;
@@ -153,8 +166,27 @@ export function ChatPane({
     }
   }, [attachedImages.length, threadId, onAppend]);
 
+  // PR-UX-3: objectURL revoke でメモリリーク防止
   const removeImage = useCallback((index: number) => {
-    setAttachedImages(prev => prev.filter((_, i) => i !== index));
+    setAttachedImages(prev => {
+      const removed = prev[index];
+      if (removed) {
+        const url = blobUrlsRef.current.get(removed);
+        if (url) {
+          URL.revokeObjectURL(url);
+          blobUrlsRef.current.delete(removed);
+        }
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
+
+  // PR-UX-3: unmount 時に全 Blob URL を解放
+  useEffect(() => {
+    return () => {
+      blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      blobUrlsRef.current.clear();
+    };
   }, []);
 
   // Scroll to bottom when messages change
@@ -195,6 +227,9 @@ export function ChatPane({
       timestamp: new Date(),
     };
     onAppend(targetThreadId, userMsg);
+    // PR-UX-3: 送信時にBlob URLを解放
+    blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    blobUrlsRef.current.clear();
     setAttachedImages([]);
     setMessage(''); // PR-D-FE-3.1: 意図メモもクリア
     setIsProcessing(true);
@@ -408,7 +443,9 @@ export function ChatPane({
     return msgs;
   };
 
-  if (loading) {
+  // PR-UX-1: 全画面スピナーは「初回ロード + メッセージ0件」のみ
+  // メッセージが既にある場合はスピナーを出さずUIを維持（LINE方式）
+  if (loading && messages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -429,6 +466,15 @@ export function ChatPane({
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div data-testid="chat-messages" className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* PR-UX-2: バックグラウンド同期中の小型インジケーター */}
+        {refreshing && (
+          <div className="flex items-center justify-center py-1">
+            <div className="flex items-center space-x-2 text-xs text-gray-400">
+              <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-400"></div>
+              <span>同期中...</span>
+            </div>
+          </div>
+        )}
         {/* PERF-S2: 古いメッセージ省略表示 */}
         {hiddenCount > 0 && (
           <div className="text-center text-xs text-gray-400 py-2">
@@ -504,7 +550,7 @@ export function ChatPane({
             {attachedImages.map((file, index) => (
               <div key={`${file.name}-${index}`} className="relative group">
                 <img
-                  src={URL.createObjectURL(file)}
+                  src={getBlobUrl(file)}
                   alt={file.name}
                   className="w-16 h-16 object-cover rounded-lg border border-gray-300"
                 />

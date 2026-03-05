@@ -40,6 +40,8 @@ export function ChatLayout() {
   // キャッシュが単一ソース（reducer には status を持たせない）
   const { 
     status, 
+    initialLoading,
+    refreshing,
     loading, 
     refresh: refreshThreadStatus 
   } = useThreadStatus(threadId);
@@ -220,7 +222,8 @@ export function ChatLayout() {
             <ChatPane 
               threadId={threadId || null}
               status={status} 
-              loading={loading} 
+              loading={initialLoading}
+              refreshing={refreshing}
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
@@ -237,7 +240,8 @@ export function ChatLayout() {
           <div className="w-96 flex-shrink-0">
             <CardsPane 
               status={status} 
-              loading={loading} 
+              loading={initialLoading}
+              refreshing={refreshing}
               calendarData={calendarData}
               viewerTz={viewerTz}
             />
@@ -251,7 +255,8 @@ export function ChatLayout() {
             <ChatPane 
               threadId={threadId || null}
               status={status} 
-              loading={loading} 
+              loading={initialLoading}
+              refreshing={refreshing}
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
@@ -266,7 +271,8 @@ export function ChatLayout() {
           {mobileTab === 'cards' && (
             <CardsPane 
               status={status} 
-              loading={loading} 
+              loading={initialLoading}
+              refreshing={refreshing}
               calendarData={calendarData}
               viewerTz={viewerTz}
             />

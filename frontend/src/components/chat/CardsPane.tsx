@@ -31,7 +31,8 @@ const USE_THREAD_CARDS_SWITCH = true;
 
 interface CardsPaneProps {
   status: ThreadStatus_API | null;
-  loading: boolean;
+  loading: boolean;  // PR-UX-1: initialLoadingのみ受け取る
+  refreshing?: boolean;  // PR-UX-2: バックグラウンド再取得中
   calendarData?: {
     today?: CalendarTodayResponse;
     week?: CalendarWeekResponse;
@@ -40,8 +41,10 @@ interface CardsPaneProps {
   viewerTz?: string; // P1-3: user timezone
 }
 
-export function CardsPane({ status, loading, calendarData, viewerTz }: CardsPaneProps) {
-  if (loading) {
+export function CardsPane({ status, loading, refreshing = false, calendarData, viewerTz }: CardsPaneProps) {
+  // PR-UX-1: 全画面スピナーは「初回ロード + statusなし」のみ
+  // statusが既にある場合はスピナーを出さずUIを維持
+  if (loading && !status) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
