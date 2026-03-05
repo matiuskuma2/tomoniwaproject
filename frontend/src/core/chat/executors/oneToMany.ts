@@ -8,7 +8,8 @@
  * 1. classifier が schedule.1toN.prepare を判定
  * 2. 本 executor が params から参加者・制約を取得
  * 3. 名前→メール解決（contacts API経由）
- * 4. generateDefaultSlots でデフォルト候補を生成（constraints 付き対応）
+ * 4. generateSlotsWithFreeBusy で主催者カレンダーベースの候補を生成（FE-6b）
+ *    （カレンダー未連携時は generateDefaultSlots にフォールバック）
  * 5. oneToManyApi.prepare でスレッド作成
  * 6. oneToManyApi.send で招待送信
  * 7. チャットに結果メッセージを返す
@@ -27,7 +28,7 @@ import type { IntentResult } from '../intentClassifier';
 import type { ExecutionResult } from './types';
 import { oneToManyApi } from '../../api/oneToMany';
 import type { PrepareRequest, PrepareResponse, SendResponse } from '../../api/oneToMany';
-import { generateDefaultSlots } from './postImportBridge';
+import { generateSlotsWithFreeBusy, generateDefaultSlots } from './postImportBridge';
 import { log } from '../../platform';
 import { getToken } from '../../auth';
 
@@ -104,10 +105,10 @@ export async function executeOneToManySchedule(
   }
 
   // ============================================================
-  // Step 2: デフォルト候補スロットを生成
+  // Step 2: 主催者カレンダーから候補スロットを生成（FE-6b: FreeBusy優先）
   // ============================================================
   const slotsCount = mode === 'fixed' ? 1 : 3;
-  const defaultSlots = generateDefaultSlots(slotsCount, durationMinutes, constraints);
+  const defaultSlots = await generateSlotsWithFreeBusy(slotsCount, durationMinutes, constraints);
 
   if (defaultSlots.length === 0) {
     return {

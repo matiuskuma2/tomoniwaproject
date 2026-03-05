@@ -25,6 +25,7 @@ const mockInvitePrepareEmails = vi.fn();
 const mockOneOnOneFreebusy = vi.fn();
 const mockOneToManyPrepare = vi.fn();
 const mockOneToManySend = vi.fn();
+const mockGetFreeBusy = vi.fn();
 
 vi.mock('../invite', () => ({
   executeInvitePrepareEmails: (...args: any[]) => mockInvitePrepareEmails(...args),
@@ -38,6 +39,13 @@ vi.mock('../../../api/oneToMany', () => ({
   oneToManyApi: {
     prepare: (...args: any[]) => mockOneToManyPrepare(...args),
     send: (...args: any[]) => mockOneToManySend(...args),
+  },
+}));
+
+// FE-6b: calendarApi mock for generateSlotsWithFreeBusy
+vi.mock('../../../api/calendar', () => ({
+  calendarApi: {
+    getFreeBusy: (...args: any[]) => mockGetFreeBusy(...args),
   },
 }));
 
@@ -60,6 +68,16 @@ import { executePostImportAutoConnect, generateDefaultSlots } from '../postImpor
 describe('FE-5: executePostImportAutoConnect', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // FE-6b: FreeBusy API returns warning by default
+    // so that executeOneToManyFromBridge falls back to generateDefaultSlots
+    // (maintains existing test behavior)
+    mockGetFreeBusy.mockResolvedValue({
+      range: 'next_week',
+      timezone: 'Asia/Tokyo',
+      busy: [],
+      available_slots: [],
+      warning: 'google_calendar_permission_missing',
+    });
   });
 
   // BR-1: send_invite (1名)

@@ -17,10 +17,8 @@
  * - 既存 executor / API クライアントをそのまま呼ぶ (delegate)
  * - 全パスで try-catch、失敗時は手動入力ガイダンス
  * 
- * TODO(FE-6): Refactor to unified schedule.1toN intent flow via apiExecutor.
- * Currently bridge calls oneToManyApi directly. When oneToMany executor/classifier
- * are implemented, this should generate a synthetic IntentResult and route through
- * apiExecutor for unified scheduling architecture.
+ * FE-6b: generateSlotsWithFreeBusy — 主催者カレンダー空き時間ベースのスロット生成。
+ * FreeBusy API 取得失敗時は generateDefaultSlots にフォールバック（事故ゼロ）。
  */
 
 import type { ExecutionResult } from './types';
@@ -28,6 +26,8 @@ import { executeOneOnOneFreebusy } from './oneOnOne';
 import { executeInvitePrepareEmails } from './invite';
 import { oneToManyApi } from '../../api/oneToMany';
 import type { PrepareRequest, PrepareResponse, SendResponse } from '../../api/oneToMany';
+import { calendarApi } from '../../api/calendar';
+import type { FreeBusyParams, AvailableSlot } from '../../api/calendar';
 import { log } from '../../platform';
 
 // ============================================================
@@ -158,7 +158,7 @@ export async function executePostImportAutoConnect(
  * 1対N 日程調整の自動実行
  * 
  * フロー:
- * 1. generateDefaultSlots でデフォルト候補日時を生成
+ * 1. generateSlotsWithFreeBusy で主催者カレンダーベースの候補日時を生成（FE-6b）
  * 2. oneToMany.prepare でスレッド作成 (mode: candidates)
  * 3. oneToMany.send で招待送信
  * 4. 結果をチャットメッセージとして返す
@@ -171,8 +171,8 @@ async function executeOneToManyFromBridge(
   names: string[]
 ): Promise<ExecutionResult> {
   try {
-    // Step 1: デフォルト候補日時を生成（次の営業日から3枠）
-    const defaultSlots = generateDefaultSlots(3, 60, null);
+    // Step 1: 主催者カレンダーから候補日時を生成（FE-6b: FreeBusy優先）
+    const defaultSlots = await generateSlotsWithFreeBusy(3, 60, null);
 
     // Step 2: oneToMany.prepare
     const prepareReq: PrepareRequest = {
@@ -262,17 +262,116 @@ async function executeOneToManyFromBridge(
 }
 
 // ============================================================
-// Default Slots Generation
+// FE-6b: FreeBusy-aware Slot Generation
 // ============================================================
 
 /**
- * デフォルト候補日時を生成
+ * 主催者のカレンダー空き時間ベースで候補スロットを生成する。
+ * FreeBusy API 取得失敗時は generateDefaultSlots にフォールバック。
+ * 
+ * @param count - 生成する枠数
+ * @param durationMinutes - 各枠の長さ（分）
+ * @param constraints - 条件指定（null = デフォルト）
+ * @returns 候補スロットの配列
+ */
+export async function generateSlotsWithFreeBusy(
+  count: number,
+  durationMinutes: number,
+  constraints: DefaultSlotsConstraints | null
+): Promise<Array<{ start_at: string; end_at: string; label?: string }>> {
+  try {
+    // FreeBusy API の range を constraints から決定
+    const range = resolveFreeBusyRange(constraints);
+    const prefer = constraints?.prefer;
+
+    log.debug('[FE-6b] Fetching host FreeBusy', {
+      module: 'slotGeneration',
+      range,
+      prefer,
+      durationMinutes,
+    });
+
+    const response = await calendarApi.getFreeBusy({
+      range,
+      prefer,
+      meetingLength: durationMinutes,
+    });
+
+    // warning がある場合（カレンダー未連携等）→ フォールバック
+    if (response.warning) {
+      log.warn('[FE-6b] FreeBusy warning, falling back to default slots', {
+        module: 'slotGeneration',
+        warning: response.warning,
+      });
+      return generateDefaultSlots(count, durationMinutes, constraints);
+    }
+
+    // available_slots が空 → フォールバック
+    if (!response.available_slots || response.available_slots.length === 0) {
+      log.warn('[FE-6b] No available slots from FreeBusy, falling back', {
+        module: 'slotGeneration',
+        busyCount: response.busy?.length ?? 0,
+      });
+      return generateDefaultSlots(count, durationMinutes, constraints);
+    }
+
+    // available_slots から上位 count 件を取得
+    // API がスコア順で返すのでそのまま slice
+    const selected = response.available_slots.slice(0, count);
+
+    log.info('[FE-6b] Generated slots from host FreeBusy', {
+      module: 'slotGeneration',
+      totalAvailable: response.available_slots.length,
+      selected: selected.length,
+    });
+
+    return selected.map(slot => ({
+      start_at: slot.start_at,
+      end_at: slot.end_at,
+      label: slot.label,
+    }));
+
+  } catch (error) {
+    // API エラー → フォールバック（事故ゼロ）
+    log.warn('[FE-6b] FreeBusy API failed, falling back to default slots', {
+      module: 'slotGeneration',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return generateDefaultSlots(count, durationMinutes, constraints);
+  }
+}
+
+/**
+ * constraints から FreeBusy API の range パラメータを決定する
+ */
+function resolveFreeBusyRange(
+  constraints: DefaultSlotsConstraints | null
+): FreeBusyParams['range'] {
+  if (!constraints?.time_min && !constraints?.time_max) {
+    return 'next_week'; // デフォルト: 来週まで見る
+  }
+
+  if (constraints.time_max) {
+    const now = new Date();
+    const max = new Date(constraints.time_max);
+    const diffDays = (max.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (diffDays <= 1) return 'today';
+    if (diffDays <= 7) return 'week';
+  }
+
+  return 'next_week';
+}
+
+// ============================================================
+// Default Slots Generation (Fallback)
+// ============================================================
+
+/**
+ * デフォルト候補日時を生成（FreeBusy フォールバック用）
  * 
  * constraints なし → 次の営業日から3枠、14:00 / 15:00 / 16:00
- * constraints あり → 指定に従う (FE-6 で活用予定)
- * 
- * v2.1 確定: post-import bridge 時点では constraints は持っていない。
- * constraints 付きは FE-6 (チャット自然言語経由) で活きる。
+ * constraints あり → 指定に従う
  * 
  * @param count - 生成する枠数
  * @param durationMinutes - 各枠の長さ（分）

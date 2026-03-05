@@ -1,8 +1,8 @@
 # 現在の実装状況
 
-> **最終更新**: 2026-02-23
-> **最新コミット**: (FE-6 oneToMany実装, pending push)
-> **前回コミット**: 46d5a2f (FE-5 postImportBridge)
+> **最終更新**: 2026-03-05
+> **最新コミット**: FE-6b ホストFreeBusy統合 (pending push)
+> **前回コミット**: 64f984e (PR-B6 逆アベイラビリティ計画)
 
 ---
 
@@ -42,13 +42,14 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-D-FE-4** | Intent抽出 + 次手チャット分岐 | PR #120 |
 | **FE-4.5** | Open Slots intent→apiExecutor wiring修正 | b5ce1f8 |
 | **FE-5** | Post-Import Auto-Connect Bridge | 46d5a2f |
-| **FE-6** | 1対N チャット直接スケジューリング (classifier + executor) | pending push |
+| **FE-6** | 1対N チャット直接スケジューリング (classifier + executor) | 6f926c2 |
+| **FE-6b** | ホストFreeBusy → スロット生成統合 | 今回 |
 
 ### 🔄 進行中
 
 | 機能 | 説明 | 状況 |
 |------|------|------|
-| **FE-6b** | ホストカレンダー FreeBusy for 1-to-N | 未着手 |
+| *(なし — 次タスク選択待ち)* | | |
 
 ### 📋 将来の計画
 
@@ -83,6 +84,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 |------|------|------|
 | **Post-Import Bridge (FE-5)** | Contact Import後の自動接続 | `postImportBridge.ts` |
 | **Chat Direct (FE-6)** | NL入力→直接1対N調整 | `classifier/oneToMany.ts` + `executors/oneToMany.ts` |
+| **FreeBusy統合 (FE-6b)** | 主催者カレンダー空き時間ベースでスロット生成 | `generateSlotsWithFreeBusy()` in `postImportBridge.ts` |
 
 ---
 
@@ -92,7 +94,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 16 | 354 | ✅ All Pass |
+| **Unit Tests (vitest)** | 17 | 370 | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -105,6 +107,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | `refreshMap.test.ts` | 52 | リフレッシュマップテスト |
 | `resolveChannel.test.ts` | 25 | チャンネル解決テスト |
 | `postImportBridge.test.ts` | 20 | FE-5 ブリッジテスト |
+| `generateSlotsWithFreeBusy.test.ts` | 15 | FE-6b FreeBusy統合テスト |
 | `resolveContact.test.ts` | 19 | 連絡先解決テスト |
 | `oneToMany.test.ts (classifier)` | 15 | FE-6 classifier テスト |
 | `executorRefresh.test.ts` | 15 | executor リフレッシュテスト |
@@ -166,6 +169,16 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | 7 | classifier テスト (15件) | ✅ |
 | 8 | executor テスト (10件) | ✅ |
 | 9 | TypeScript全通過 + 全テスト pass (354/354) | ✅ |
+
+### FE-6b: Host FreeBusy Integration (完了)
+
+| ID | タスク | 状況 |
+|----|--------|------|
+| 1 | `generateSlotsWithFreeBusy()` 作成 — calendarApi.getFreeBusy 統合 | ✅ |
+| 2 | `postImportBridge.ts` の oneToMany フロー FreeBusy 切替 | ✅ |
+| 3 | `oneToMany.ts` executor FreeBusy 切替 | ✅ |
+| 4 | FreeBusy テスト 15件 (FB-1〜FB-15) | ✅ |
+| 5 | 既存テスト回帰確認 (370/370 pass) | ✅ |
 
 ---
 
@@ -247,10 +260,11 @@ tomoniwaproject/
 
 ## 次のステップ
 
-1. **FE-6b**: ホストカレンダー FreeBusy for 1-to-N (デフォルトスロット→実カレンダー連携)
+1. **PR-B6 逆アベイラビリティ**: ご都合伺いモード PRD 詳細化 & 実装
 2. **UI モード選択**: ユーザーが調整モードを明示的に選択可能に
 3. **Slack/Chatwork 自動チャンネル**: send_via のプリコンフィグ拡張
 4. **E2E テスト拡充**: 1対N フローの統合テスト
+5. **UX改善**: メッセージテンプレート改善、レスポンシブUI
 
 ---
 

@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ============================================================
 const mockOneToManyPrepare = vi.fn();
 const mockOneToManySend = vi.fn();
+const mockGetFreeBusy = vi.fn();
 
 vi.mock('../../../api/oneToMany', () => ({
   oneToManyApi: {
@@ -36,8 +37,24 @@ vi.mock('../../../platform', () => ({
   },
 }));
 
+// FE-6b: calendarApi mock for generateSlotsWithFreeBusy
+vi.mock('../../../api/calendar', () => ({
+  calendarApi: {
+    getFreeBusy: (...args: any[]) => mockGetFreeBusy(...args),
+  },
+}));
+
 vi.mock('../../../auth', () => ({
   getToken: vi.fn().mockResolvedValue('mock-token'),
+}));
+
+// FE-6b: postImportBridge's sub-dependencies (required since oneToMany imports from postImportBridge)
+vi.mock('../invite', () => ({
+  executeInvitePrepareEmails: vi.fn(),
+}));
+
+vi.mock('../oneOnOne', () => ({
+  executeOneOnOneFreebusy: vi.fn(),
 }));
 
 // Mock fetch for name resolution
@@ -77,6 +94,14 @@ describe('FE-6: executeOneToManySchedule', () => {
     mockFetch.mockResolvedValue({
       ok: false,
       json: async () => ({ contacts: [] }),
+    });
+    // FE-6b: FreeBusy API returns warning by default → fallback to generateDefaultSlots
+    mockGetFreeBusy.mockResolvedValue({
+      range: 'next_week',
+      timezone: 'Asia/Tokyo',
+      busy: [],
+      available_slots: [],
+      warning: 'google_calendar_permission_missing',
     });
   });
 
