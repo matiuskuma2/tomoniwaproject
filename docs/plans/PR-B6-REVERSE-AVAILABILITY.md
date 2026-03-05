@@ -1,12 +1,14 @@
 # PR-B6 実装PRD：逆アベイラビリティ（Reverse Availability）
 
-## ステータス: 🔨 PRD確定 → 実装着手可
+## ステータス: ✅ Phase 1 実装完了
 
 > **起案日**: 2026-02-23
 > **PRD確定日**: 2026-03-05
+> **Phase 1 完了日**: 2026-03-05
 > **起案者**: モギモギ（関屋紘之）
 > **優先度**: Phase 1-2（1対1拡張）
 > **見積り**: DB 1h + API 4h + FE(classifier/executor) 2h + ゲストUI 3h + テスト 3h ≈ 13h
+> **残り**: Phase 2（ゲストOAuth + FreeBusy自動取得）は将来実装
 
 ---
 

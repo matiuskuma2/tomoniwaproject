@@ -180,6 +180,12 @@ export {
   executeOneToManySchedule,
 } from './oneToMany';
 
+// ReverseAvailability executor (PR-B6: 逆アベイラビリティ / ご都合伺い)
+export {
+  executeReverseAvailability,
+  executeReverseAvailabilityFinalize,
+} from './reverseAvailability';
+
 // Shared utilities
 export { getStatusWithCache } from './shared/cache';
 export { refreshAfterWrite } from './shared/refresh';

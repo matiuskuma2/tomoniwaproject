@@ -31,6 +31,7 @@ import { classifyRelation } from './relation';  // D0: 関係性管理
 import { classifyPool } from './pool';          // G2-A: Pool Booking
 import { classifyContactImport } from './contactImport'; // PR-D-1.1: 連絡先取り込み
 import { classifyOneToMany } from './oneToMany'; // FE-6: 1対N スケジューリング
+import { classifyReverseAvailability } from './reverseAvailability'; // PR-B6: 逆アベイラビリティ
 
 /**
  * 分類器チェーン（固定順序）
@@ -44,7 +45,8 @@ const classifierChain: ClassifierFn[] = [
   classifyCalendar,         // 5. P1 カレンダー読み取り
   classifyPreference,       // 6. P3-PREF 好み設定
   classifyOneToMany,        // 7. FE-6: 1対N日程調整（2名以上）— oneOnOneより先に判定
-  classifyOneOnOne,         // 8. v1.0: 1対1予定調整（固定日時）
+  classifyReverseAvailability, // 8. PR-B6: 逆アベイラビリティ（ご都合伺いキーワード + 1名）
+  classifyOneOnOne,         // 9. v1.0: 1対1予定調整（固定日時）
   classifyPropose,          // 9. 候補提案系
   classifyRemind,           // 10. リマインド系
   classifyRelation,         // 11. D0: 関係性管理（仕事仲間申請）

@@ -107,6 +107,8 @@ import {
   executePostImportNextStepDecide,
   // FE-6: 1対N (Broadcast) スケジューリング
   executeOneToManySchedule as executeOneToManyScheduleFromExecutors,
+  // PR-B6: 逆アベイラビリティ
+  executeReverseAvailability,
 } from './executors';
 import type { PoolCreateDraft } from './executors/pool/create';
 // PendingState import removed - already imported at line 23
@@ -790,6 +792,10 @@ export async function executeIntent(
     // FE-6: 1対N (Broadcast) スケジューリング
     case 'schedule.1toN.prepare':
       return executeOneToManyScheduleFromExecutors(intentResult);
+
+    // PR-B6: 逆アベイラビリティ（ご都合伺い）
+    case 'schedule.1on1.reverse_availability':
+      return executeReverseAvailability(intentResult);
 
     case 'unknown':
       // CONV-1.0: nlRouter フォールバック（calendar限定）

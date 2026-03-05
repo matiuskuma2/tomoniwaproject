@@ -102,6 +102,8 @@ export type IntentType =
   | 'post_import.next_step.decide'  // PR-D-FE-4: 次手選択（招待/日程/完了）
   // FE-6: 1対N (Broadcast) スケジューリング
   | 'schedule.1toN.prepare'         // FE-6: 1対N 日程調整準備（チャットから直接）
+  // PR-B6: 逆アベイラビリティ（ご都合伺い）
+  | 'schedule.1on1.reverse_availability'  // PR-B6: ご都合伺いモード
   | 'unknown';
 
 export interface IntentResult {

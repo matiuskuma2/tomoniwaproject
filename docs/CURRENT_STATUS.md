@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-05
-> **最新コミット**: FE-6b ホストFreeBusy統合 (pending push)
-> **前回コミット**: 64f984e (PR-B6 逆アベイラビリティ計画)
+> **最新コミット**: PR-B6 逆アベイラビリティ Phase 1 実装完了
+> **前回コミット**: c162ae4 (FE-6b ホストFreeBusy統合)
 
 ---
 
@@ -43,7 +43,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **FE-4.5** | Open Slots intent→apiExecutor wiring修正 | b5ce1f8 |
 | **FE-5** | Post-Import Auto-Connect Bridge | 46d5a2f |
 | **FE-6** | 1対N チャット直接スケジューリング (classifier + executor) | 6f926c2 |
-| **FE-6b** | ホストFreeBusy → スロット生成統合 | 今回 |
+| **FE-6b** | ホストFreeBusy → スロット生成統合 | c162ae4 |
+| **PR-B6 逆アベイラビリティ** | 目上の相手にご都合を伺うモード（Phase 1: 手動候補選択） | 今回 |
 
 ### 🔄 進行中
 
@@ -51,11 +52,29 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 |------|------|------|
 | *(なし — 次タスク選択待ち)* | | |
 
+### PR-B6: 逆アベイラビリティ Phase 1 (完了)
+
+| ID | タスク | 状況 |
+|----|--------|------|
+| B6-1 | DBマイグレーション (0093_create_reverse_availability.sql) | ✅ |
+| B6-2 | API: POST /api/reverse-availability/prepare | ✅ |
+| B6-3 | API: POST /api/reverse-availability/:id/finalize | ✅ |
+| B6-4 | ゲストページ: GET /ra/:token (時間枠選択UI) | ✅ |
+| B6-5 | ゲスト送信: POST /ra/:token/respond | ✅ |
+| B6-6 | サンキューページ: GET /ra/:token/thank-you | ✅ |
+| B6-7 | Classifier: classifyReverseAvailability (11テスト) | ✅ |
+| B6-8 | Executor: executeReverseAvailability + Finalize (9テスト) | ✅ |
+| B6-9 | classifier/index.ts 統合 (#8) + types.ts intent追加 | ✅ |
+| B6-10 | apiExecutor.ts case追加 | ✅ |
+| B6-11 | apps/api/src/index.ts ルーティング登録 | ✅ |
+| B6-12 | TypeScript全通過 + テスト 398/398 pass | ✅ |
+
 ### 📋 将来の計画
 
 | 機能 | フェーズ | 計画書 |
 |------|----------|--------|
-| **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | [PR-B6](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
+| **PR-B6 逆アベイラビリティ（ご都合伺いモード）** | Phase 1-2 | ✅ 実装済み (Phase 1) |
+| **PR-B6 Phase 2: ゲストOAuthカレンダー自動取得** | Phase 2 | [PR-B6](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
 | **UI モード選択** | Phase 1 | - |
 | **Slack/Chatwork 自動チャンネル** | Phase 1 | - |
 | **N対N 調整** | Phase 2 | - |
@@ -76,7 +95,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **Candidates3** | `schedule.1on1.candidates3` | 候補3つ提示 | デフォルト(制約なし) |
 | **FreeBusy** | `schedule.1on1.freebusy` | カレンダー空き時間検出 | 制約あり時 |
 | **Open Slots** | `schedule.1on1.open_slots` | 相手に選んでもらう公開枠 | 明示的指定時 |
-| **Reverse Availability** | `schedule.1on1.reverse_availability` | 🔜 相手の空きから候補を出してもらう（ご都合伺い） | [PR-B6 計画](./plans/PR-B6-REVERSE-AVAILABILITY.md) |
+| **Reverse Availability** | `schedule.1on1.reverse_availability` | ✅ 相手の空きから候補を出してもらう（ご都合伺い） | PR-B6 実装済み |
 
 ### 1対N (FE-5 + FE-6 完了)
 
@@ -90,11 +109,11 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 ## テスト状況
 
-### ✅ 全テストグリーン (2026-02-23)
+### ✅ 全テストグリーン (2026-03-05)
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 17 | 370 | ✅ All Pass |
+| **Unit Tests (vitest)** | 19 | 398 | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -118,6 +137,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | `oneToMany.test.ts (executor)` | 10 | FE-6 executor テスト |
 | `business-card-chat-ui.test.ts` | 9 | 名刺チャットUIテスト |
 | `business-card-scan-fe.test.ts` | 6 | 名刺スキャンテスト |
+| `reverseAvailability.test.ts (classifier)` | 11 | PR-B6 classifier テスト |
+| `reverseAvailability.test.ts (executor)` | 9 | PR-B6 executor テスト |
 
 ---
 
@@ -132,12 +153,13 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | 5 | calendar | `schedule.today/week/freebusy` | `calendar.ts` |
 | 6 | preference | `preference.*` | `preference.ts` |
 | 7 | **oneToMany (FE-6)** | `schedule.1toN.prepare` | `oneToMany.ts` |
-| 8 | oneOnOne | `schedule.1on1.*` | `oneOnOne.ts` |
-| 9 | propose | `schedule.auto_propose` | `propose.ts` |
-| 10 | remind | `schedule.remind.*` | `remind.ts` |
-| 11 | relation | `relation.*` | `relation.ts` |
-| 12 | pool | `pool_booking.*` | `pool.ts` |
-| 13 | thread | `thread.*` | `thread.ts` |
+| 8 | **reverseAvailability (PR-B6)** | `schedule.1on1.reverse_availability` | `reverseAvailability.ts` |
+| 9 | oneOnOne | `schedule.1on1.*` | `oneOnOne.ts` |
+| 10 | propose | `schedule.auto_propose` | `propose.ts` |
+| 11 | remind | `schedule.remind.*` | `remind.ts` |
+| 12 | relation | `relation.*` | `relation.ts` |
+| 13 | pool | `pool_booking.*` | `pool.ts` |
+| 14 | thread | `thread.*` | `thread.ts` |
 
 ---
 
@@ -193,6 +215,7 @@ tomoniwaproject/
 │   │   ├── relationships.ts    # D0 関係性
 │   │   ├── oneOnOne.ts         # 1対1調整API
 │   │   ├── oneToMany.ts        # 1対N調整API
+│   │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティAPI ★NEW
 │   │   ├── invite.ts           # 招待API
 │   │   └── pendingActions.ts   # 確認フローAPI
 │   ├── repositories/
@@ -205,14 +228,16 @@ tomoniwaproject/
 │   │   │   └── relationships.ts
 │   │   └── chat/
 │   │       ├── classifier/
-│   │       │   ├── index.ts        # 統合チェーン (13分類器)
-│   │       │   ├── oneToMany.ts    # FE-6: 1対N分類器 ★NEW
+│   │       │   ├── index.ts        # 統合チェーン (14分類器)
+│   │       │   ├── oneToMany.ts    # FE-6: 1対N分類器
+│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティ分類器 ★NEW
 │   │       │   ├── oneOnOne.ts     # 1対1分類器
 │   │       │   ├── contactImport.ts
 │   │       │   └── ...
 │   │       ├── executors/
 │   │       │   ├── index.ts        # 統合エクスポート
-│   │       │   ├── oneToMany.ts    # FE-6: 1対Nexecutor ★NEW
+│   │       │   ├── oneToMany.ts    # FE-6: 1対Nexecutor
+│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティexecutor ★NEW
 │   │       │   ├── postImportBridge.ts # FE-5: 自動接続ブリッジ
 │   │       │   └── ...
 │   │       └── apiExecutor.ts      # Intent→実行ルーター
@@ -244,6 +269,7 @@ tomoniwaproject/
 | `0089_add_last_assigned_member_id.sql` | Round-Robin用 |
 | `0090_create_blocks_and_pool_public_links.sql` | ブロック+公開リンク |
 | `0092_extend_pending_actions.sql` | Contact Import用 pending拡張 |
+| `0093_create_reverse_availability.sql` | PR-B6: reverse_availability + responses テーブル |
 
 ---
 
@@ -260,10 +286,10 @@ tomoniwaproject/
 
 ## 次のステップ
 
-1. **PR-B6 逆アベイラビリティ**: ご都合伺いモード PRD 詳細化 & 実装
+1. **PR-B6 Phase 2: ゲストOAuth**: ゲスト側Google OAuth→FreeBusy自動取得（差分実装）
 2. **UI モード選択**: ユーザーが調整モードを明示的に選択可能に
 3. **Slack/Chatwork 自動チャンネル**: send_via のプリコンフィグ拡張
-4. **E2E テスト拡充**: 1対N フローの統合テスト
+4. **E2E テスト拡充**: 1対N + RA フローの統合テスト
 5. **UX改善**: メッセージテンプレート改善、レスポンシブUI
 
 ---
