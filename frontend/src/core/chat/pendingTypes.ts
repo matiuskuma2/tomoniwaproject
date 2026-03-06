@@ -133,8 +133,10 @@ export type PendingState =
 
   // BUG-1b: スケジューリング途中の追加情報待ち
   // 「大島くんと調整したい」→ 日付を聞く → ユーザーが「来週木曜17時から」と返す → 元のintent+personを復元して実行
+  // PR-UX-15: clarificationId を追加 — threadId 以外のトークンで会話継続を追跡
   | (PendingBase & {
       kind: 'pending.scheduling.clarification';
+      clarificationId: string;          // PR-UX-15: ユニーク追跡ID (crypto.randomUUID() or fallback)
       originalIntent: string;           // 元のintent (schedule.1on1.fixed 等)
       originalParams: Record<string, unknown>;  // classifier が抽出済みの params (person, title, duration_minutes 等)
       missingField: string;             // 不足フィールド ('date', 'time', 'slots')
@@ -559,6 +561,18 @@ export function getPendingSendButtonLabel(pending: PendingState | null): string 
   }
 }
 
+/**
+ * PR-UX-15: clarificationId を生成
+ * crypto.randomUUID() が利用可能ならそれを使用、そうでなければ fallback
+ */
+export function generateClarificationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `clr-${crypto.randomUUID()}`;
+  }
+  // fallback: timestamp + random
+  return `clr-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export function describePending(pending: PendingState | null): string {
   if (!pending) return 'なし';
   
@@ -597,7 +611,7 @@ export function describePending(pending: PendingState | null): string {
     case 'pending.person.select':
       return `人物選択待ち (「${pending.input_name || pending.input_email}」${pending.options.length}件)`;
     case 'pending.scheduling.clarification':
-      return `日程調整情報待ち (${pending.missingField}不足, intent=${pending.originalIntent})`;
+      return `日程調整情報待ち (${pending.missingField}不足, intent=${pending.originalIntent}, clr=${pending.clarificationId})`;
     default:
       return `不明な状態`;
   }

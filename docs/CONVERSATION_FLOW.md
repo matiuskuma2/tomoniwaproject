@@ -3,7 +3,8 @@
 > **目的**: 会話分岐・pending処理・スレッド生成・右ペイン同期・UI描画の密結合を可視化し、  
 > 仕様を固定（spec lock）することで技術負債の蓄積を防ぐ。  
 > **作成日**: 2026-03-06  
-> **対象PR**: PR-UX-12, PR-UX-13, BUG-1b, P0-1  
+> **最終更新**: 2026-03-06 (PR-UX-15: clarificationId・thread migration event 追加)  
+> **対象PR**: PR-UX-12, PR-UX-13, PR-UX-14, PR-UX-15, BUG-1b, P0-1  
 
 ---
 
@@ -78,11 +79,14 @@ ChatPane.handleSendClick()
   │
   ▼ handleExecutionResult()
   │  kind === 'scheduling.clarification.needed'
+  │  → clarificationId = generateClarificationId()  ← PR-UX-15
   │  → SET_PENDING_FOR_THREAD { threadId: 'temp', pending: {
   │      kind: 'pending.scheduling.clarification',
+  │      clarificationId,  ← 全経路で保持
   │      originalIntent, originalParams, missingField
   │    }}
-  │  → sessionStorage.setItem('__tomoniwao_scheduling_clarification', ...)
+  │  → sessionStorage.setItem('__tomoniwao_scheduling_clarification', ...)  ← clarificationId 含む
+  │  → logPendingSet(threadId, kind, missingField, clarificationId)  ← 構造化ログ
   │
   ▼ ChatPane 表示:
      Assistant: "大島くんとの予定、いつがいいですか？（例: 来週木曜17時から1時間）"
@@ -91,8 +95,9 @@ ChatPane.handleSendClick()
 ```
 
 **状態遷移**:
-- `pendingByThreadId['temp']` = `{ kind: 'pending.scheduling.clarification', ... }`
-- `sessionStorage['__tomoniwao_scheduling_clarification']` = 同データ（バックアップ）
+- `pendingByThreadId['temp']` = `{ kind: 'pending.scheduling.clarification', clarificationId: 'clr-xxx', ... }`
+- `sessionStorage['__tomoniwao_scheduling_clarification']` = 同データ（バックアップ、clarificationId 含む）
+- `clarificationId` は pending 解消まで全ログエントリに記録される
 
 ---
 
@@ -144,9 +149,12 @@ ChatPane.handleSendClick()
   │
   ▼ handleExecutionResult()
   │  (1) 'scheduling.clarification.resolved'
+  │      → clarificationId retrieved from sessionStorage  ← PR-UX-15
+  │      → logPendingClear(threadId, reason, clarificationId)
   │      → CLEAR_PENDING_FOR_THREAD { threadId: 'temp' }
   │      → sessionStorage.removeItem(...)
   │  (2) '1on1.fixed.prepared'
+  │      → logThreadMigration('temp', newThreadId, kind, clarificationId)  ← PR-UX-15
   │      → CLEAR_PENDING_FOR_THREAD { threadId: 'temp' }  ← 二重クリア（安全）
   │      → sessionStorage.removeItem(...)
   │
@@ -382,6 +390,8 @@ classifierChain 全14分類器 → 全て null
 - [x] sessionStorage フォールバック → 5分TTL付きで実装済み
 - [x] prepared 後の右ペイン空白 → prefetchThreadStatus 追加済み
 - [x] temp pending が残る → prepared 時に明示クリア追加済み
+- [x] 会話継続判定が threadId のみに依存 → clarificationId 追加済み (PR-UX-15)
+- [x] temp → 正式 thread 移行が暗黙的 → thread.migration event で明示化 (PR-UX-15)
 
 ### ⚠️ 監視対象（未発火だが設計上の弱点）
 - [ ] `handleExecutionResult` の `currentThreadId` stale closure（useCallback の deps が `[currentThreadId, navigate]` のみ）
@@ -396,3 +406,4 @@ classifierChain 全14分類器 → 全て null
 | 日付 | 内容 |
 |---|---|
 | 2026-03-06 | 初版作成（7フロー全網羅） |
+| 2026-03-06 | PR-UX-15: clarificationId 追加（Flow 1/2 更新）、thread.migration event、ログ強化 |

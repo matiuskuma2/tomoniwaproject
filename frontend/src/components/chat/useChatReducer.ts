@@ -23,11 +23,11 @@ import type { ExecutionResult } from '../../core/chat/apiExecutor';
 import type { ChatMessage } from './ChatPane';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
-import { getPendingForThread } from '../../core/chat/pendingTypes';
+import { getPendingForThread, generateClarificationId } from '../../core/chat/pendingTypes';
 // FE-7: SchedulingMode type for Mode Chip
 import type { SchedulingMode } from '../../core/chat/classifier/types';
 // PR-UX-14: 構造化ロギング
-import { logPendingSet, logPendingClear, logExecutionResult } from '../../core/chat/orchestrationLogger';
+import { logPendingSet, logPendingClear, logExecutionResult, logThreadMigration } from '../../core/chat/orchestrationLogger';
 // PR-D-FE-1: Contact Import pending builder (静的import — require()はブラウザ非互換)
 import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
 // PR-D-FE-3.1: 次手フロー用 context 型
@@ -862,12 +862,14 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // BUG-1b: スケジューリング途中のclarification → pending.scheduling.clarification を設定
     else if (kind === 'scheduling.clarification.needed') {
       const threadId = currentThreadId || 'temp';
-      // PR-UX-14: pending set ロギング
-      logPendingSet(threadId, 'pending.scheduling.clarification', payload.missingField);
+      const clarificationId = generateClarificationId();
+      // PR-UX-14/15: pending set ロギング（clarificationId 付き）
+      logPendingSet(threadId, 'pending.scheduling.clarification', payload.missingField, clarificationId);
       const pendingData = {
         kind: 'pending.scheduling.clarification' as const,
         threadId,
         createdAt: Date.now(),
+        clarificationId,
         originalIntent: payload.originalIntent,
         originalParams: payload.originalParams,
         missingField: payload.missingField,
@@ -888,8 +890,16 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // BUG-1b: スケジューリング clarification の解消（成功した場合）
     else if (kind === 'scheduling.clarification.resolved') {
       const threadId = currentThreadId || 'temp';
-      // PR-UX-14: pending clear ロギング
-      logPendingClear(threadId, 'scheduling.clarification.resolved');
+      // PR-UX-15: 解消時に clarificationId をログ出力（sessionStorage から取得 — state は stale closure のため）
+      let resolvedClarificationId: string | undefined;
+      try {
+        const saved = sessionStorage.getItem('__tomoniwao_scheduling_clarification');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          resolvedClarificationId = parsed?.clarificationId;
+        }
+      } catch { /* ignore */ }
+      logPendingClear(threadId, 'scheduling.clarification.resolved', resolvedClarificationId);
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
       // PR-UX-12: sessionStorage からも削除
       try {
@@ -897,17 +907,29 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       } catch { /* ignore */ }
     }
 
-    // PR-UX-13: 1on1 prepared 系 — 'temp' の pending/messages を新 threadId に移行
+    // PR-UX-13/15: 1on1 prepared 系 — 'temp' の pending/messages を新 threadId に移行
     // 1on1 prepared はスレッド未選択 (temp) 状態から新スレッドを作成するため
     // temp に残っている scheduling clarification pending をクリアする
+    // PR-UX-15: thread.migration event — temp → 正式 thread 移行を明示的に記録
     else if (
       kind === '1on1.fixed.prepared' ||
       kind === '1on1.candidates.prepared' ||
       kind === '1on1.freebusy.prepared' ||
       kind === '1on1.open_slots.prepared'
     ) {
-      // PR-UX-14: pending clear ロギング
-      logPendingClear('temp', `prepared:${kind}`);
+      const newThreadId = payload?.threadId;
+      // PR-UX-15: clarificationId を sessionStorage から取得（migration event 用）
+      let migratedClarificationId: string | undefined;
+      try {
+        const saved = sessionStorage.getItem('__tomoniwao_scheduling_clarification');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          migratedClarificationId = parsed?.clarificationId;
+        }
+      } catch { /* ignore */ }
+      // PR-UX-15: thread migration event ロギング
+      logThreadMigration('temp', newThreadId || 'unknown', kind, migratedClarificationId);
+      logPendingClear('temp', `prepared:${kind}`, migratedClarificationId);
       // temp の pending をクリア（新スレッドに navigate する前に）
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: 'temp' } });
       // sessionStorage もクリア

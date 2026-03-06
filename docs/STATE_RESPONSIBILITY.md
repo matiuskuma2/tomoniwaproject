@@ -4,7 +4,8 @@
 > フロントエンドの ref / sessionStorage / message correction が  
 > なし崩しに増えることを防ぐ。  
 > **作成日**: 2026-03-06  
-> **関連**: CONVERSATION_FLOW.md, pendingTypes.ts, useChatReducer.ts
+> **最終更新**: 2026-03-06 (PR-UX-15: clarificationId・thread migration event 追加)  
+> **関連**: CONVERSATION_FLOW.md, pendingTypes.ts, useChatReducer.ts, orchestrationLogger.ts
 
 ---
 
@@ -42,7 +43,7 @@
 | 項目 | 権威ソース | 保存場所 | フォールバック |
 |---|---|---|---|
 | `pendingByThreadId` | **Client (Reducer)** | `useChatReducer` state | なし |
-| `pending.scheduling.clarification` | **Client (Reducer)** | `useChatReducer` state | `sessionStorage` (5分TTL) |
+| `pending.scheduling.clarification` | **Client (Reducer)** | `useChatReducer` state | `sessionStorage` (5分TTL, clarificationId 含む) |
 | `pending.action` (confirmToken等) | **Server → Client** | Server が token 発行 → Client が保持 | なし |
 | `pending.contact_import.confirm` | **Server → Client** | Server が preview 返却 → Client が保持 | なし |
 
@@ -51,6 +52,7 @@
 - pending の削除: `handleExecutionResult` → `CLEAR_PENDING_FOR_THREAD`
 - pending の参照: `pendingForThread` (computed from `pendingByThreadId[threadId]`)
 - ChatPane は `pendingForThreadRef` (useRef) で常に最新値を保持
+- PR-UX-15: `pending.scheduling.clarification` には `clarificationId` が必須。生成・保存・解消・ログ全経路で保持
 
 **sessionStorage フォールバックの位置づけ**:
 
@@ -120,6 +122,7 @@
 | 公式か？ | **暫定的 (Provisional)**。正式な threadId が返るまでの橋渡し |
 | 使用箇所 | `pendingByThreadId['temp']`, `messagesByThreadId['temp']` |
 | ライフサイクル | thread creation 成功時に `temp` → 正式 threadId に移行 |
+| 移行イベント | PR-UX-15: `logThreadMigration('temp', newThreadId, kind, clarificationId)` で明示記録 |
 
 **ルール**:
 - `temp` に保存されたメッセージは navigate 後も `messagesByThreadId['temp']` に残る
@@ -129,9 +132,10 @@
 
 **移行フロー**:
 ```
-① temp に pending/messages を蓄積
+① temp に pending/messages を蓄積（clarificationId 付き）
 ② executor → threadId 返却
-③ handleExecutionResult → CLEAR_PENDING_FOR_THREAD { threadId: 'temp' }
+③ handleExecutionResult → logThreadMigration('temp', newThreadId, kind, clarificationId)  ← PR-UX-15
+③b CLEAR_PENDING_FOR_THREAD { threadId: 'temp' }
 ④ ChatPane → onAppend(newThreadId, assistantMessage)  ← 新スレッドに直接追加
 ⑤ navigate(`/chat/${newThreadId}`)
 ⑥ temp のメッセージはそのまま残る（次回 temp 使用時に表示される）
@@ -251,3 +255,4 @@
 | 日付 | 内容 |
 |---|---|
 | 2026-03-06 | 初版作成（4カテゴリの責務定義） |
+| 2026-03-06 | PR-UX-15: clarificationId 追加、temp 移行イベント明示化、ログ強化 |

@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-14 — 会話オーケストレーション仕様固定・E2Eテスト・構造化ロギング
-> **前回コミット**: PR-UX-13 — 右ペイン同期改善・temp pending クリア
+> **最新コミット**: PR-UX-15 — clarificationId 導入・temp→thread migration event・ロギング強化
+> **前回コミット**: PR-UX-14 — 会話オーケストレーション仕様固定・E2Eテスト・構造化ロギング
 
 ---
 
@@ -17,6 +17,70 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **フロントエンド** | https://app.tomoniwao.jp |
 | **API** | https://webapp.snsrilarc.workers.dev |
 | **GitHub** | https://github.com/matiuskuma2/tomoniwaproject |
+
+---
+
+## 🚨 最大リスクと対策状況
+
+### リスク1: 会話継続判定が threadId と UI 状態に過度に依存
+
+**影響**: clarification 中にブラウザリフレッシュ・タブ切替・React state 消失が起きると、会話文脈が途切れスケジューリングが最初からやり直しになる。
+
+**対策状況**:
+
+| # | 対策 | 状態 | 実装 |
+|---|------|------|------|
+| 1 | `clarificationId` を `PendingState` に追加 — 保存・解消・スレッド生成・ログ・sessionStorage すべてで保持 | ✅ PR-UX-15 | `pendingTypes.ts`, `useChatReducer.ts`, `oneOnOne.ts` |
+| 2 | temp → 正式 thread への移行を明示的 `thread.migration` event として扱う | ✅ PR-UX-15 | `useChatReducer.ts`, `orchestrationLogger.ts` |
+| 3 | 継続判定を `threadId` だけでなく `clarificationId`, `originalIntent`, `createdAt` トークンで行う | ✅ PR-UX-15 | `pendingForThread` helper, `classifyOneOnOne` |
+| 4 | ログに `clarificationId`, `pendingKind`, `threadId`, `selectedThreadId`, `intent`, `source` を必ず記録 | ✅ PR-UX-15 | `orchestrationLogger.ts` |
+
+### リスク2: ドキュメント・テストが仕様より肥大化
+
+**影響**: ドキュメントが「書いて終わり」になり、実装との乖離が発生すると逆に有害になる。
+
+**対策**:
+- `CONVERSATION_FLOW.md` と `STATE_RESPONSIBILITY.md` は PR レビュー時に実装との整合性を確認する運用ルール
+- テストは「フロー単位」で書き、実装変更時にテストも必ず更新する
+- E2E テストは CI 組み込み後に PR ごとにフロー破壊を検知（次ステップ）
+
+### リスク3: temp thread ID の濫用
+
+**影響**: `pendingByThreadId['temp']` と `messagesByThreadId['temp']` が無限に蓄積し、メモリ・パフォーマンス劣化、または古い temp pending が新しい会話に干渉する。
+
+**対策**:
+- PR-UX-15 で `thread.migration` event を導入。temp → 正式 thread 移行を明示ログ化
+- 将来的に `draftThreadId` に統一（設計済み、実装は後回し）
+- temp メッセージの自動クリーンアップは STATE_RESPONSIBILITY.md §6.1 で計画済み
+
+---
+
+## 現在のフェーズ: システム安定化
+
+> 開発フェーズではなく **安定化フェーズ** に入っている。  
+> 評価基準は「新機能の数」ではなく「既存機能の信頼性向上」。
+
+### 完了した安定化作業
+
+| 作業 | 内容 | PR |
+|------|------|-----|
+| 会話フロー仕様固定 | 7フロー全網羅、Classifier chain 固定順序定義 | PR-UX-14 |
+| 状態責務定義 | pending 権威・temp 公式性・suffix 保存先・server/client 責務分界 | PR-UX-14 |
+| E2E リグレッションテスト | Vitest 21テスト + Playwright 4 spec | PR-UX-14 |
+| 構造化ロギング | 6ポイント監視（classify/execution/threadId/pending） | PR-UX-14 |
+| clarificationId 導入 | 会話継続を threadId 以外のトークンでも追跡可能に | PR-UX-15 |
+| thread migration event | temp → 正式 thread 移行を明示的イベントとして記録 | PR-UX-15 |
+| ロギング強化 | clarificationId, pendingKind, selectedThreadId, source 追加 | PR-UX-15 |
+
+### 次に着手すべき安定化作業（優先順）
+
+| # | 作業 | 理由 | 難易度 |
+|---|------|------|--------|
+| 1 | **CI に会話 E2E を組み込み** | PR ごとにフロー破壊を検知 | 中 |
+| 2 | **本番ログダッシュボード構築** | conversation trace, threadId, intent の可視化（Cloudflare Logpush or Datadog） | 大 |
+| 3 | **temp → draftThreadId 統一** | temp の乱用を根本的に解消 | 大 |
+| 4 | **handleExecutionResult の stale closure 修正** | currentThreadId を ref 化 | 小 |
+| 5 | **pending TTL 自動失効** | 長時間放置 pending の自動削除 | 小 |
 
 ---
 
@@ -58,6 +122,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-12** | 会話フロー修正・敬称保持・スピナー改善 — pendingForThread ref化、sessionStorage fallback、correctHonorificInMessage、showSkeleton条件強化 | PR-UX-12 |
 | **PR-UX-13** | 右ペイン同期改善 — navigate前にprefetchThreadStatus呼出し、1on1 prepared系でtemp pendingクリア、CardsPane skeleton期間短縮 | PR-UX-13 |
 | **PR-UX-14** | 会話オーケストレーション仕様固定 — (1) CONVERSATION_FLOW.md（7フロー全網羅）、(2) STATE_RESPONSIBILITY.md（pending権威・temp公式性・suffix保存先・server/client責務分界）、(3) E2Eリグレッション21テスト + Playwright 4 spec、(4) orchestrationLogger.ts（classify/execution/threadId/pending の6ポイント構造化ロギング）。Classifier 194/194, Executor 78/78 all green | PR-UX-14 |
+| **PR-UX-15** | clarificationId 導入・temp→thread migration event・ロギング強化 — (1) PendingState に clarificationId を追加し全経路で保持、(2) temp→正式thread移行を明示的 migration event として記録、(3) ログに clarificationId/pendingKind/selectedThreadId/source を追加、(4) 継続判定を threadId 以外のトークンでも実行可能に | PR-UX-15 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
@@ -151,11 +216,13 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 ## テスト状況
 
-### ✅ 全テストグリーン (2026-03-05)
+### ✅ 全テストグリーン (2026-03-06)
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 22 | 458 | ✅ All Pass |
+| **Classifier** | 8 | 215+ | ✅ All Pass |
+| **Executor** | 6 | 78 | ✅ All Pass |
+| **Unit Tests (vitest) 合計** | 24+ | 480+ | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -164,6 +231,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 |---------------|----------|------|
 | `intentClassifier.regression.test.ts` | 42 | TD-003 intent分類回帰テスト |
 | `intentClassifier.golden.test.ts` | 52 | TD-003 ゴールデンファイルテスト |
+| `conversation-orchestration.regression.test.ts` | 21 | PR-UX-14 会話フロー回帰テスト (7フロー) |
 | `post-import-next-step.test.ts` | 42 | FE-4/FE-5 取込後次手テスト |
 | `refreshMap.test.ts` | 52 | リフレッシュマップテスト |
 | `resolveChannel.test.ts` | 25 | チャンネル解決テスト |
@@ -205,6 +273,16 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | 12 | relation | `relation.*` | `relation.ts` |
 | 13 | pool | `pool_booking.*` | `pool.ts` |
 | 14 | thread | `thread.*` | `thread.ts` |
+
+---
+
+## 会話オーケストレーション — 設計ドキュメント体系
+
+| ドキュメント | 目的 | 場所 |
+|---|---|---|
+| **CONVERSATION_FLOW.md** | 7つの会話フローの仕様書。Classifier chain 順序固定・ガード一覧・危険シグナル | `docs/CONVERSATION_FLOW.md` |
+| **STATE_RESPONSIBILITY.md** | 状態の権威ソース定義（pending/thread/message/suffix/calendar）。禁止事項・将来統合候補 | `docs/STATE_RESPONSIBILITY.md` |
+| **orchestrationLogger.ts** | 構造化ログ 8 ポイント: classify/execution/threadCreated/navigate/statusFetch/pendingSet/pendingClear/threadMigration + clarificationId | `frontend/src/core/chat/orchestrationLogger.ts` |
 
 ---
 
@@ -260,7 +338,7 @@ tomoniwaproject/
 │   │   ├── relationships.ts    # D0 関係性
 │   │   ├── oneOnOne.ts         # 1対1調整API
 │   │   ├── oneToMany.ts        # 1対N調整API
-│   │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティAPI ★NEW
+│   │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティAPI
 │   │   ├── invite.ts           # 招待API
 │   │   └── pendingActions.ts   # 確認フローAPI
 │   ├── repositories/
@@ -275,25 +353,30 @@ tomoniwaproject/
 │   │       ├── classifier/
 │   │       │   ├── index.ts        # 統合チェーン (14分類器)
 │   │       │   ├── oneToMany.ts    # FE-6: 1対N分類器
-│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティ分類器 ★NEW
+│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティ分類器
 │   │       │   ├── oneOnOne.ts     # 1対1分類器
 │   │       │   ├── contactImport.ts
 │   │       │   └── ...
 │   │       ├── executors/
 │   │       │   ├── index.ts        # 統合エクスポート
 │   │       │   ├── oneToMany.ts    # FE-6: 1対Nexecutor
-│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティexecutor ★NEW
+│   │       │   ├── reverseAvailability.ts # PR-B6: 逆アベイラビリティexecutor
 │   │       │   ├── postImportBridge.ts # FE-5: 自動接続ブリッジ
 │   │       │   └── ...
-│   │       └── apiExecutor.ts      # Intent→実行ルーター
+│   │       ├── apiExecutor.ts      # Intent→実行ルーター
+│   │       ├── pendingTypes.ts     # PendingState union + type guards
+│   │       └── orchestrationLogger.ts  # PR-UX-14/15: 構造化ログ
 │   └── components/chat/
-│       └── useChatReducer.ts       # Reducer + FE-5 handler
+│       ├── useChatReducer.ts       # Reducer + pending管理
+│       └── ChatPane.tsx            # 会話オーケストレータ
 ├── db/migrations/
 │   ├── 0085_add_scheduling_thread_kind.sql
 │   ├── 0086_add_one_to_many_support.sql
 │   └── ...
 ├── docs/
 │   ├── CURRENT_STATUS.md           # ← このファイル
+│   ├── CONVERSATION_FLOW.md        # PR-UX-14: 会話フロー仕様書
+│   ├── STATE_RESPONSIBILITY.md     # PR-UX-14: 状態責務定義書
 │   ├── ARCHITECTURE_OVERVIEW_2026_02.md
 │   ├── DATABASE_SCHEMA.md
 │   ├── MIGRATION_HISTORY.md
@@ -331,16 +414,25 @@ tomoniwaproject/
 
 ## 次のステップ
 
+### 安定化（最優先）
+1. **CI に会話 E2E を組み込み** — PR ごとにフロー破壊を検知
+2. **本番ログダッシュボード構築** — conversation trace 可視化
+3. **handleExecutionResult の stale closure 修正** — currentThreadId ref 化
+4. **pending TTL 自動失効** — 長時間放置 pending の自動削除
+5. **temp → draftThreadId 統一** — 設計済み、段階的に実装
+
+### 新機能（安定化後）
 1. **BUG-3**: Google Calendar権限エラー時の会話内自然なガイダンス提供
 2. **BUG-2**: スケジュール開始時にスレッドが作成されない問題
 3. **モバイルUI**: メッセージ後の大きな空白エリア（スクロール/高さ管理）修正
 4. **TD-10/TD-11 リファクタ**: apiExecutor.ts 分割 + ExecutionResultData 重複解消
-5. **E2E テスト基盤**: Playwright 導入、フルフロー統合テスト
 
 ---
 
 ## 関連ドキュメント
 
+- [会話フロー仕様書](./CONVERSATION_FLOW.md)
+- [状態責務定義書](./STATE_RESPONSIBILITY.md)
 - [日程調整パターン・ルール](./SCHEDULING_PATTERNS_AND_RULES.md)
 - [アーキテクチャ概要](./ARCHITECTURE_OVERVIEW_2026_02.md)
 - [データベーススキーマ](./DATABASE_SCHEMA.md)

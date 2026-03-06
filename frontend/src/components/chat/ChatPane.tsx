@@ -343,8 +343,11 @@ export function ChatPane({
         preferredMode: selectedMode,
       });
       
-      // PR-UX-14: 構造化ロギング — classify result
-      logClassifyResult(message, intentResult.intent, intentResult.confidence, intentResult.params);
+      // PR-UX-14/15: 構造化ロギング — classify result (clarificationId 付き)
+      const activeClarificationId = latestPendingForThread?.kind === 'pending.scheduling.clarification'
+        ? latestPendingForThread.clarificationId
+        : undefined;
+      logClassifyResult(message, intentResult.intent, intentResult.confidence, intentResult.params, activeClarificationId);
       
       console.log('[Intent] Classified:', intentResult.intent, 
         'confidence:', intentResult.confidence,
