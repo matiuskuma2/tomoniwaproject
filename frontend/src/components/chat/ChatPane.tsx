@@ -13,6 +13,8 @@ import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { extractErrorMessage } from '../../core/api/client';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
+import { ModeChip } from './ModeChip';
+import type { SchedulingMode } from '../../core/chat/classifier/types';
 // PR-D-FE-3: 名刺OCRスキャン executor
 // PR-D-FE-3.1: classifyUploadIntent でアップロード時の意図を抽出
 import { executeBusinessCardScan, classifyUploadIntent } from '../../core/chat/executors/contactImport';
@@ -73,6 +75,10 @@ interface ChatPaneProps {
   // P0-1: threadId 未選択時の pending.action（prepare-send等）
   globalPendingAction?: PendingState | null;
   
+  // FE-7: Mode Chip UI
+  selectedMode?: SchedulingMode;
+  onModeChange?: (mode: SchedulingMode) => void;
+  
   // カウンター（max 2 制限用）
   additionalProposeCount?: number;
   remindCount?: number;
@@ -92,6 +98,8 @@ export function ChatPane({
   globalPendingAction = null,
   additionalProposeCount = 0,
   remindCount = 0,
+  selectedMode = 'auto',
+  onModeChange,
 }: ChatPaneProps) {
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -293,11 +301,14 @@ export function ChatPane({
 
     try {
       // Classify intent
+      // FE-7: preferredMode を context に渡して classifier override
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId || undefined,
         // P0-1: 正規化された pending を渡す
         pendingForThread,
         globalPendingAction,
+        // FE-7: Mode Chip からのモード選択
+        preferredMode: selectedMode,
       });
       
       console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
@@ -537,6 +548,14 @@ export function ChatPane({
 
       {/* Input Area (Phase Next-2: Enabled, Phase Next-4 Day1: Voice input added) */}
       <div className="border-t border-gray-200 p-4 bg-gray-50">
+        {/* FE-7: Mode Chip UI — チャット入力上部にモード選択チップ */}
+        {onModeChange && (
+          <ModeChip
+            selectedMode={selectedMode}
+            onModeChange={onModeChange}
+            disabled={!!(pendingForThread || globalPendingAction)}
+          />
+        )}
         {/* PR-D-FE-3: 添付画像プレビュー */}
         {attachedImages.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">

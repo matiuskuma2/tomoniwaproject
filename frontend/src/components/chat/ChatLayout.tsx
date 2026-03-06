@@ -32,6 +32,7 @@ export function ChatLayout() {
     seedIfEmpty,
     setMobileTab,
     setSettingsOpen,
+    setMode,
     handleExecutionResult,
     pendingForThread,
   } = useChatReducer(threadId, navigate);
@@ -60,6 +61,7 @@ export function ChatLayout() {
     additionalProposeCountByThreadId,
     remindCountByThreadId,
     persistEnabled,
+    selectedMode,
   } = state;
 
   // Auto-switch to chat on mobile when thread selected
@@ -229,6 +231,8 @@ export function ChatLayout() {
               globalPendingAction={globalPendingAction}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
+              selectedMode={selectedMode}
+              onModeChange={setMode}
             />
           </div>
 
@@ -261,6 +265,8 @@ export function ChatLayout() {
               globalPendingAction={globalPendingAction}
               additionalProposeCount={threadId ? (additionalProposeCountByThreadId[threadId] || 0) : 0}
               remindCount={threadId ? (remindCountByThreadId[threadId] || 0) : 0}
+              selectedMode={selectedMode}
+              onModeChange={setMode}
             />
           )}
           {mobileTab === 'cards' && (

@@ -1,8 +1,8 @@
 # 現在の実装状況
 
-> **最終更新**: 2026-03-05
-> **最新コミット**: PR-B6 Phase 2 — ゲストOAuth + FreeBusy自動取得
-> **前回コミット**: PR-B6 Phase 1 逆アベイラビリティ実装完了
+> **最終更新**: 2026-03-06
+> **最新コミット**: PR-UX-4 — 二重 refresh 根絶（aaeb213）
+> **前回コミット**: PR-UX-3 — prop名 loading→initialLoading 統一（6e540df）
 
 ---
 
@@ -45,27 +45,30 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **FE-6** | 1対N チャット直接スケジューリング (classifier + executor) | 6f926c2 |
 | **FE-6b** | ホストFreeBusy → スロット生成統合 | c162ae4 |
 | **PR-B6 逆アベイラビリティ Phase 1** | 目上の相手にご都合を伺うモード（手動候補選択） | b847769 |
-| **PR-B6 Phase 2 ゲストOAuth** | ゲストOAuth → FreeBusy自動取得 → 空きスロットのみ表示 | 今回 |
+| **PR-B6 Phase 2 ゲストOAuth** | ゲストOAuth → FreeBusy自動取得 → 空きスロットのみ表示 | - |
+| **PR-UX-3** | prop名 loading→initialLoading 統一（ChatPane/CardsPane/ChatLayout） | 6e540df |
+| **PR-UX-4** | 二重 refresh 根絶（onThreadUpdate 削除、executor 経路に一本化） | aaeb213 |
+| **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
 
 | 機能 | 説明 | 状況 |
 |------|------|------|
-| **FE-7 Mode Chip UI** | チャット入力上部のモード選択チップ（Auto/Fixed/候補/空き/公開枠/ご都合伺い） | PRD確定、実装待ち |
+| **FE-7 Mode Chip UI** | チャット入力上部のモード選択チップ（Auto/Fixed/候補/空き/公開枠/ご都合伺い） | PR-FE7-a + PR-FE7-b 完了 |
 
 ### 📋 FE-7: Mode Chip UI (PRD確定)
 
 | ID | タスク | 状況 | PR |
 |----|--------|------|----|
-| FE7-T1 | `types.ts` に `SchedulingMode` + `IntentContext.preferredMode` | ⏳ | PR-FE7-a |
-| FE7-T2 | `oneOnOne.ts` に override ロジック | ⏳ | PR-FE7-a |
-| FE7-T3 | `reverseAvailability.ts` に keyword スキップ | ⏳ | PR-FE7-a |
-| FE7-T4 | Unit tests: FE7-1〜FE7-12 | ⏳ | PR-FE7-a |
-| FE7-T5 | 回帰テスト（410/410 pass維持） | ⏳ | PR-FE7-a |
-| FE7-T6 | `ModeChip.tsx` UI コンポーネント | ⏳ | PR-FE7-b |
-| FE7-T7 | `useChatReducer.ts` に selectedMode state | ⏳ | PR-FE7-b |
-| FE7-T8 | ChatLayout / apiExecutor 統合 | ⏳ | PR-FE7-b |
-| FE7-T9 | Component tests + ドキュメント更新 | ⏳ | PR-FE7-b |
+| FE7-T1 | `types.ts` に `SchedulingMode` + `IntentContext.preferredMode` | ✅ | PR-FE7-a |
+| FE7-T2 | `oneOnOne.ts` に override ロジック (`buildForcedModeResult`) | ✅ | PR-FE7-a |
+| FE7-T3 | `reverseAvailability.ts` に keyword スキップ | ✅ | PR-FE7-a |
+| FE7-T4 | Unit tests: FE7-1〜FE7-12 (modeChip.test.ts) | ✅ | PR-FE7-a |
+| FE7-T5 | 回帰テスト（417/417 pass維持） | ✅ | PR-FE7-a |
+| FE7-T6 | `ModeChip.tsx` UI コンポーネント | ✅ | PR-FE7-b |
+| FE7-T7 | `useChatReducer.ts` に selectedMode state + SET_MODE | ✅ | PR-FE7-b |
+| FE7-T8 | ChatLayout / ChatPane / classifyIntent 統合 | ✅ | PR-FE7-b |
+| FE7-T9 | Component tests (FE7-C1〜C4) + ドキュメント更新 | ✅ | PR-FE7-b |
 
 ### PR-B6: 逆アベイラビリティ Phase 1 (完了)
 
@@ -142,7 +145,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 20 | 410 | ✅ All Pass |
+| **Unit Tests (vitest)** | 21 | 433 | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -169,6 +172,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | `reverseAvailability.test.ts (classifier)` | 11 | PR-B6 classifier テスト |
 | `reverseAvailability.test.ts (executor)` | 9 | PR-B6 executor テスト |
 | `raOAuth.test.ts` | 12 | PR-B6 Phase 2 OAuth + FreeBusy filtering テスト |
+| `modeChip.test.ts` | 27 | FE-7 Mode Chip classifier override テスト (FE7-1〜FE7-12) |
+| `ModeChip.component.test.ts` | 16 | FE-7 Mode Chip UI コンポーネントテスト (FE7-C1〜C4) |
 
 ---
 

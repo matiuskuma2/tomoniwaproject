@@ -24,6 +24,8 @@ import type { ChatMessage } from './ChatPane';
 // P0-1: PendingState 正規化
 import type { PendingState } from '../../core/chat/pendingTypes';
 import { getPendingForThread } from '../../core/chat/pendingTypes';
+// FE-7: SchedulingMode type for Mode Chip
+import type { SchedulingMode } from '../../core/chat/classifier/types';
 // PR-D-FE-1: Contact Import pending builder (静的import — require()はブラウザ非互換)
 import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
 // PR-D-FE-3.1: 次手フロー用 context 型
@@ -77,6 +79,10 @@ export interface ChatState {
   additionalProposeCountByThreadId: Record<string, number>;
   remindCountByThreadId: Record<string, number>;
   
+  // FE-7: Mode Chip UI 選択モード
+  // スレッド切替時に 'auto' にリセット
+  selectedMode: SchedulingMode;
+  
   // localStorage persistence state
   saveFailCount: number;
   persistEnabled: boolean;
@@ -91,6 +97,8 @@ export type ChatAction =
   // UI actions
   | { type: 'SET_MOBILE_TAB'; payload: MobileTab }
   | { type: 'SET_SETTINGS_OPEN'; payload: boolean }
+  // FE-7: Mode Chip
+  | { type: 'SET_MODE'; payload: SchedulingMode }
   
   // Message actions
   | { type: 'APPEND_MESSAGE'; payload: { threadId: string; message: ChatMessage } }
@@ -148,6 +156,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     
     case 'SET_SETTINGS_OPEN':
       return { ...state, isSettingsOpen: action.payload };
+    
+    // FE-7: Mode Chip
+    case 'SET_MODE':
+      return { ...state, selectedMode: action.payload };
     
     // Message actions
     case 'APPEND_MESSAGE': {
@@ -368,6 +380,9 @@ function createInitialState(): ChatState {
     // Persistence
     saveFailCount: 0,
     persistEnabled: true,
+    
+    // FE-7: Mode Chip（デフォルト Auto）
+    selectedMode: 'auto',
   };
 }
 
@@ -472,6 +487,20 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
   const setSettingsOpen = useCallback((open: boolean) => {
     dispatch({ type: 'SET_SETTINGS_OPEN', payload: open });
   }, []);
+
+  // FE-7: Mode Chip 選択
+  const setMode = useCallback((mode: SchedulingMode) => {
+    dispatch({ type: 'SET_MODE', payload: mode });
+  }, []);
+
+  // FE-7: スレッド切替時にモードを Auto にリセット
+  const prevThreadIdRef = useRef(currentThreadId);
+  useEffect(() => {
+    if (prevThreadIdRef.current !== currentThreadId) {
+      prevThreadIdRef.current = currentThreadId;
+      dispatch({ type: 'SET_MODE', payload: 'auto' });
+    }
+  }, [currentThreadId]);
 
   // ============================================================
   // ExecutionResult Handler (P0-1: 正規化された pending 辞書を使用)
@@ -840,6 +869,8 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // NOTE: setStatus/setLoading は削除（キャッシュが単一ソース）
     setMobileTab,
     setSettingsOpen,
+    // FE-7: Mode Chip
+    setMode,
     handleExecutionResult,
     // P0-1: 正規化された pending アクセサ
     pendingForThread,
