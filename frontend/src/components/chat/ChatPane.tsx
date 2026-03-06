@@ -444,9 +444,10 @@ export function ChatPane({
     return msgs;
   };
 
-  // PR-UX-4: skeleton は「初回ロード + メッセージ0件」のみ
+  // PR-UX-5: skeleton は「初回ロード + メッセージ0件 + status未取得」のみ
   // refreshing 時は UI を維持（executor 内 refreshAfterWrite 経由で status 自動反映）
-  if (initialLoading && messages.length === 0) {
+  // hasLoadedOnce=true (useThreadStatus内部) のため、スレッド切り替え時は initialLoading=false
+  if (initialLoading && messages.length === 0 && !status) {
     return (
       <div className="h-full flex items-center justify-center bg-white">
         <div className="text-center">
@@ -470,12 +471,12 @@ export function ChatPane({
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div data-testid="chat-messages" className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* PR-UX-2: バックグラウンド同期中の小型インジケーター */}
-        {refreshing && (
-          <div className="flex items-center justify-center py-1">
-            <div className="flex items-center space-x-2 text-xs text-gray-400">
-              <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-400"></div>
-              <span>同期中...</span>
+        {/* PR-UX-5: バックグラウンド同期中の小型インジケーター（目立たない位置に固定） */}
+        {refreshing && messages.length > 0 && (
+          <div className="sticky top-0 z-10 flex items-center justify-center py-1 bg-white/80 backdrop-blur-sm">
+            <div className="flex items-center space-x-1 text-[10px] text-gray-300">
+              <div className="animate-spin rounded-full h-2 w-2 border-b border-gray-300"></div>
+              <span>同期中</span>
             </div>
           </div>
         )}

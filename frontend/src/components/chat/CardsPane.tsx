@@ -42,9 +42,12 @@ interface CardsPaneProps {
 }
 
 export function CardsPane({ status, initialLoading, refreshing = false, calendarData, viewerTz }: CardsPaneProps) {
-  // PR-UX-2: 全画面スピナーは「初回ロード + statusなし」のみ
+  // PR-UX-5: 全画面スピナーは「初回ロード + statusなし + calendarDataなし」のみ
+  // スレッド切り替え時は hasLoadedOnce=true のため initialLoading=false になる
   // statusが既にある場合はスピナーを出さずUIを維持
-  if (initialLoading && !status) {
+  const hasCalendarData = calendarData?.today || calendarData?.week || calendarData?.freebusy;
+  
+  if (initialLoading && !status && !hasCalendarData) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -53,8 +56,6 @@ export function CardsPane({ status, initialLoading, refreshing = false, calendar
   }
 
   // Show calendar cards only (when data exists but no thread selected)
-  const hasCalendarData = calendarData?.today || calendarData?.week || calendarData?.freebusy;
-  
   if (!status && !hasCalendarData) {
     return (
       <div className="h-full flex items-center justify-center bg-gray-50">

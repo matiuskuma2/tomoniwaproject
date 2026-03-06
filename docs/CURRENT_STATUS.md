@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-4 — 二重 refresh 根絶（aaeb213）
-> **前回コミット**: PR-UX-3 — prop名 loading→initialLoading 統一（6e540df）
+> **最新コミット**: PR-UX-5 — スレッド切替スピナー根絶
+> **前回コミット**: PR-FE7-b — Mode Chip UI + Reducer + Integration（19f737b）
 
 ---
 
@@ -48,6 +48,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-B6 Phase 2 ゲストOAuth** | ゲストOAuth → FreeBusy自動取得 → 空きスロットのみ表示 | - |
 | **PR-UX-3** | prop名 loading→initialLoading 統一（ChatPane/CardsPane/ChatLayout） | 6e540df |
 | **PR-UX-4** | 二重 refresh 根絶（onThreadUpdate 削除、executor 経路に一本化） | aaeb213 |
+| **PR-UX-5** | スレッド切替スピナー根絶 — hasLoadedOnce ガード + refreshing 安全タイムアウト + ChatPane/CardsPane 条件強化 | PR-UX-5 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中

@@ -9,6 +9,11 @@
  * - refreshing: バックグラウンド再取得（既にデータあり）→ tiny indicator用
  * - loading: 後方互換（initialLoading || refreshing）
  * 
+ * PR-UX-5: スレッド切り替え時のスピナー抑制
+ * - 別スレッドへ切り替え時は常に refreshing（バックグラウンド）扱い
+ * - initialLoading はフック初回マウント（hasLoadedOnce=false）のみ
+ * - refreshing の安全タイムアウト（8秒）で永続スピナーを防止
+ * 
  * 根本原因:
  *   旧実装では fetchStatus() のたびに setLoading(true) → ChatPane if(loading) return spinner
  *   → メッセージが全部消えて白画面+くるくる
@@ -17,6 +22,7 @@
  * 修正:
  *   loading を initialLoading（初回のみ skeleton OK）と refreshing（バックグラウンド）に分離
  *   refresh() は常に isBackground=true → refreshing のみ変化 → ChatPane はメッセージを保持
+ *   スレッド切り替え時: hasLoadedOnce=true なら常に refreshing 扱い
  * 
  * 使い方:
  * const { status, initialLoading, refreshing, loading, error, refresh, mutate } = useThreadStatus(threadId);
@@ -88,6 +94,11 @@ export function useThreadStatus(
   // Refs for cleanup
   const mountedRef = useRef(true);
   const threadIdRef = useRef(threadId);
+  // PR-UX-5: 一度でもロードに成功したかを追跡
+  // true になった後のスレッド切り替えでは initialLoading=true を使わない
+  const hasLoadedOnceRef = useRef(false);
+  // PR-UX-5: refreshing 安全タイムアウト
+  const refreshingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Update ref when threadId changes
   useEffect(() => {
@@ -109,17 +120,38 @@ export function useThreadStatus(
     return unsubscribe;
   }, [threadId, onStatusChange]);
   
+  // PR-UX-5: refreshing 安全タイムアウトクリア
+  const clearRefreshingTimeout = useCallback(() => {
+    if (refreshingTimeoutRef.current) {
+      clearTimeout(refreshingTimeoutRef.current);
+      refreshingTimeoutRef.current = null;
+    }
+  }, []);
+
   // Fetch status
   // PR-UX-2: isBackground パラメータで initialLoading/refreshing を使い分け
+  // PR-UX-5: hasLoadedOnce=true なら常に isBackground=true 扱い（スレッド切替スピナー防止）
   const fetchStatus = useCallback(async (force: boolean = false, isBackground: boolean = false) => {
     if (!threadId) {
       setStatus(null);
       return;
     }
     
+    // PR-UX-5: 一度でもロード成功していれば、initialLoading は使わない
+    // スレッド切り替え時にも全画面スピナーを出さない
+    const effectiveIsBackground = isBackground || hasLoadedOnceRef.current;
+    
     // PR-UX-2: 初回ロード vs バックグラウンド再取得を分離
-    if (isBackground) {
+    if (effectiveIsBackground) {
       setRefreshing(true);
+      // PR-UX-5: refreshing 安全タイムアウト（8秒で自動解除、永続スピナー防止）
+      clearRefreshingTimeout();
+      refreshingTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current) {
+          console.warn(`[useThreadStatus] Refreshing timeout (8s) for ${threadId}, force-clearing`);
+          setRefreshing(false);
+        }
+      }, 8000);
     } else {
       setInitialLoading(true);
     }
@@ -132,6 +164,7 @@ export function useThreadStatus(
       
       if (mountedRef.current && threadIdRef.current === threadId) {
         setStatus(data);
+        hasLoadedOnceRef.current = true; // PR-UX-5: ロード成功を記録
         onStatusChange?.(data);
       }
     } catch (err) {
@@ -141,14 +174,16 @@ export function useThreadStatus(
       }
     } finally {
       if (mountedRef.current) {
-        if (isBackground) {
+        clearRefreshingTimeout();
+        if (effectiveIsBackground) {
           setRefreshing(false);
         } else {
           setInitialLoading(false);
+          hasLoadedOnceRef.current = true; // PR-UX-5: 初回ロード完了
         }
       }
     }
-  }, [threadId, ttl, onStatusChange]);
+  }, [threadId, ttl, onStatusChange, clearRefreshingTimeout]);
   
   // Initial fetch and threadId change
   useEffect(() => {
@@ -158,6 +193,7 @@ export function useThreadStatus(
       setStatus(null);
       setInitialLoading(false);
       setRefreshing(false);
+      clearRefreshingTimeout();
       return;
     }
     
@@ -168,14 +204,16 @@ export function useThreadStatus(
       // PR-UX-2: キャッシュあり → バックグラウンドで再検証（UIは残す）
       fetchStatus(false, /* isBackground */ true);
     } else {
-      // PR-UX-2: キャッシュなし → 初回ロード（スピナー表示OK）
+      // PR-UX-5: hasLoadedOnce=true なら fetchStatus 内部で effectiveIsBackground=true に昇格
+      // → スレッド切り替え時は全画面スピナーを出さない
       fetchStatus(false, /* isBackground */ false);
     }
     
     return () => {
       mountedRef.current = false;
+      clearRefreshingTimeout();
     };
-  }, [threadId, skip, fetchStatus]);
+  }, [threadId, skip, fetchStatus, clearRefreshingTimeout]);
   
   // Refresh function (force fetch)
   // PR-UX-2: refresh は常にバックグラウンド（既にデータがある前提）
@@ -203,6 +241,13 @@ export function useThreadStatus(
   
   // PR-UX-2: 後方互換の loading（どちらかが true なら true）
   const loading = initialLoading || refreshing;
+
+  // PR-UX-5: unmount 時に安全タイムアウトをクリア
+  useEffect(() => {
+    return () => {
+      clearRefreshingTimeout();
+    };
+  }, [clearRefreshingTimeout]);
 
   return {
     status,
