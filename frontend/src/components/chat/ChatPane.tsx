@@ -12,6 +12,8 @@ import type { ThreadStatus_API } from '../../core/models';
 import { classifyIntent } from '../../core/chat/intentClassifier';
 import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor';
 import { extractErrorMessage } from '../../core/api/client';
+// PR-UX-13: navigate 前に prefetch して CardsPane 同期を高速化
+import { prefetchThreadStatus } from '../../core/cache';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 import { ModeChip } from './ModeChip';
 import type { SchedulingMode } from '../../core/chat/classifier/types';
@@ -393,9 +395,9 @@ export function ChatPane({
             onExecutionResult(result);
           }
           
-          // PR-UX-4: onThreadUpdate 削除
-          // status 更新は executor 内 refreshAfterWrite → threadStatusCache → subscribe 経由で自動反映
-          // ChatPane からの二重 refresh は不要（ネットワーク負荷 + 二重 re-render の原因）
+          // PR-UX-13: navigate 前に新 threadId の status を prefetch
+          // → CardsPane が即座にデータを表示できる（skeleton 期間を短縮）
+          prefetchThreadStatus(newThreadId);
           
           // Navigate to the new thread
           setTimeout(() => {
@@ -419,7 +421,8 @@ export function ChatPane({
             onExecutionResult(result);
           }
           
-          // PR-UX-4: onThreadUpdate 削除（executor 内 refreshAfterWrite で自動更新）
+          // PR-UX-13: navigate 前に prefetch
+          prefetchThreadStatus(newThreadId);
           
           // Navigate to the new thread
           setTimeout(() => {

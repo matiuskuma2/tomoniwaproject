@@ -887,6 +887,23 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
         sessionStorage.removeItem('__tomoniwao_scheduling_clarification');
       } catch { /* ignore */ }
     }
+
+    // PR-UX-13: 1on1 prepared 系 — 'temp' の pending/messages を新 threadId に移行
+    // 1on1 prepared はスレッド未選択 (temp) 状態から新スレッドを作成するため
+    // temp に残っている scheduling clarification pending をクリアする
+    else if (
+      kind === '1on1.fixed.prepared' ||
+      kind === '1on1.candidates.prepared' ||
+      kind === '1on1.freebusy.prepared' ||
+      kind === '1on1.open_slots.prepared'
+    ) {
+      // temp の pending をクリア（新スレッドに navigate する前に）
+      dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: 'temp' } });
+      // sessionStorage もクリア
+      try {
+        sessionStorage.removeItem('__tomoniwao_scheduling_clarification');
+      } catch { /* ignore */ }
+    }
   }, [currentThreadId, navigate]);
 
   // P0-1: pendingForThread ヘルパー
