@@ -1281,6 +1281,47 @@ function executeRescheduleCancel(): ExecutionResult {
 // ============================================================
 
 /**
+ * PR-UX-11: nlRouter の needs_clarification メッセージをユーザーフレンドリーな日本語に変換
+ * LLM が英語でエラーメッセージを生成する場合があるため、内部的なclarificationを
+ * 日本語のガイダンスに変換する
+ */
+function sanitizeNlClarificationMessage(rawMessage: string, field: string): string {
+  // 英語メッセージ or 内部用メッセージの検出パターン
+  const internalPatterns = [
+    /thread.?id/i,
+    /please provide/i,
+    /required.*parameter/i,
+    /missing.*field/i,
+    /operation.*requires/i,
+  ];
+
+  const isInternalMessage = internalPatterns.some(p => p.test(rawMessage));
+  
+  if (isInternalMessage) {
+    // field に応じたユーザーフレンドリーなメッセージ
+    const fieldMessages: Record<string, string> = {
+      threadId: 'どの調整についてですか？\nスレッドを選択してから操作してください。',
+      thread_id: 'どの調整についてですか？\nスレッドを選択してから操作してください。',
+      person: '相手の名前かメールアドレスを教えてください。',
+      date: 'いつがいいですか？（例: 来週木曜17時から）',
+      time: '何時からがいいですか？（例: 17時から）',
+      email: '相手のメールアドレスを教えてください。',
+      emails: '送信先のメールアドレスを教えてください。',
+    };
+
+    return fieldMessages[field] || 'もう少し詳しく教えてください。\n\n以下のような指示ができます：\n• 「今日の予定」\n• 「来週の空き」\n• 「〇〇さんに日程調整送って」';
+  }
+
+  // 英語メッセージでも、非内部的なものは一般的なガイダンスに変換
+  if (/^[a-zA-Z\s.,!?:;'"()-]+$/.test(rawMessage.trim())) {
+    return 'もう少し詳しく教えてください。\n\n以下のような指示ができます：\n• 「今日の予定」\n• 「来週の空き」\n• 「〇〇さんに日程調整送って」';
+  }
+
+  // 日本語メッセージならそのまま返す
+  return rawMessage;
+}
+
+/**
  * CONV-1.2: unknown 時に nlRouter/multi を呼び出すフォールバック
  * 
  * - calendar系は即実行
@@ -1315,15 +1356,17 @@ async function executeUnknownWithNlRouter(
       },
     });
 
-    // needs_clarification がある場合はそれを返す
+    // needs_clarification がある場合はユーザーフレンドリーなメッセージに変換
+    // PR-UX-11: LLM が英語で「Please provide the thread ID」等を返す場合があるため、
+    // 内部的なclarificationは日本語ガイダンスに変換して返す
     if (nlResult.needs_clarification) {
+      const sanitizedMessage = sanitizeNlClarificationMessage(
+        nlResult.needs_clarification.message,
+        nlResult.needs_clarification.field
+      );
       return {
-        success: false,
-        message: nlResult.needs_clarification.message,
-        needsClarification: {
-          field: nlResult.needs_clarification.field,
-          message: nlResult.needs_clarification.message,
-        },
+        success: true, // clarification は質問であってエラーではない
+        message: sanitizedMessage,
       };
     }
 
