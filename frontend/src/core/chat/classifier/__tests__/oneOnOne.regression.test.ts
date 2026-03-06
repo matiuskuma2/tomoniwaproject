@@ -159,4 +159,49 @@ describe('Phase B-1: 1on1 scheduling classification', () => {
       expect(result).toBeNull();
     });
   });
+
+  // ============================================================
+  // 6) BUG-1: 「調整したい」系トリガーワード
+  //    「大島くんと調整したい」が unknown に落ちていた問題の回帰テスト
+  // ============================================================
+  describe('BUG-1: 「調整したい」trigger word recognition', () => {
+    it('「大島くんと調整したい」-> schedule.1on1.fixed + needsClarification(date)', () => {
+      const input = '大島くんと調整したい';
+      const result = classifyOneOnOne(input, normalizedInput(input));
+      
+      expect(result).not.toBeNull();
+      expect(result?.intent).toBe('schedule.1on1.fixed');
+      expect(result?.params.person?.name).toBe('大島');
+      expect(result?.needsClarification?.field).toBe('date');
+    });
+
+    it('「佐藤さんと調整して」-> schedule.1on1.fixed + needsClarification(date)', () => {
+      const input = '佐藤さんと調整して';
+      const result = classifyOneOnOne(input, normalizedInput(input));
+      
+      expect(result).not.toBeNull();
+      expect(result?.intent).toBe('schedule.1on1.fixed');
+      expect(result?.params.person?.name).toBe('佐藤');
+    });
+
+    it('「田中様と調整お願い」-> schedule.1on1.fixed + needsClarification(date)', () => {
+      const input = '田中様と調整お願い';
+      const result = classifyOneOnOne(input, normalizedInput(input));
+      
+      expect(result).not.toBeNull();
+      expect(result?.intent).toBe('schedule.1on1.fixed');
+      expect(result?.params.person?.name).toBe('田中');
+    });
+
+    it('「大島くんと来週木曜17時から調整したい」-> schedule.1on1.fixed (full params)', () => {
+      const input = '大島くんと来週木曜17時から調整したい';
+      const result = classifyOneOnOne(input, normalizedInput(input));
+      
+      expect(result).not.toBeNull();
+      expect(result?.intent).toBe('schedule.1on1.fixed');
+      expect(result?.params.person?.name).toBe('大島');
+      expect(result?.params.start_at).toBeDefined();
+      expect(result?.needsClarification).toBeUndefined();
+    });
+  });
 });

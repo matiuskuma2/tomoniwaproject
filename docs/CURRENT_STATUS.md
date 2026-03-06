@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-6 — skeleton 常設型 UI（early return spinner 全廃）
-> **前回コミット**: PR-UX-5 — スレッド切替スピナー根絶（086376d）
+> **最新コミット**: PR-UX-7 — ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張
+> **前回コミット**: PR-UX-6 — skeleton 常設型 UI（early return spinner 全廃）
 
 ---
 
@@ -50,6 +50,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-4** | 二重 refresh 根絶（onThreadUpdate 削除、executor 経路に一本化） | aaeb213 |
 | **PR-UX-5** | スレッド切替スピナー根絶 — hasLoadedOnce ガード + refreshing 安全タイムアウト + ChatPane/CardsPane 条件強化 | 086376d |
 | **PR-UX-6** | skeleton 常設型 UI — early return spinner 全廃、hasLoadedOnceRef 削除（pure data fetch）、pane は常に描画し中身だけ skeleton | PR-UX-6 |
+| **PR-UX-7** | ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張（「調整したい」「調整して」系を追加、oneOnOne/oneToMany 両方） | PR-UX-7 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
