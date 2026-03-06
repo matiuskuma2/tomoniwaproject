@@ -91,6 +91,14 @@ export const classifyCalendar: ClassifierFn = (
   _activePending: PendingState | null
 ): IntentResult | null => {
   // ============================================================
+  // BUG-1b guard: スケジューリング clarification 中は calendar に落とさない
+  // 「来週木曜17時から」等はスケジューリングの補完なので oneOnOne に譲る
+  // ============================================================
+  if (_activePending?.kind === 'pending.scheduling.clarification') {
+    return null;
+  }
+
+  // ============================================================
   // P1-1: schedule.today
   // Keywords: 今日、きょう、今日の予定
   // ============================================================

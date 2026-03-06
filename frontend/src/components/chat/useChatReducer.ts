@@ -881,9 +881,11 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
   }, [currentThreadId, navigate]);
 
   // P0-1: pendingForThread ヘルパー
+  // BUG-1b fix: threadId未選択時は 'temp' キーのpendingも参照する
+  // スケジューリング clarification はスレッド作成前に発生するため、'temp' に保存される
   const pendingForThread = currentThreadId 
     ? getPendingForThread(state.pendingByThreadId, currentThreadId)
-    : null;
+    : getPendingForThread(state.pendingByThreadId, 'temp');
 
   return {
     state,

@@ -260,6 +260,13 @@ export const classifyPreference: ClassifierFn = (
   _activePending: PendingState | null
 ): IntentResult | null => {
   // ============================================================
+  // BUG-1b guard: スケジューリング clarification 中は preference に落とさない
+  // ============================================================
+  if (_activePending?.kind === 'pending.scheduling.clarification') {
+    return null;
+  }
+
+  // ============================================================
   // PR-INTENT-1: 予定調整文脈の除外ガード
   // 「大島くんと予定調整したい」等は oneOnOne に譲る
   // ============================================================

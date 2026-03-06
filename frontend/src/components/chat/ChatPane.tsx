@@ -350,7 +350,14 @@ export function ChatPane({
       };
 
       // Phase P0-5: thread.create の結果を受け取って navigate
-      if (result.data?.kind === 'thread.create') {
+      // BUG-2: 1on1 prepared 系（fixed/candidates3/freebusy/open_slots）も新スレッド作成を含むため同様に扱う
+      const isThreadCreation = result.data?.kind === 'thread.create' ||
+        result.data?.kind === '1on1.fixed.prepared' ||
+        result.data?.kind === '1on1.candidates3.prepared' ||
+        result.data?.kind === '1on1.freebusy.prepared' ||
+        result.data?.kind === '1on1.open_slots.prepared';
+      
+      if (isThreadCreation) {
         const newThreadId = result.data?.payload?.threadId;
         if (newThreadId && typeof newThreadId === 'string') {
           // メッセージを新しいスレッドに追加してから navigate
