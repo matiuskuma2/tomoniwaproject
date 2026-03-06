@@ -61,8 +61,8 @@ interface ChatPaneProps {
   // NEW: seed template messages if empty
   onSeedIfEmpty: (threadId: string, seed: ChatMessage[]) => void;
   
-  // Existing: refresh thread status
-  onThreadUpdate?: () => void;
+  // PR-UX-4: onThreadUpdate 削除（executor 内 refreshAfterWrite 経由で自動更新）
+  // onThreadUpdate?: () => void;
   
   // NEW (Phase Next-5 Day2.1): unified execution result handler (type-safe)
   onExecutionResult?: (result: ExecutionResult) => void;
@@ -86,7 +86,7 @@ export function ChatPane({
   messages, 
   onAppend, 
   onSeedIfEmpty, 
-  onThreadUpdate,
+  // onThreadUpdate,  // PR-UX-4: 削除（二重 refresh 根絶）
   onExecutionResult,
   pendingForThread = null,
   globalPendingAction = null,
@@ -333,12 +333,9 @@ export function ChatPane({
             onExecutionResult(result);
           }
           
-          // If successful, trigger refresh
-          if (result.success && onThreadUpdate) {
-            setTimeout(() => {
-              onThreadUpdate();
-            }, 500);
-          }
+          // PR-UX-4: onThreadUpdate 削除
+          // status 更新は executor 内 refreshAfterWrite → threadStatusCache → subscribe 経由で自動反映
+          // ChatPane からの二重 refresh は不要（ネットワーク負荷 + 二重 re-render の原因）
           
           // Navigate to the new thread
           setTimeout(() => {
@@ -362,12 +359,7 @@ export function ChatPane({
             onExecutionResult(result);
           }
           
-          // If successful, trigger refresh
-          if (result.success && onThreadUpdate) {
-            setTimeout(() => {
-              onThreadUpdate();
-            }, 500);
-          }
+          // PR-UX-4: onThreadUpdate 削除（executor 内 refreshAfterWrite で自動更新）
           
           // Navigate to the new thread
           setTimeout(() => {
@@ -387,12 +379,10 @@ export function ChatPane({
         onExecutionResult(result);
       }
 
-      // If successful, trigger refresh
-      if (result.success && onThreadUpdate) {
-        setTimeout(() => {
-          onThreadUpdate();
-        }, 500);
-      }
+      // PR-UX-4: onThreadUpdate の setTimeout(500ms) 削除
+      // status 更新は executor 内 refreshAfterWrite → threadStatusCache.refreshStatus()
+      // → notifyListeners → useThreadStatus.subscribe → setStatus の一本経路で自動反映
+      // ChatPane からの二重 refresh は不要（ネットワーク負荷 + 不必要な re-render の原因）
     } catch (error) {
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
@@ -443,10 +433,8 @@ export function ChatPane({
     return msgs;
   };
 
-  // PR-UX-2: skeleton は「初回ロード（initialLoading=true）+ メッセージ0件」のみ
-  // メッセージが既にある状態では、refreshing でも UI を維持（LINE/Slack 方式）
-  // これにより送信後の onThreadUpdate → refresh で画面が白くならない
-  // NOTE: prop名を loading → initialLoading に統一して混乱を排除
+  // PR-UX-4: skeleton は「初回ロード + メッセージ0件」のみ
+  // refreshing 時は UI を維持（executor 内 refreshAfterWrite 経由で status 自動反映）
   if (initialLoading && messages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center bg-white">

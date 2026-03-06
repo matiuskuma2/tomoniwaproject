@@ -42,8 +42,8 @@ export function ChatLayout() {
     status, 
     initialLoading,
     refreshing,
-    loading, 
-    refresh: refreshThreadStatus 
+    // PR-UX-4: refresh (refreshThreadStatus) は不要
+    // status 更新は executor 内 refreshAfterWrite → threadStatusCache → subscribe で自動反映
   } = useThreadStatus(threadId);
 
   // P1-3: Viewer timezone from users/me (fallback to browser TZ)
@@ -69,12 +69,9 @@ export function ChatLayout() {
     }
   }, [threadId, setMobileTab]);
 
-  // Handle thread update (force refresh cache)
-  const handleThreadUpdate = useCallback(() => {
-    if (threadId) {
-      refreshThreadStatus();
-    }
-  }, [threadId, refreshThreadStatus]);
+  // PR-UX-4: handleThreadUpdate 削除
+  // status 更新は executor 内 refreshAfterWrite → threadStatusCache → subscribe 経由で自動反映
+  // ChatPane からの二重 refresh は不要（ネットワーク負荷 + 不必要な re-render の原因）
 
   const handleLogout = async () => {
     try {
@@ -227,7 +224,6 @@ export function ChatLayout() {
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
-              onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
               pendingForThread={pendingForThread}
               globalPendingAction={globalPendingAction}
@@ -260,7 +256,6 @@ export function ChatLayout() {
               messages={currentMessages}
               onAppend={appendMessage}
               onSeedIfEmpty={seedIfEmpty}
-              onThreadUpdate={handleThreadUpdate}
               onExecutionResult={handleExecutionResult}
               pendingForThread={pendingForThread}
               globalPendingAction={globalPendingAction}
