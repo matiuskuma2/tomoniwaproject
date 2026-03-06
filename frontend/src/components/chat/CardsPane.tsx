@@ -14,6 +14,7 @@
  * - USE_THREAD_CARDS_SWITCH フラグで段階的移行
  */
 
+import { useState, useEffect, useRef } from 'react';
 import { ThreadCardsSwitch } from '../cards/ThreadCardsSwitch';
 import { ThreadStatusCard } from '../cards/ThreadStatusCard';
 import { InvitesCard } from '../cards/InvitesCard';
@@ -89,6 +90,29 @@ function CardsSkeleton() {
 export function CardsPane({ status, initialLoading, refreshing = false, calendarData, viewerTz }: CardsPaneProps) {
   const hasCalendarData = calendarData?.today || calendarData?.week || calendarData?.freebusy;
 
+  // PR-UX-16: skeleton は「アプリ起動後の初回データ到着まで」のみ許可
+  // スレッド切替時には skeleton を出さない（旧表示を維持 → 新表示に差し替え）
+  const [hasHydratedOnce, setHasHydratedOnce] = useState(false);
+  useEffect(() => {
+    if (status || hasCalendarData) {
+      setHasHydratedOnce(true);
+    }
+  }, [status, hasCalendarData]);
+
+  // PR-UX-16: previous snapshot — thread change 時にカード空表示にしない
+  const previousStatusRef = useRef<ThreadStatus_API | null>(null);
+  useEffect(() => {
+    if (status) {
+      previousStatusRef.current = status;
+    }
+  }, [status]);
+
+  // 実際に表示する status: 新スレッドのデータがまだなければ旧表示を維持
+  const visibleStatus = status ?? (hasHydratedOnce ? previousStatusRef.current : null);
+
+  // PR-UX-16: skeleton 条件を初回限定に
+  const showCardsSkeleton = !hasHydratedOnce && initialLoading && !status && !hasCalendarData;
+
   // PR-UX-6: pane は常に描画。中身だけ条件分岐。
   return (
     <div className="h-full bg-gray-50 border-l border-gray-200 overflow-y-auto p-4">
@@ -107,24 +131,24 @@ export function CardsPane({ status, initialLoading, refreshing = false, calendar
       {calendarData?.week && <CalendarWeekCard data={calendarData.week} viewerTz={viewerTz} />}
       {calendarData?.freebusy && <FreeBusyCard data={calendarData.freebusy} viewerTz={viewerTz} />}
       
-      {/* PR-UX-6: status ロード中は skeleton、ロード済みなら実カード */}
-      {status ? (
+      {/* PR-UX-16: status ロード中は skeleton（初回のみ）、ロード済みなら実カード */}
+      {visibleStatus ? (
         <>
           {/* Phase Next-2: Thread Status Cards (show when thread is selected) */}
           {/* SSOT: ThreadCardsSwitch で topology/mode に基づいてカードを出し分け */}
           {USE_THREAD_CARDS_SWITCH ? (
-            <ThreadCardsSwitch status={status} viewerTz={viewerTz} />
+            <ThreadCardsSwitch status={visibleStatus} viewerTz={viewerTz} />
           ) : (
             <>
-              <ThreadStatusCard status={status} viewerTz={viewerTz} />
-              <InvitesCard status={status} />
-              <SlotsCard status={status} viewerTz={viewerTz} />
-              <MeetCard status={status} />
+              <ThreadStatusCard status={visibleStatus} viewerTz={viewerTz} />
+              <InvitesCard status={visibleStatus} />
+              <SlotsCard status={visibleStatus} viewerTz={viewerTz} />
+              <MeetCard status={visibleStatus} />
             </>
           )}
         </>
-      ) : initialLoading ? (
-        /* PR-UX-6: status 取得中はカード形状の skeleton */
+      ) : showCardsSkeleton ? (
+        /* PR-UX-16: 初回ロードのみカード形状の skeleton */
         <CardsSkeleton />
       ) : !hasCalendarData ? (
         /* スレッド未選択 & カレンダーデータなし → ガイドメッセージ */

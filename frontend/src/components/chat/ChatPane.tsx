@@ -535,9 +535,44 @@ export function ChatPane({
     : messages;
   const hiddenCount = messages.length - displayMessages.length;
 
-  // PR-UX-6: threadId ありで messages も status もない → skeleton 表示
-  // PR-UX-12: initialLoading も条件に追加（キャッシュヒットなら skeleton 不要）
-  const showSkeleton = !!threadId && messages.length === 0 && !status && initialLoading;
+  // PR-UX-16: skeleton は「アプリ起動後の初回データ到着まで」のみ許可
+  // スレッド切替時には skeleton を出さない（旧表示を維持 → 新表示に差し替え）
+  // hasHydratedOnce: 一度でもデータが表示されたらフラグ ON → 以降 skeleton 不要
+  const [hasHydratedOnce, setHasHydratedOnce] = useState(false);
+  useEffect(() => {
+    if (messages.length > 0 || status) {
+      setHasHydratedOnce(true);
+    }
+  }, [messages.length, status]);
+
+  // PR-UX-16: previous snapshot 表示 — thread change 時に空表示にしない
+  const previousMessagesRef = useRef<ChatMessage[]>([]);
+  const previousStatusRef = useRef<ThreadStatus_API | null>(null);
+  useEffect(() => {
+    if (messages.length > 0) {
+      previousMessagesRef.current = messages;
+    }
+  }, [messages]);
+  useEffect(() => {
+    if (status) {
+      previousStatusRef.current = status;
+    }
+  }, [status]);
+
+  // 実際に表示するメッセージ: 新スレッドのデータがまだなければ旧表示を維持
+  const visibleMessages = displayMessages.length > 0
+    ? displayMessages
+    : (hasHydratedOnce ? previousMessagesRef.current.slice(-MAX_DISPLAY_MESSAGES) : []);
+  const visibleHiddenCount = displayMessages.length > 0 ? hiddenCount : 0;
+
+  // PR-UX-16: skeleton 条件を初回限定に
+  // hasHydratedOnce が true になった後はスレッド切替で skeleton を出さない
+  const showSkeleton =
+    !hasHydratedOnce &&
+    !!threadId &&
+    messages.length === 0 &&
+    !status &&
+    initialLoading;
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -578,12 +613,12 @@ export function ChatPane({
           </div>
         )}
         {/* PERF-S2: 古いメッセージ省略表示 */}
-        {hiddenCount > 0 && (
+        {visibleHiddenCount > 0 && (
           <div className="text-center text-xs text-gray-400 py-2">
-            {hiddenCount}件の古いメッセージは省略されています
+            {visibleHiddenCount}件の古いメッセージは省略されています
           </div>
         )}
-        {displayMessages.length === 0 && !threadId && !showSkeleton ? (
+        {visibleMessages.length === 0 && !threadId && !showSkeleton ? (
           /* Phase P0-5: スレッド未選択時のプレースホルダー */
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-500 max-w-md">
@@ -606,7 +641,7 @@ export function ChatPane({
             </div>
           </div>
         ) : (
-          displayMessages.map((msg) => (
+          visibleMessages.map((msg) => (
             <div key={msg.id} data-testid="chat-message" data-message-role={msg.role} className="flex items-start">
               {msg.role === 'assistant' ? (
                 <>
