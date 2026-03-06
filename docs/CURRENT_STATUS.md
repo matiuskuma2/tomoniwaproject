@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-10 — pending context復元・スレッド作成・classifier guard 完全修正
-> **前回コミット**: PR-UX-9 — BUG-1/1b/3 会話オーケストレーション修正 + Google Calendar権限ガイダンス
+> **最新コミット**: PR-UX-11 — nlRouter内部エラーメッセージのユーザー漏洩を防止
+> **前回コミット**: PR-UX-10 — pending context復元・スレッド作成・classifier guard 完全修正
 
 ---
 
@@ -54,6 +54,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-8** | スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up（BUG-1b: pending.scheduling.clarification, person.suffix） | PR-UX-8 |
 | **PR-UX-9** | BUG-1/1b/3 会話オーケストレーション完全修正 — executor validation を clarification 形式に変更、Google Calendar権限不足時の会話型ガイダンス + 再開案内、敬称一貫性の全executor対応 | PR-UX-9 |
 | **PR-UX-10** | pending context復元・スレッド作成・classifier guard 完全修正 — (1) pendingForThread が temp キーを読まない根本バグ修正、(2) 1on1.*.prepared でスレッドnavigation対応、(3) calendar/preference に scheduling clarification ガード追加 | PR-UX-10 |
+| **PR-UX-11** | nlRouter内部エラーメッセージのユーザー漏洩防止 — LLM が英語で返す「Please provide the thread ID」等の内部メッセージを日本語ガイダンスに変換する sanitizeNlClarificationMessage() を追加、needs_clarification を success:true（質問）として返すよう修正 | PR-UX-11 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
