@@ -857,35 +857,64 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // BUG-1b: スケジューリング途中のclarification → pending.scheduling.clarification を設定
     else if (kind === 'scheduling.clarification.needed') {
       const threadId = currentThreadId || 'temp';
+      const pendingData = {
+        kind: 'pending.scheduling.clarification' as const,
+        threadId,
+        createdAt: Date.now(),
+        originalIntent: payload.originalIntent,
+        originalParams: payload.originalParams,
+        missingField: payload.missingField,
+        originalInput: payload.originalParams?.rawInput || '',
+      };
       dispatch({
         type: 'SET_PENDING_FOR_THREAD',
         payload: {
           threadId,
-          pending: {
-            kind: 'pending.scheduling.clarification',
-            threadId,
-            createdAt: Date.now(),
-            originalIntent: payload.originalIntent,
-            originalParams: payload.originalParams,
-            missingField: payload.missingField,
-            originalInput: payload.originalParams?.rawInput || '',
-          },
+          pending: pendingData,
         },
       });
+      // PR-UX-12: sessionStorage にも保存（React state が消失するエッジケース対策）
+      try {
+        sessionStorage.setItem('__tomoniwao_scheduling_clarification', JSON.stringify(pendingData));
+      } catch { /* ignore */ }
     }
     // BUG-1b: スケジューリング clarification の解消（成功した場合）
     else if (kind === 'scheduling.clarification.resolved') {
       const threadId = currentThreadId || 'temp';
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+      // PR-UX-12: sessionStorage からも削除
+      try {
+        sessionStorage.removeItem('__tomoniwao_scheduling_clarification');
+      } catch { /* ignore */ }
     }
   }, [currentThreadId, navigate]);
 
   // P0-1: pendingForThread ヘルパー
   // BUG-1b fix: threadId未選択時は 'temp' キーのpendingも参照する
   // スケジューリング clarification はスレッド作成前に発生するため、'temp' に保存される
-  const pendingForThread = currentThreadId 
-    ? getPendingForThread(state.pendingByThreadId, currentThreadId)
-    : getPendingForThread(state.pendingByThreadId, 'temp');
+  // PR-UX-12: sessionStorage フォールバック追加（React state が消失するエッジケース対策）
+  const pendingForThread = (() => {
+    const fromState = currentThreadId 
+      ? getPendingForThread(state.pendingByThreadId, currentThreadId)
+      : getPendingForThread(state.pendingByThreadId, 'temp');
+    if (fromState) return fromState;
+    // フォールバック: sessionStorage から復元
+    try {
+      const saved = sessionStorage.getItem('__tomoniwao_scheduling_clarification');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.kind === 'pending.scheduling.clarification') {
+          // 有効期限チェック（作成から5分以内）
+          if (Date.now() - parsed.createdAt < 5 * 60 * 1000) {
+            return parsed as PendingState;
+          } else {
+            sessionStorage.removeItem('__tomoniwao_scheduling_clarification');
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  })();
 
   return {
     state,

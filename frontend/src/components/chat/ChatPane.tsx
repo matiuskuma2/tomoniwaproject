@@ -107,6 +107,15 @@ export function ChatPane({
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // Phase Next-4 Day2.5: 音声補正中フラグ
   // PR-D-FE-3: 名刺画像添付
   const [attachedImages, setAttachedImages] = useState<File[]>([]);
+  // PR-UX-12: pendingForThread を ref で常に最新値を保持
+  // React の re-render タイミングに依存せず、handleSendClick 内で確実に最新値を使う
+  const pendingForThreadRef = useRef(pendingForThread);
+  pendingForThreadRef.current = pendingForThread;
+
+  // PR-UX-12: globalPendingAction も同様に ref で保持
+  const globalPendingActionRef = useRef(globalPendingAction);
+  globalPendingActionRef.current = globalPendingAction;
+
   // PR-UX-3: Blob URL のトラッキング（メモリリーク防止）
   const blobUrlsRef = useRef<Map<File, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -300,25 +309,41 @@ export function ChatPane({
     setIsProcessing(true);
 
     try {
+      // PR-UX-12: ref から最新の pending を取得（stale closure 対策）
+      // React の re-render が間に合わない場合でも ref は常に最新
+      const latestPendingForThread = pendingForThreadRef.current;
+      const latestGlobalPendingAction = globalPendingActionRef.current;
+      
+      // PR-UX-12: pending の状態をデバッグログに出力
+      console.log('[ChatPane] pendingForThread (ref):', latestPendingForThread?.kind, 
+        latestPendingForThread ? JSON.stringify({
+          threadId: (latestPendingForThread as any).threadId,
+          missingField: (latestPendingForThread as any).missingField,
+          originalIntent: (latestPendingForThread as any).originalIntent,
+        }) : 'null');
+      
       // Classify intent
       // FE-7: preferredMode を context に渡して classifier override
       const intentResult = classifyIntent(message, {
         selectedThreadId: threadId || undefined,
-        // P0-1: 正規化された pending を渡す
-        pendingForThread,
-        globalPendingAction,
+        // P0-1: 正規化された pending を渡す（ref から最新値）
+        pendingForThread: latestPendingForThread,
+        globalPendingAction: latestGlobalPendingAction,
         // FE-7: Mode Chip からのモード選択
         preferredMode: selectedMode,
       });
       
-      console.log('[Intent] Classified:', intentResult.intent, 'params:', intentResult.params);
+      console.log('[Intent] Classified:', intentResult.intent, 
+        'confidence:', intentResult.confidence,
+        'needsClarification:', !!intentResult.needsClarification,
+        'params:', intentResult.params);
 
       // Execute intent
       console.log('[API] Executing intent:', intentResult.intent);
       const result = await executeIntent(intentResult, {
-        // P0-1: 正規化された pending を渡す
-        pendingForThread,
-        globalPendingAction,
+        // P0-1: 正規化された pending を渡す（ref から最新値）
+        pendingForThread: latestPendingForThread,
+        globalPendingAction: latestGlobalPendingAction,
         additionalProposeCount,
         remindCount,
       });
@@ -326,7 +351,7 @@ export function ChatPane({
 
       // BUG-1b: スケジューリング clarification が解消された場合、pending をクリア
       // (新しい clarification が発生した場合は handleExecutionResult で再設定される)
-      if (pendingForThread?.kind === 'pending.scheduling.clarification' && 
+      if (latestPendingForThread?.kind === 'pending.scheduling.clarification' && 
           result.data?.kind !== 'scheduling.clarification.needed') {
         // clarification が解消 → 明示的にクリアをエミット
         if (onExecutionResult) {
@@ -483,7 +508,8 @@ export function ChatPane({
   const hiddenCount = messages.length - displayMessages.length;
 
   // PR-UX-6: threadId ありで messages も status もない → skeleton 表示
-  const showSkeleton = !!threadId && messages.length === 0 && !status;
+  // PR-UX-12: initialLoading も条件に追加（キャッシュヒットなら skeleton 不要）
+  const showSkeleton = !!threadId && messages.length === 0 && !status && initialLoading;
 
   return (
     <div className="h-full flex flex-col bg-white">

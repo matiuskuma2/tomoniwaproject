@@ -299,6 +299,25 @@ type ChannelResolutionResult =
   | { status: 'error'; message: string };
 
 /**
+ * PR-UX-12: サーバーメッセージの敬称を補正するヘルパー
+ * サーバーは resolvedContact.display_name + "さん" を使うが、
+ * ユーザーが「大島くん」と言った場合は「大島くん」を維持する
+ */
+function correctHonorificInMessage(
+  message: string,
+  person?: { name?: string; suffix?: string }
+): string {
+  if (!person?.suffix || !person?.name || person.suffix === 'さん') {
+    return message;
+  }
+  // サーバーが「〇〇さん」を使っている場合、正しい suffix に差し替え
+  return message.replace(
+    new RegExp(`${person.name}さん`, 'g'),
+    `${person.name}${person.suffix}`
+  );
+}
+
+/**
  * person パラメータから連絡先を解決する
  * 
  * @param person - { name?, email? }
@@ -659,10 +678,13 @@ export async function executeOneOnOneFixed(
 
     log.debug('[OneOnOne] API response', { response });
 
+    // PR-UX-12: サーバーメッセージの敬称を補正
+    const chatMessage = correctHonorificInMessage(response.message_for_chat, params.person);
+
     // 成功レスポンス
     return {
       success: true,
-      message: response.message_for_chat,
+      message: chatMessage,
       data: {
         kind: '1on1.fixed.prepared',
         payload: {
@@ -873,7 +895,7 @@ export async function executeOneOnOneCandidates(
     // 成功レスポンス
     return {
       success: true,
-      message: response.message_for_chat,
+      message: correctHonorificInMessage(response.message_for_chat, params.person),
       data: {
         kind: '1on1.candidates.prepared',
         payload: {
@@ -1046,7 +1068,7 @@ export async function executeOneOnOneFreebusy(
     // 成功レスポンス
     return {
       success: true,
-      message: response.message_for_chat,
+      message: correctHonorificInMessage(response.message_for_chat, params.person),
       data: {
         kind: '1on1.freebusy.prepared',
         payload: {
@@ -1234,7 +1256,7 @@ export async function executeOneOnOneOpenSlots(
     // 成功レスポンス
     return {
       success: true,
-      message: response.message_for_chat,
+      message: correctHonorificInMessage(response.message_for_chat, params.person),
       data: {
         kind: '1on1.open_slots.prepared',
         payload: {
