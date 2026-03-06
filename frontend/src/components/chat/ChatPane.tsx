@@ -444,19 +444,10 @@ export function ChatPane({
     return msgs;
   };
 
-  // PR-UX-5: skeleton は「初回ロード + メッセージ0件 + status未取得」のみ
-  // refreshing 時は UI を維持（executor 内 refreshAfterWrite 経由で status 自動反映）
-  // hasLoadedOnce=true (useThreadStatus内部) のため、スレッド切り替え時は initialLoading=false
-  if (initialLoading && messages.length === 0 && !status) {
-    return (
-      <div className="h-full flex items-center justify-center bg-white">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-          <p className="text-sm text-gray-400">スレッドを読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
+  // PR-UX-6: early return spinner を廃止
+  // pane は常に箱を描画し、中身だけ skeleton / indicator にする
+  // UI の真実 = messages。messages があればそれを表示、なければ skeleton。
+  // 全画面スピナーで pane ごと消すのは禁止。
 
   // Phase P0-5: status が無くてもチャット入力は可能にする
 
@@ -467,16 +458,44 @@ export function ChatPane({
     : messages;
   const hiddenCount = messages.length - displayMessages.length;
 
+  // PR-UX-6: threadId ありで messages も status もない → skeleton 表示
+  const showSkeleton = !!threadId && messages.length === 0 && !status;
+
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Chat Messages Area */}
       <div data-testid="chat-messages" className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* PR-UX-5: バックグラウンド同期中の小型インジケーター（目立たない位置に固定） */}
+        {/* PR-UX-6: バックグラウンド同期中の極小インジケーター */}
         {refreshing && messages.length > 0 && (
-          <div className="sticky top-0 z-10 flex items-center justify-center py-1 bg-white/80 backdrop-blur-sm">
+          <div className="sticky top-0 z-10 flex items-center justify-center py-0.5">
             <div className="flex items-center space-x-1 text-[10px] text-gray-300">
               <div className="animate-spin rounded-full h-2 w-2 border-b border-gray-300"></div>
               <span>同期中</span>
+            </div>
+          </div>
+        )}
+        {/* PR-UX-6: Skeleton UI — pane 自体は描画済み、中身だけ skeleton */}
+        {showSkeleton && (
+          <div className="space-y-4 animate-pulse">
+            {/* Skeleton message bubbles */}
+            <div className="flex items-start">
+              <div className="w-8 h-8 rounded-full bg-gray-200"></div>
+              <div className="ml-3 flex-1 space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            </div>
+            <div className="flex items-start">
+              <div className="w-8 h-8 rounded-full bg-gray-200"></div>
+              <div className="ml-3 flex-1 space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              </div>
+            </div>
+            <div className="flex items-start justify-end">
+              <div className="mr-3 space-y-2">
+                <div className="h-4 bg-blue-100 rounded w-48"></div>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-gray-200"></div>
             </div>
           </div>
         )}
@@ -486,7 +505,7 @@ export function ChatPane({
             {hiddenCount}件の古いメッセージは省略されています
           </div>
         )}
-        {displayMessages.length === 0 && !threadId ? (
+        {displayMessages.length === 0 && !threadId && !showSkeleton ? (
           /* Phase P0-5: スレッド未選択時のプレースホルダー */
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-gray-500 max-w-md">
