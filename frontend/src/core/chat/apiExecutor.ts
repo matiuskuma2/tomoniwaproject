@@ -568,6 +568,24 @@ export async function executeIntent(
 ): Promise<ExecutionResult> {
   // If intent needs clarification, return immediately
   if (intentResult.needsClarification) {
+    // BUG-1b: スケジューリング系のclarificationの場合、pending.scheduling.clarification を設定
+    // これにより次の入力で日時を補完して再分類できる
+    const isSchedulingIntent = intentResult.intent.startsWith('schedule.1on1.');
+    if (isSchedulingIntent) {
+      return {
+        success: true, // clarification は成功扱い（エラーではなく質問）
+        message: intentResult.needsClarification.message,
+        needsClarification: intentResult.needsClarification,
+        data: {
+          kind: 'scheduling.clarification.needed' as any,
+          payload: {
+            originalIntent: intentResult.intent,
+            originalParams: intentResult.params,
+            missingField: intentResult.needsClarification.field,
+          },
+        },
+      };
+    }
     return {
       success: false,
       message: intentResult.needsClarification.message,

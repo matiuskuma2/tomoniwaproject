@@ -853,6 +853,31 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
         dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: currentThreadId } });
       }
     }
+    
+    // BUG-1b: スケジューリング途中のclarification → pending.scheduling.clarification を設定
+    else if (kind === 'scheduling.clarification.needed') {
+      const threadId = currentThreadId || 'temp';
+      dispatch({
+        type: 'SET_PENDING_FOR_THREAD',
+        payload: {
+          threadId,
+          pending: {
+            kind: 'pending.scheduling.clarification',
+            threadId,
+            createdAt: Date.now(),
+            originalIntent: payload.originalIntent,
+            originalParams: payload.originalParams,
+            missingField: payload.missingField,
+            originalInput: payload.originalParams?.rawInput || '',
+          },
+        },
+      });
+    }
+    // BUG-1b: スケジューリング clarification の解消（成功した場合）
+    else if (kind === 'scheduling.clarification.resolved') {
+      const threadId = currentThreadId || 'temp';
+      dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
+    }
   }, [currentThreadId, navigate]);
 
   // P0-1: pendingForThread ヘルパー

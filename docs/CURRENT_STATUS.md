@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-7 — ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張
-> **前回コミット**: PR-UX-6 — skeleton 常設型 UI（early return spinner 全廃）
+> **最新コミット**: PR-UX-8 — スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up
+> **前回コミット**: PR-UX-7 — ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張
 
 ---
 
@@ -51,6 +51,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-5** | スレッド切替スピナー根絶 — hasLoadedOnce ガード + refreshing 安全タイムアウト + ChatPane/CardsPane 条件強化 | 086376d |
 | **PR-UX-6** | skeleton 常設型 UI — early return spinner 全廃、hasLoadedOnceRef 削除（pure data fetch）、pane は常に描画し中身だけ skeleton | PR-UX-6 |
 | **PR-UX-7** | ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張（「調整したい」「調整して」系を追加、oneOnOne/oneToMany 両方） | PR-UX-7 |
+| **PR-UX-8** | スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up（BUG-1b: pending.scheduling.clarification, person.suffix） | PR-UX-8 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
@@ -148,7 +149,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 
 | カテゴリ | テストファイル数 | テスト数 | 状況 |
 |----------|-----------------|----------|------|
-| **Unit Tests (vitest)** | 21 | 433 | ✅ All Pass |
+| **Unit Tests (vitest)** | 22 | 458 | ✅ All Pass |
 | **TypeScript** | - | - | ✅ No Errors |
 
 ### テスト内訳
@@ -165,7 +166,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | `resolveContact.test.ts` | 19 | 連絡先解決テスト |
 | `oneToMany.test.ts (classifier)` | 15 | FE-6 classifier テスト |
 | `executorRefresh.test.ts` | 15 | executor リフレッシュテスト |
-| `oneOnOne.regression.test.ts` | 13 | 1対1回帰テスト |
+| `oneOnOne.regression.test.ts` | 26 | 1対1回帰テスト + BUG-1b (suffix/clarification) |
 | `batch.test.ts` | 12 | P2-B1 バッチテスト |
 | `contact-import-fe1.test.ts` | 11 | 連絡先取込FEテスト |
 | `remind.test.ts` | 11 | リマインドテスト |
@@ -324,11 +325,11 @@ tomoniwaproject/
 
 ## 次のステップ
 
-1. **FE-7 Mode Chip UI**: チャット入力上部のモード選択チップ（PRD確定、~8h）
-2. **TD-10/TD-11 リファクタ**: apiExecutor.ts 分割 + ExecutionResultData 重複解消
-3. **E2E テスト基盤**: Playwright 導入、フルフロー統合テスト
-4. **Phase 3 FreeBusy交差**: ホスト+ゲスト双方のカレンダー空き時間を交差
-5. **Slack/Chatwork 自動チャンネル**: send_via のプリコンフィグ拡張
+1. **BUG-3**: Google Calendar権限エラー時の会話内自然なガイダンス提供
+2. **BUG-2**: スケジュール開始時にスレッドが作成されない問題
+3. **モバイルUI**: メッセージ後の大きな空白エリア（スクロール/高さ管理）修正
+4. **TD-10/TD-11 リファクタ**: apiExecutor.ts 分割 + ExecutionResultData 重複解消
+5. **E2E テスト基盤**: Playwright 導入、フルフロー統合テスト
 
 ---
 

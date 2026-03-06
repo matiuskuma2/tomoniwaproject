@@ -324,6 +324,23 @@ export function ChatPane({
       });
       console.log('[API] Result:', result.success, result.message);
 
+      // BUG-1b: スケジューリング clarification が解消された場合、pending をクリア
+      // (新しい clarification が発生した場合は handleExecutionResult で再設定される)
+      if (pendingForThread?.kind === 'pending.scheduling.clarification' && 
+          result.data?.kind !== 'scheduling.clarification.needed') {
+        // clarification が解消 → 明示的にクリアをエミット
+        if (onExecutionResult) {
+          onExecutionResult({
+            success: true,
+            message: '',
+            data: {
+              kind: 'scheduling.clarification.resolved' as any,
+              payload: {},
+            },
+          });
+        }
+      }
+
       // Add assistant response
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,

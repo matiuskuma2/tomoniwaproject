@@ -266,8 +266,9 @@ function getThisWeekday(targetDay: number): Date {
 
 /**
  * 相手の名前またはメールを抽出
+ * BUG-1b: suffix (くん/さん/氏/様) も保存して敬称の一貫性を維持
  */
-function extractPerson(input: string): { name?: string; email?: string } | null {
+function extractPerson(input: string): { name?: string; email?: string; suffix?: string } | null {
   // メールアドレスを探す
   const emailMatch = input.match(EMAIL_PATTERN);
   if (emailMatch) {
@@ -275,10 +276,27 @@ function extractPerson(input: string): { name?: string; email?: string } | null 
   }
 
   // 名前パターンを探す
+  // BUG-1b: suffix を抽出して保存
+  const SUFFIX_PATTERNS: Array<{ pattern: RegExp; suffix: string }> = [
+    { pattern: /(.+?)くん[とに]/, suffix: 'くん' },
+    { pattern: /(.+?)さん[とに]/, suffix: 'さん' },
+    { pattern: /(.+?)氏[とに]/, suffix: '氏' },
+    { pattern: /(.+?)様[とに]/, suffix: '様' },
+    { pattern: /(.+?)と(?:の|打ち合わせ|予定|ミーティング|会議|面談|相談)/, suffix: '' },
+  ];
+
+  for (const { pattern, suffix } of SUFFIX_PATTERNS) {
+    const match = input.match(pattern);
+    if (match && match[1]) {
+      return { name: match[1].trim(), suffix: suffix || 'さん' };
+    }
+  }
+
+  // フォールバック: 元の PERSON_PATTERNS で試行
   for (const pattern of PERSON_PATTERNS) {
     const match = input.match(pattern);
     if (match && match[1]) {
-      return { name: match[1].trim() };
+      return { name: match[1].trim(), suffix: 'さん' };
     }
   }
 
@@ -508,6 +526,17 @@ function extractMultipleSlots(input: string, durationMinutes: number): Array<{st
 // ============================================================
 
 /**
+ * BUG-1b: person の表示名を suffix 付きで返す
+ * 例: { name: '大島', suffix: 'くん' } → '大島くん'
+ */
+function personDisplayName(person: { name?: string; email?: string; suffix?: string }): string {
+  if (person.name) {
+    return `${person.name}${person.suffix || 'さん'}`;
+  }
+  return person.email || '相手';
+}
+
+/**
  * FE-7: preferredMode に基づいて強制的に intent を返す
  * 
  * - person / trigger word は確認済みの前提で呼び出す
@@ -555,8 +584,8 @@ function buildForcedModeResult(
         needsClarification: {
           field: date ? 'time' : 'date',
           message: date
-            ? `${person.name || person.email}さんとの予定、何時からがいいですか？（例: 17時から）`
-            : `${person.name || person.email}さんとの予定、いつがいいですか？（例: 来週木曜17時から）`,
+            ? `${personDisplayName(person)}との予定、何時からがいいですか？（例: 17時から）`
+            : `${personDisplayName(person)}との予定、いつがいいですか？（例: 来週木曜17時から）`,
         },
       };
     }
@@ -580,7 +609,7 @@ function buildForcedModeResult(
         params: baseParams,
         needsClarification: {
           field: 'slots',
-          message: `${person.name || person.email}さんとの予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
+          message: `${personDisplayName(person)}との予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
         },
       };
     }
@@ -673,6 +702,154 @@ export const classifyOneOnOne: ClassifierFn = (
   _context?: IntentContext,
   activePending?: PendingState | null
 ): IntentResult | null => {
+  // ============================================================
+  // BUG-1b: pending.scheduling.clarification がある場合
+  // 前回の分類で person/intent は確定済み → 今回の入力から日時を補完して再分類
+  // 例: 前回 "大島くんと調整したい" → date不足 → 今回 "来週木曜17時から"
+  // ============================================================
+  if (activePending?.kind === 'pending.scheduling.clarification') {
+    const p = activePending as PendingState & { kind: 'pending.scheduling.clarification' };
+    const person = p.originalParams.person as { name?: string; email?: string; suffix?: string };
+    const durationMinutes = (p.originalParams.duration_minutes as number) || 60;
+    const title = (p.originalParams.title as string) || '打ち合わせ';
+    
+    // 日付・時刻を今回の入力から抽出
+    const date = extractDate(input);
+    const time = extractTime(input);
+    const newDuration = extractDuration(input);
+    const effectiveDuration = newDuration !== 60 ? newDuration : durationMinutes;
+    
+    // intent に応じて分岐
+    if (p.originalIntent === 'schedule.1on1.candidates3' || p.missingField === 'slots') {
+      // 複数候補スロットを抽出
+      const slots = extractMultipleSlots(input, effectiveDuration);
+      if (slots && slots.length >= 2) {
+        return {
+          intent: 'schedule.1on1.candidates3',
+          confidence: 0.9,
+          params: {
+            person,
+            slots: slots.slice(0, 5),
+            duration_minutes: effectiveDuration,
+            title,
+            rawInput: `${p.originalInput} → ${input}`,
+          },
+        };
+      }
+      // 単一日時でもfixed として受け入れる
+      if (date && time) {
+        const startAt = new Date(date);
+        startAt.setHours(time.hours, time.minutes, 0, 0);
+        const endAt = new Date(startAt.getTime() + effectiveDuration * 60 * 1000);
+        return {
+          intent: 'schedule.1on1.fixed',
+          confidence: 0.85,
+          params: {
+            person,
+            start_at: startAt.toISOString(),
+            end_at: endAt.toISOString(),
+            duration_minutes: effectiveDuration,
+            title,
+            rawInput: `${p.originalInput} → ${input}`,
+          },
+        };
+      }
+      // まだ不足 → 再度 clarification
+      return {
+        intent: 'schedule.1on1.candidates3',
+        confidence: 0.7,
+        params: { person, title, rawInput: input },
+        needsClarification: {
+          field: 'slots',
+          message: `${personDisplayName(person)}との予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
+        },
+      };
+    }
+
+    // fixed intent: date or time が不足
+    if (p.missingField === 'date') {
+      if (date && time) {
+        const startAt = new Date(date);
+        startAt.setHours(time.hours, time.minutes, 0, 0);
+        const endAt = new Date(startAt.getTime() + effectiveDuration * 60 * 1000);
+        return {
+          intent: 'schedule.1on1.fixed',
+          confidence: 0.9,
+          params: {
+            person,
+            start_at: startAt.toISOString(),
+            end_at: endAt.toISOString(),
+            duration_minutes: effectiveDuration,
+            title,
+            rawInput: `${p.originalInput} → ${input}`,
+          },
+        };
+      }
+      if (date && !time) {
+        // 日付はあるが時刻がない
+        return {
+          intent: 'schedule.1on1.fixed',
+          confidence: 0.7,
+          params: { person, date: date.toISOString(), rawInput: input },
+          needsClarification: {
+            field: 'time',
+            message: `${personDisplayName(person)}との予定、何時からがいいですか？（例: 17時から）`,
+          },
+        };
+      }
+      // 日付すら取れなかった → 再度 clarification
+      return {
+        intent: 'schedule.1on1.fixed',
+        confidence: 0.7,
+        params: { person, rawInput: input },
+        needsClarification: {
+          field: 'date',
+          message: `${personDisplayName(person)}との予定、いつがいいですか？（例: 来週木曜17時から）`,
+        },
+      };
+    }
+
+    if (p.missingField === 'time') {
+      if (time) {
+        // 前回の date + 今回の time で組み立て
+        const prevDate = p.originalParams.date ? new Date(p.originalParams.date as string) : extractDate(input);
+        if (prevDate) {
+          const startAt = new Date(prevDate);
+          startAt.setHours(time.hours, time.minutes, 0, 0);
+          const endAt = new Date(startAt.getTime() + effectiveDuration * 60 * 1000);
+          return {
+            intent: 'schedule.1on1.fixed',
+            confidence: 0.9,
+            params: {
+              person,
+              start_at: startAt.toISOString(),
+              end_at: endAt.toISOString(),
+              duration_minutes: effectiveDuration,
+              title,
+              rawInput: `${p.originalInput} → ${input}`,
+            },
+          };
+        }
+      }
+      // 時刻が取れない → 再度 clarification
+      return {
+        intent: 'schedule.1on1.fixed',
+        confidence: 0.7,
+        params: { person, rawInput: input },
+        needsClarification: {
+          field: 'time',
+          message: `${personDisplayName(person)}との予定、何時からがいいですか？（例: 17時から）`,
+        },
+      };
+    }
+    
+    // フォールバック: 元の入力と合成して再分類を試みる
+    // （ここに来ることは通常ないが安全弁として）
+    const combinedInput = `${p.originalInput}、${input}`;
+    // activePending を null にして再帰的に分類
+    return classifyOneOnOne(combinedInput, combinedInput.toLowerCase().trim(), _context, null);
+  }
+
   // pending がある場合はスキップ（既存フローを優先）
   if (activePending) {
     return null;
@@ -832,7 +1009,7 @@ export const classifyOneOnOne: ClassifierFn = (
       },
       needsClarification: {
         field: 'slots',
-        message: `${person.name || person.email}さんとの予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
+        message: `${personDisplayName(person)}との予定、候補日時を教えてください。（例: 来週月曜10時か火曜14時か水曜16時）`,
       },
     };
   }
@@ -854,7 +1031,7 @@ export const classifyOneOnOne: ClassifierFn = (
       },
       needsClarification: {
         field: 'date',
-        message: `${person.name || person.email}さんとの予定、いつがいいですか？（例: 来週木曜17時から）`,
+        message: `${personDisplayName(person)}との予定、いつがいいですか？（例: 来週木曜17時から）`,
       },
     };
   }
@@ -873,7 +1050,7 @@ export const classifyOneOnOne: ClassifierFn = (
       },
       needsClarification: {
         field: 'time',
-        message: `${person.name || person.email}さんとの予定、何時からがいいですか？（例: 17時から）`,
+        message: `${personDisplayName(person)}との予定、何時からがいいですか？（例: 17時から）`,
       },
     };
   }

@@ -28,7 +28,8 @@ export type PendingKind =
   | 'split.propose'            // Phase Next-6 Day2: 票割れ追加提案
   | 'auto_propose'             // Phase Next-5 Day2: 自動候補提案
   | 'reschedule.pending'       // P2-D3: 確定後やり直し（再調整）
-  | 'ai.confirm';              // CONV-1.2: AI秘書による確認待ち
+  | 'ai.confirm'               // CONV-1.2: AI秘書による確認待ち
+  | 'pending.scheduling.clarification'; // BUG-1b: スケジューリング途中の追加情報待ち
 
 // ============================================================
 // Base Interface (全 PendingState 共通)
@@ -128,6 +129,16 @@ export type PendingState =
       params: Record<string, unknown>;  // intentに渡すparams
       sideEffect: 'none' | 'read' | 'write_local' | 'write_external';
       confirmationPrompt: string;       // 確認メッセージ
+    })
+
+  // BUG-1b: スケジューリング途中の追加情報待ち
+  // 「大島くんと調整したい」→ 日付を聞く → ユーザーが「来週木曜17時から」と返す → 元のintent+personを復元して実行
+  | (PendingBase & {
+      kind: 'pending.scheduling.clarification';
+      originalIntent: string;           // 元のintent (schedule.1on1.fixed 等)
+      originalParams: Record<string, unknown>;  // classifier が抽出済みの params (person, title, duration_minutes 等)
+      missingField: string;             // 不足フィールド ('date', 'time', 'slots')
+      originalInput: string;            // 元のユーザー入力 (「大島くんと調整したい」)
     })
 
   // G2-A: Pool作成確認待ち
@@ -358,6 +369,11 @@ export function isPendingPostImportNextStep(pending: PendingState | null): pendi
   return pending?.kind === 'pending.post_import.next_step';
 }
 
+// BUG-1b: スケジューリング途中の追加情報待ち
+export function isPendingSchedulingClarification(pending: PendingState | null): pending is PendingState & { kind: 'pending.scheduling.clarification' } {
+  return pending?.kind === 'pending.scheduling.clarification';
+}
+
 /**
  * pending が確認待ち（はい/いいえ対象）かどうか
  */
@@ -380,6 +396,7 @@ export function hasPendingConfirmation(pending: PendingState | null): boolean {
     'auto_propose',
     'reschedule.pending',
     'ai.confirm',  // CONV-1.2
+    'pending.scheduling.clarification',  // BUG-1b
   ].includes(pending.kind);
 }
 
@@ -433,6 +450,8 @@ export function getPendingPlaceholder(pending: PendingState | null): string | nu
       return '「はい」/「キャンセル」';
     case 'ai.confirm':
       return '「はい」/「いいえ」';
+    case 'pending.scheduling.clarification':
+      return '日時を入力（例: 来週木曜17時から）';
     default:
       return null;
   }
@@ -492,6 +511,12 @@ export function getPendingHintBanner(pending: PendingState | null): string | nul
       return `⚠️ 再調整確認: 「はい」「キャンセル」`;
     case 'ai.confirm':
       return `🤖 AI確認: 「はい」「いいえ」`;
+    case 'pending.scheduling.clarification': {
+      const p = pending as PendingState & { kind: 'pending.scheduling.clarification' };
+      const personName = (p.originalParams.person as { name?: string })?.name || '';
+      const suffix = (p.originalParams.person as { suffix?: string })?.suffix || 'さん';
+      return `📅 ${personName}${suffix}との予定調整中 — ${p.missingField === 'date' ? '日時' : p.missingField === 'time' ? '時刻' : '候補日時'}を入力してください`;
+    }
     default:
       return null;
   }
@@ -527,6 +552,8 @@ export function getPendingSendButtonLabel(pending: PendingState | null): string 
     case 'reschedule.pending':
     case 'ai.confirm':
       return '確定';
+    case 'pending.scheduling.clarification':
+      return '送信';
     default:
       return null;
   }
@@ -569,6 +596,8 @@ export function describePending(pending: PendingState | null): string {
       return `次手選択待ち (intent=${pending.intent}, ${pending.importSummary.created_count}件取り込み済)`;
     case 'pending.person.select':
       return `人物選択待ち (「${pending.input_name || pending.input_email}」${pending.options.length}件)`;
+    case 'pending.scheduling.clarification':
+      return `日程調整情報待ち (${pending.missingField}不足, intent=${pending.originalIntent})`;
     default:
       return `不明な状態`;
   }
