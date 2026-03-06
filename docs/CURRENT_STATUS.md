@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-12 — 会話フロー修正・敬称保持・スピナー改善
-> **前回コミット**: PR-UX-11 — nlRouter内部エラーメッセージのユーザー漏洩を防止
+> **最新コミット**: PR-UX-13 — 右ペイン同期改善・temp pending クリア
+> **前回コミット**: PR-UX-12 — 会話フロー修正・敬称保持・スピナー改善
 
 ---
 
@@ -55,6 +55,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-9** | BUG-1/1b/3 会話オーケストレーション完全修正 — executor validation を clarification 形式に変更、Google Calendar権限不足時の会話型ガイダンス + 再開案内、敬称一貫性の全executor対応 | PR-UX-9 |
 | **PR-UX-10** | pending context復元・スレッド作成・classifier guard 完全修正 — (1) pendingForThread が temp キーを読まない根本バグ修正、(2) 1on1.*.prepared でスレッドnavigation対応、(3) calendar/preference に scheduling clarification ガード追加 | PR-UX-10 |
 | **PR-UX-11** | nlRouter内部エラーメッセージのユーザー漏洩防止 — LLM が英語で返す「Please provide the thread ID」等の内部メッセージを日本語ガイダンスに変換する sanitizeNlClarificationMessage() を追加、needs_clarification を success:true（質問）として返すよう修正 | PR-UX-11 |
+| **PR-UX-12** | 会話フロー修正・敬称保持・スピナー改善 — pendingForThread ref化、sessionStorage fallback、correctHonorificInMessage、showSkeleton条件強化 | PR-UX-12 |
+| **PR-UX-13** | 右ペイン同期改善 — navigate前にprefetchThreadStatus呼出し、1on1 prepared系でtemp pendingクリア、CardsPane skeleton期間短縮 | PR-UX-13 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中
