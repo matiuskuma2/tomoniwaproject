@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-8 — スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up
-> **前回コミット**: PR-UX-7 — ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張
+> **最新コミット**: PR-UX-9 — BUG-1/1b/3 会話オーケストレーション修正 + Google Calendar権限ガイダンス
+> **前回コミット**: PR-UX-8 — スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up
 
 ---
 
@@ -52,6 +52,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-6** | skeleton 常設型 UI — early return spinner 全廃、hasLoadedOnceRef 削除（pure data fetch）、pane は常に描画し中身だけ skeleton | PR-UX-6 |
 | **PR-UX-7** | ThreadsList skeleton 常設型 + BUG-1 TRIGGER_WORDS 拡張（「調整したい」「調整して」系を追加、oneOnOne/oneToMany 両方） | PR-UX-7 |
 | **PR-UX-8** | スケジューリング会話コンテキスト保持 + 敬称一貫性 + clarification follow-up（BUG-1b: pending.scheduling.clarification, person.suffix） | PR-UX-8 |
+| **PR-UX-9** | BUG-1/1b/3 会話オーケストレーション完全修正 — executor validation を clarification 形式に変更、Google Calendar権限不足時の会話型ガイダンス + 再開案内、敬称一貫性の全executor対応 | PR-UX-9 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中

@@ -35,14 +35,19 @@ function formatDateTimeRange(start: string, end: string): string {
 }
 
 /**
- * Get warning message for calendar API
+ * BUG-3: Get warning message for calendar API
+ * 会話型ガイダンス: 権限不足時に設定手順と再開方法を案内
  */
-function getWarningMessage(warning: string): string {
+function getWarningMessage(warning: string, context?: { resumeHint?: string }): string {
+  const resumeText = context?.resumeHint
+    ? `\n\n権限を付与したら、もう一度同じ操作を入力してください。\n例: 「${context.resumeHint}」`
+    : '\n\n権限を付与したら、もう一度同じ操作を入力してください。';
+
   switch (warning) {
     case 'google_calendar_permission_missing':
-      return '⚠️ Google カレンダーへのアクセス権限がありません。設定画面から権限を付与してください。';
+      return `Google カレンダーへのアクセス権限が必要です。\n\n📋 設定手順:\n1. 画面右上の設定アイコン（⚙️）をタップ\n2.「Google カレンダー連携」を選択\n3. アクセスを許可${resumeText}`;
     case 'google_account_not_linked':
-      return '⚠️ Google アカウントが連携されていません。設定画面から連携してください。';
+      return `Google アカウントの連携が必要です。\n\n📋 設定手順:\n1. 画面右上の設定アイコン（⚙️）をタップ\n2.「Google アカウント連携」を選択\n3. ログインして連携を完了${resumeText}`;
     default:
       return `⚠️ ${warning}`;
   }
@@ -59,7 +64,7 @@ export async function executeToday(): Promise<ExecutionResult> {
     if (response.warning) {
       return {
         success: true,
-        message: getWarningMessage(response.warning),
+        message: getWarningMessage(response.warning, { resumeHint: '今日の予定' }),
         data: {
           kind: 'calendar.today',
           payload: response,
@@ -117,7 +122,7 @@ export async function executeWeek(): Promise<ExecutionResult> {
     if (response.warning) {
       return {
         success: true,
-        message: getWarningMessage(response.warning),
+        message: getWarningMessage(response.warning, { resumeHint: '今週の予定' }),
         data: {
           kind: 'calendar.week',
           payload: response,
@@ -275,7 +280,7 @@ export async function executeFreeBusy(intentResult: IntentResult): Promise<Execu
     if (response.warning) {
       return {
         success: true,
-        message: getWarningMessage(response.warning),
+        message: getWarningMessage(response.warning, { resumeHint: '来週の空き' }),
         data: {
           kind: 'calendar.freebusy',
           payload: response,
@@ -375,7 +380,7 @@ export async function executeFreeBusyBatch(intentResult: IntentResult): Promise<
     if (response.warning === 'google_calendar_not_linked_all') {
       return {
         success: true,
-        message: '⚠️ Google カレンダーが連携されているユーザーがいません。設定画面から連携してください。',
+        message: 'Google カレンダーが連携されているユーザーがいません。\n\n📋 設定手順:\n1. 画面右上の設定アイコン（⚙️）をタップ\n2.「Google カレンダー連携」を選択\n3. アクセスを許可\n\n連携が完了したら、もう一度同じ操作を入力してください。',
         data: {
           kind: 'calendar.freebusy.batch',
           payload: response,

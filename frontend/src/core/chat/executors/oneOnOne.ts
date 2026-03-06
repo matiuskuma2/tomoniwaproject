@@ -543,18 +543,37 @@ export async function executeOneOnOneFixed(
     };
   }
 
-  // 必須パラメータのバリデーション
+  // BUG-1: 必須パラメータ不足時は clarification 形式で返す（エラーではなく会話として）
   if (!params.person) {
     return {
-      success: false,
+      success: true,
       message: '相手の名前かメールアドレスを教えてください。',
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: 'person',
+        },
+      },
     };
   }
 
   if (!params.start_at || !params.end_at) {
+    const personDisplay = params.person?.suffix
+      ? `${params.person.name}${params.person.suffix}`
+      : params.person?.name ? `${params.person.name}さん` : '相手';
     return {
-      success: false,
-      message: '日時を教えてください。（例: 来週木曜17時から1時間）',
+      success: true,
+      message: `${personDisplay}との予定、いつがいいですか？（例: 来週木曜17時から1時間）`,
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: !params.start_at ? 'date' : 'time',
+        },
+      },
     };
   }
 
@@ -741,18 +760,37 @@ export async function executeOneOnOneCandidates(
     };
   }
 
-  // 必須パラメータのバリデーション
+  // BUG-1: 必須パラメータ不足時は clarification 形式で返す
   if (!params.person) {
     return {
-      success: false,
+      success: true,
       message: '相手の名前かメールアドレスを教えてください。',
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: 'person',
+        },
+      },
     };
   }
 
   if (!params.slots || params.slots.length === 0) {
+    const personDisplay = params.person?.suffix
+      ? `${params.person.name}${params.person.suffix}`
+      : params.person?.name ? `${params.person.name}さん` : '相手';
     return {
-      success: false,
-      message: '候補日時を教えてください。（例: 来週月曜10時、火曜14時、水曜16時）',
+      success: true,
+      message: `${personDisplay}との予定、候補日時を教えてください。（例: 来週月曜10時、火曜14時、水曜16時）`,
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: 'slots',
+        },
+      },
     };
   }
 
@@ -912,11 +950,19 @@ export async function executeOneOnOneFreebusy(
     };
   }
 
-  // 必須パラメータのバリデーション
+  // BUG-1: 必須パラメータ不足時は clarification 形式で返す
   if (!params.person) {
     return {
-      success: false,
+      success: true,
       message: '相手の名前かメールアドレスを教えてください。',
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: 'person',
+        },
+      },
     };
   }
 
@@ -1029,9 +1075,16 @@ export async function executeOneOnOneFreebusy(
     }
 
     if (errorMessage.includes('calendar_unavailable')) {
+      // BUG-3: 会話型ガイダンス — 権限付与手順と再開方法を案内
+      const personName = intentResult.params?.person?.name || '';
+      const personSuffix = intentResult.params?.person?.suffix || 'さん';
+      const personDisplay = personName ? `${personName}${personSuffix}` : '';
+      const resumeHint = personDisplay
+        ? `${personDisplay}と空き時間から調整して`
+        : 'もう一度お願い';
       return {
-        success: false,
-        message: 'カレンダーに接続できませんでした。\nGoogle カレンダー連携を確認してください。',
+        success: true,
+        message: `Google カレンダーへのアクセスが必要です。\n\n📋 設定手順:\n1. 画面右上の設定アイコン（⚙️）をタップ\n2.「Google カレンダー連携」を選択\n3. アクセスを許可\n\n権限を付与したら「${resumeHint}」と入力すれば続きから再開できます。`,
       };
     }
 
@@ -1085,11 +1138,19 @@ export async function executeOneOnOneOpenSlots(
     };
   }
 
-  // 必須パラメータのバリデーション
+  // BUG-1: 必須パラメータ不足時は clarification 形式で返す
   if (!params.person) {
     return {
-      success: false,
+      success: true,
       message: '相手の名前かメールアドレスを教えてください。',
+      data: {
+        kind: 'scheduling.clarification.needed' as any,
+        payload: {
+          originalIntent: intentResult.intent,
+          originalParams: params,
+          missingField: 'person',
+        },
+      },
     };
   }
 
@@ -1204,9 +1265,16 @@ export async function executeOneOnOneOpenSlots(
     }
 
     if (errorMessage.includes('calendar_unavailable')) {
+      // BUG-3: 会話型ガイダンス — 権限付与手順と再開方法を案内
+      const personName = intentResult.params?.person?.name || '';
+      const personSuffix = intentResult.params?.person?.suffix || 'さん';
+      const personDisplay = personName ? `${personName}${personSuffix}` : '';
+      const resumeHint = personDisplay
+        ? `${personDisplay}に空き時間を共有して`
+        : 'もう一度お願い';
       return {
-        success: false,
-        message: 'カレンダーに接続できませんでした。\nGoogle カレンダー連携を確認してください。',
+        success: true,
+        message: `Google カレンダーへのアクセスが必要です。\n\n📋 設定手順:\n1. 画面右上の設定アイコン（⚙️）をタップ\n2.「Google カレンダー連携」を選択\n3. アクセスを許可\n\n権限を付与したら「${resumeHint}」と入力すれば続きから再開できます。`,
       };
     }
 
