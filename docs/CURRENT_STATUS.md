@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-15 — clarificationId 導入・temp→thread migration event・ロギング強化
-> **前回コミット**: PR-UX-14 — 会話オーケストレーション仕様固定・E2Eテスト・構造化ロギング
+> **最新コミット**: PR-INV-FIX — 招待リンク到達保証（Worker Routes 宣言 + _routes.json 拡張）
+> **前回コミット**: PR-UX-16 — スレッド切替時スピナーバグ修正（hasHydratedOnce + previous snapshot）
 
 ---
 
@@ -53,6 +53,22 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 - 将来的に `draftThreadId` に統一（設計済み、実装は後回し）
 - temp メッセージの自動クリーンアップは STATE_RESPONSIBILITY.md §6.1 で計画済み
 
+### リスク4: 招待リンク（/i/*, /g/*, /open/*, /ra/*）がWorkerに到達しない
+
+**影響**: メールの招待リンクをクリックしても招待ページが表示されず、SPAの /chat にリダイレクトされる。
+
+**対策状況**:
+
+| # | 対策 | 状態 | 実装 |
+|---|------|------|------|
+| 1 | `wrangler.jsonc` に `routes[]` 追加（`wrangler deploy` で自動登録） | ✅ PR-INV-FIX | `wrangler.jsonc` |
+| 2 | `_routes.json` に `/g/*`, `/open/*`, `/ra/*`, `/test/*` 追加 | ✅ PR-INV-FIX | `frontend/public/_routes.json` |
+| 3 | `getAppBaseUrl()` ヘルパー（env.PUBLIC_URL 対応） | ✅ PR-INV-FIX | `emailModel.ts` |
+| 4 | **要デプロイ**: `npx wrangler deploy` で Worker Routes が Cloudflare に登録される | ⚠️ 未実行 | ダッシュボード確認 |
+| 5 | ダッシュボードで Worker Routes 登録状況を確認 | ⚠️ 未確認 | Cloudflare Dashboard |
+
+**⚠️ 重要**: コード修正だけでは不十分。`npx wrangler deploy` を実行して Worker Routes を Cloudflare に登録する必要がある。
+
 ---
 
 ## 現在のフェーズ: システム安定化
@@ -71,6 +87,8 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | clarificationId 導入 | 会話継続を threadId 以外のトークンでも追跡可能に | PR-UX-15 |
 | thread migration event | temp → 正式 thread 移行を明示的イベントとして記録 | PR-UX-15 |
 | ロギング強化 | clarificationId, pendingKind, selectedThreadId, source 追加 | PR-UX-15 |
+| スレッド切替スピナー修正 | hasHydratedOnce + previous snapshot で全カラムローディング解消 | PR-UX-16 |
+| 招待リンク到達保証 | wrangler.jsonc routes[] 追加 + _routes.json 拡張 + getAppBaseUrl() | PR-INV-FIX |
 
 ### 次に着手すべき安定化作業（優先順）
 
