@@ -14,6 +14,14 @@ import { executeIntent, type ExecutionResult } from '../../core/chat/apiExecutor
 import { extractErrorMessage } from '../../core/api/client';
 // PR-UX-13: navigate 前に prefetch して CardsPane 同期を高速化
 import { prefetchThreadStatus } from '../../core/cache';
+// PR-UX-14: 構造化ロギング
+import {
+  logClassifyResult,
+  logExecutionResult,
+  logThreadCreated,
+  logNavigate,
+  logOrchestrationTrace,
+} from '../../core/chat/orchestrationLogger';
 import { VoiceRecognitionButton } from './VoiceRecognitionButton';
 import { ModeChip } from './ModeChip';
 import type { SchedulingMode } from '../../core/chat/classifier/types';
@@ -335,6 +343,9 @@ export function ChatPane({
         preferredMode: selectedMode,
       });
       
+      // PR-UX-14: 構造化ロギング — classify result
+      logClassifyResult(message, intentResult.intent, intentResult.confidence, intentResult.params);
+      
       console.log('[Intent] Classified:', intentResult.intent, 
         'confidence:', intentResult.confidence,
         'needsClarification:', !!intentResult.needsClarification,
@@ -350,6 +361,13 @@ export function ChatPane({
         remindCount,
       });
       console.log('[API] Result:', result.success, result.message);
+      
+      // PR-UX-14: 構造化ロギング — execution result
+      logExecutionResult(
+        result.data?.kind || 'no-data',
+        result.success,
+        result.data?.payload?.threadId
+      );
 
       // BUG-1b: スケジューリング clarification が解消された場合、pending をクリア
       // (新しい clarification が発生した場合は handleExecutionResult で再設定される)
@@ -394,6 +412,10 @@ export function ChatPane({
           if (result.data && onExecutionResult) {
             onExecutionResult(result);
           }
+          
+          // PR-UX-14: 構造化ロギング — thread creation + navigate
+          logThreadCreated(newThreadId, result.data?.kind || 'unknown');
+          logNavigate(threadId, newThreadId);
           
           // PR-UX-13: navigate 前に新 threadId の status を prefetch
           // → CardsPane が即座にデータを表示できる（skeleton 期間を短縮）

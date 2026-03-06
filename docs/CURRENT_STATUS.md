@@ -1,8 +1,8 @@
 # 現在の実装状況
 
 > **最終更新**: 2026-03-06
-> **最新コミット**: PR-UX-13 — 右ペイン同期改善・temp pending クリア
-> **前回コミット**: PR-UX-12 — 会話フロー修正・敬称保持・スピナー改善
+> **最新コミット**: PR-UX-14 — 会話オーケストレーション仕様固定・E2Eテスト・構造化ロギング
+> **前回コミット**: PR-UX-13 — 右ペイン同期改善・temp pending クリア
 
 ---
 
@@ -57,6 +57,7 @@ Tomoniwaoは、チャットベースの日程調整AIアシスタントです。
 | **PR-UX-11** | nlRouter内部エラーメッセージのユーザー漏洩防止 — LLM が英語で返す「Please provide the thread ID」等の内部メッセージを日本語ガイダンスに変換する sanitizeNlClarificationMessage() を追加、needs_clarification を success:true（質問）として返すよう修正 | PR-UX-11 |
 | **PR-UX-12** | 会話フロー修正・敬称保持・スピナー改善 — pendingForThread ref化、sessionStorage fallback、correctHonorificInMessage、showSkeleton条件強化 | PR-UX-12 |
 | **PR-UX-13** | 右ペイン同期改善 — navigate前にprefetchThreadStatus呼出し、1on1 prepared系でtemp pendingクリア、CardsPane skeleton期間短縮 | PR-UX-13 |
+| **PR-UX-14** | 会話オーケストレーション仕様固定 — (1) CONVERSATION_FLOW.md（7フロー全網羅）、(2) STATE_RESPONSIBILITY.md（pending権威・temp公式性・suffix保存先・server/client責務分界）、(3) E2Eリグレッション21テスト + Playwright 4 spec、(4) orchestrationLogger.ts（classify/execution/threadId/pending の6ポイント構造化ロギング）。Classifier 194/194, Executor 78/78 all green | PR-UX-14 |
 | **PR-FE7-a** | Mode Chip classifier override + Unit tests FE7-1〜FE7-12 (types, oneOnOne, reverseAvailability) | PR-FE7-a |
 
 ### 🔄 進行中

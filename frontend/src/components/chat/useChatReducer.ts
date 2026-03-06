@@ -26,6 +26,8 @@ import type { PendingState } from '../../core/chat/pendingTypes';
 import { getPendingForThread } from '../../core/chat/pendingTypes';
 // FE-7: SchedulingMode type for Mode Chip
 import type { SchedulingMode } from '../../core/chat/classifier/types';
+// PR-UX-14: 構造化ロギング
+import { logPendingSet, logPendingClear, logExecutionResult } from '../../core/chat/orchestrationLogger';
 // PR-D-FE-1: Contact Import pending builder (静的import — require()はブラウザ非互換)
 import { buildPendingContactImportConfirm } from '../../core/chat/executors/contactImport';
 // PR-D-FE-3.1: 次手フロー用 context 型
@@ -511,6 +513,9 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     
     const { kind, payload } = result.data;
     
+    // PR-UX-14: 構造化ロギング — execution result kind を記録
+    logExecutionResult(kind, result.success, payload?.threadId || currentThreadId);
+    
     // Calendar
     if (kind === 'calendar.today') {
       dispatch({ type: 'SET_CALENDAR_TODAY', payload });
@@ -857,6 +862,8 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // BUG-1b: スケジューリング途中のclarification → pending.scheduling.clarification を設定
     else if (kind === 'scheduling.clarification.needed') {
       const threadId = currentThreadId || 'temp';
+      // PR-UX-14: pending set ロギング
+      logPendingSet(threadId, 'pending.scheduling.clarification', payload.missingField);
       const pendingData = {
         kind: 'pending.scheduling.clarification' as const,
         threadId,
@@ -881,6 +888,8 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
     // BUG-1b: スケジューリング clarification の解消（成功した場合）
     else if (kind === 'scheduling.clarification.resolved') {
       const threadId = currentThreadId || 'temp';
+      // PR-UX-14: pending clear ロギング
+      logPendingClear(threadId, 'scheduling.clarification.resolved');
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId } });
       // PR-UX-12: sessionStorage からも削除
       try {
@@ -897,6 +906,8 @@ export function useChatReducer(currentThreadId: string | undefined, navigate: (p
       kind === '1on1.freebusy.prepared' ||
       kind === '1on1.open_slots.prepared'
     ) {
+      // PR-UX-14: pending clear ロギング
+      logPendingClear('temp', `prepared:${kind}`);
       // temp の pending をクリア（新スレッドに navigate する前に）
       dispatch({ type: 'CLEAR_PENDING_FOR_THREAD', payload: { threadId: 'temp' } });
       // sessionStorage もクリア

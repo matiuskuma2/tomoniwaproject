@@ -19,6 +19,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+// PR-UX-14: 構造化ロギング
+import { log } from '../platform';
 import {
   getStatus,
   refreshStatus,
@@ -223,7 +225,14 @@ export function useThreadStatus(
  */
 export function prefetchThreadStatus(threadId: string): void {
   // Check if already cached
-  if (getCached(threadId)) return;
+  if (getCached(threadId)) {
+    // PR-UX-14: ロギング — cache hit
+    log.debug('prefetch.cache-hit', { module: 'StatusCache', threadId });
+    return;
+  }
+  
+  // PR-UX-14: ロギング — network fetch
+  log.debug('prefetch.network', { module: 'StatusCache', threadId });
   
   // Fetch in background (fire-and-forget)
   getStatus(threadId).catch(err => {
