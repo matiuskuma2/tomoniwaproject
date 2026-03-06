@@ -48,7 +48,17 @@ export interface EmailModel {
 // Constants
 // ============================================================
 
+// デフォルト値。Worker の env.PUBLIC_URL で上書き可能
+// emailConsumer から getAppBaseUrl(env) 経由で取得推奨
 export const APP_BASE_URL = 'https://app.tomoniwao.jp';
+
+/**
+ * 環境変数から APP_BASE_URL を取得するヘルパー
+ * env.PUBLIC_URL が設定されていればそちらを使用
+ */
+export function getAppBaseUrl(env?: { PUBLIC_URL?: string }): string {
+  return env?.PUBLIC_URL || APP_BASE_URL;
+}
 export const LINK_EXPIRES_HOURS = '72時間';
 
 // ============================================================

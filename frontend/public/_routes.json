@@ -1,12 +1,16 @@
 {
   "version": 1,
-  "description": "Route API requests to Workers, everything else to Pages",
+  "description": "Route API and public invite/scheduling requests to Workers, everything else to Pages",
   "include": [
     "/api/*",
     "/auth/*",
     "/admin/*",
     "/i/*",
-    "/health"
+    "/g/*",
+    "/open/*",
+    "/ra/*",
+    "/health",
+    "/test/*"
   ],
   "exclude": []
 }

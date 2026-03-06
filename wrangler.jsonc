@@ -5,6 +5,25 @@
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
   "minify": true,
+
+  // ============================================================
+  // Worker Routes (PR-INV-FIX: 招待リンク到達保証)
+  // ============================================================
+  // app.tomoniwao.jp の特定パスを Worker にルーティング
+  // これにより /i/*, /g/*, /open/*, /ra/* への招待リンクが
+  // Pages (SPA) ではなく Worker で処理される
+  // 注意: zone_name は tomoniwao.jp ドメインの Cloudflare Zone に合わせる
+  "routes": [
+    { "pattern": "app.tomoniwao.jp/api/*",    "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/auth/*",   "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/i/*",      "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/g/*",      "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/open/*",   "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/ra/*",     "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/admin/*",  "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/health",   "zone_name": "tomoniwao.jp" },
+    { "pattern": "app.tomoniwao.jp/test/*",   "zone_name": "tomoniwao.jp" }
+  ],
   
   // ============================================================
   // D1 Database (SQLite)
@@ -88,7 +107,8 @@
     "LOG_LEVEL": "warn",  // Production: warn/error only (perf optimization for 1000+ connections)
     "CORS_ORIGINS": "https://app.tomoniwao.jp,.pages.dev",  // Production: restrict to app domain + Pages previews
     "AI_FALLBACK_ENABLED": "false",  // Default: Gemini-only (cost control for free tier)
-    "REMIND_DRY_RUN": "false"  // v1.2: Reminder dry-run switch (true=no actual email, false=real sending)
+    "REMIND_DRY_RUN": "false",  // v1.2: Reminder dry-run switch (true=no actual email, false=real sending)
+    "PUBLIC_URL": "https://app.tomoniwao.jp"  // PR-INV-FIX: メール内リンクのベースURL（Worker Routes経由でWorkerが処理）
   },
 
   // ============================================================
